@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/message';
 import { Drawing, type AnchorSlot } from '../Drawing';
 import type { Projector } from '../geometry';
 import type { SettingsSchema } from '../schema';
@@ -53,8 +54,8 @@ export class Arrow extends Drawing {
         return {
             fields: [
                 ...LINE_FIELDS,
-                { path: 'style.arrowRight', label: 'Head (end)', kind: 'boolean', group: 'line' },
-                { path: 'style.arrowLeft', label: 'Head (start)', kind: 'boolean', group: 'line' },
+                { path: 'style.arrowRight', label: msg('drawing.arrow.arrowRight', 'Head (end)'), kind: 'boolean', group: 'line' },
+                { path: 'style.arrowLeft', label: msg('drawing.arrow.arrowLeft', 'Head (start)'), kind: 'boolean', group: 'line' },
                 ...TEXT_FIELDS,
             ],
         };

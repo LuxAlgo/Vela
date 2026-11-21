@@ -1,17 +1,23 @@
 import type { InputSchema, InputValue, SymbolPickerFn } from '../../core/model/inputs';
 import type { LegendActionView, LegendCalloutView } from '../../core/ports/IChartRenderer';
 import type { VelaTheme, MoveTarget } from '../../core/options';
+import type { MessageLike, Translator } from '../../core/i18n/types';
+import { msg } from '../../core/i18n/message';
+import { textOf } from '../../core/i18n/text';
 import { withAlpha } from '../../core/color';
 import { iconAt } from '../../core/icons';
 import { applyChromeTokens } from './theme-tokens';
 import { attachChromeTooltip } from './chrome-tooltip';
-import { Menu, type MenuItemDescriptor } from '../../ui/components/menu';
-import { CalloutBubble } from '../../ui/components/callout-bubble';
+import { DropdownMenu, type MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
+import { ContextMenu } from '@luxalgo/vela-ui/context-menu';
+import { CalloutBubble } from '@luxalgo/vela-ui/callout-bubble';
 import {
     IndicatorInputsDialog,
     ensureDialogStyles,
     type InputsUIChange,
 } from './IndicatorInputsDialog';
+import { css } from '@luxalgo/vela-ui/css';
+
 export type { InputsUIChange } from './IndicatorInputsDialog';
 export {
     nameOf,
@@ -104,12 +110,15 @@ interface LegendRow {
     /** The live bubble instances in {@link calloutsEl} (kept so their panels die with the row). */
     callouts: CalloutBubble[];
     native: boolean;
+    /** The row's right-click menu. */
+    menu: ContextMenu;
 }
 
 /** Keyframes for the legend-row live pulse, injected once into the document (the load
  *  dots animate through the Web Animations API and need no stylesheet). */
-const STATUS_KEYFRAMES =
-    '@keyframes vela-ind-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.6)}}';
+const STATUS_KEYFRAMES = css`@layer vela.chrome {
+@keyframes vela-ind-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.6)}}
+}`;
 
 /** Legend glyph size — the row's own font belongs to the indicator title beside them. */
 const LEGEND_ICON_PX = 16;
@@ -122,7 +131,8 @@ const LEGEND_ROW_PAD_X = 6;
 const LEGEND_LEFT_PX = 10;
 /** Air the legend column keeps before the price scale — rows never run under it. */
 const LEGEND_SCALE_GAP_PX = 6;
-/** Space between the indicator title and the plot-values readout to its right. */
+/** Space between the indicator title and the plot-values readout after it (to its right
+ *  in a left-to-right page, to its left in a right-to-left one). */
 const LEGEND_TITLE_VALUES_GAP_PX = 6;
 /** Space between neighbouring plot values. */
 const LEGEND_VALUES_GAP_PX = 5;
@@ -137,6 +147,29 @@ const LEGEND_CTL_CSS =
     `width:${LEGEND_CTL_PX}px;height:${LEGEND_CTL_PX}px;border-radius:3px;box-sizing:border-box;flex:none;`;
 const LEGEND_ROW_MIN_H = LEGEND_CTL_PX + LEGEND_ROW_PAD_Y * 2;
 /** Menu ids of the one-step restacking entries (never numeric: the move menu's targets are). */
+const TEXT = {
+    moveToMainChart: msg('chart.legend.moveToMainChart', 'Move to main chart'),
+    moveToPane: msg('chart.legend.moveToPane', 'Move to {pane}'),
+    newPaneAbove: msg('chart.legend.newPaneAbove', 'New panel above'),
+    newPaneBelow: msg('chart.legend.newPaneBelow', 'New panel below'),
+    indicatorValues: msg('chart.legend.indicatorValues', 'Indicator values'),
+    bringInFrontOfPrice: msg('chart.legend.bringInFrontOfPrice', 'Bring in front of price'),
+    bringInFrontOf: msg('chart.legend.bringInFrontOf', 'Bring in front of {indicator}'),
+    bringInFrontOfNext: msg('chart.legend.bringInFrontOfNext', 'Bring in front of the indicator in front'),
+    sendBehindPrice: msg('chart.legend.sendBehindPrice', 'Send behind price'),
+    sendBehind: msg('chart.legend.sendBehind', 'Send behind {indicator}'),
+    sendBehindNext: msg('chart.legend.sendBehindNext', 'Send behind the indicator behind'),
+    indicators: msg('chart.legend.indicators', 'Indicators'),
+    showLegend: msg('chart.legend.showLegend', 'Show indicator legend'),
+    hideLegend: msg('chart.legend.hideLegend', 'Hide indicator legend'),
+    beta: msg('chart.legend.beta', 'beta'),
+    hide: msg('chart.legend.hide', 'Hide'),
+    show: msg('chart.legend.show', 'Show'),
+    settings: msg('chart.legend.settings', 'Settings'),
+    moveToPaneButton: msg('chart.legend.moveToPaneButton', 'Move to panel'),
+    remove: msg('chart.legend.remove', 'Remove indicator'),
+};
+
 const STACK_RAISE = 'stack:raise';
 const STACK_LOWER = 'stack:lower';
 const EYE_SVG = iconAt('eye', LEGEND_ICON_PX);
@@ -196,7 +229,7 @@ export class InputsUI {
     /** Same, for the contributed callouts only (rebuilt independently by setLegendCallouts). */
     private readonly calloutTips = new Map<string, Array<() => void>>();
     /** Open "Move to" menu (kept so it can be torn down). */
-    private moveMenu: Menu | null = null;
+    private moveMenu: DropdownMenu | null = null;
     private moveTargets: MoveTarget[] = [];
     private moveMenuId: string | null = null;
     /** Collapsed panes → the master indicator id to keep visible (others hidden in the strip). */
@@ -212,8 +245,6 @@ export class InputsUI {
      *  context-menu choice ({@link LegendRow.showValues}) overrides it per indicator. */
     private valuesVisible = true;
     /** Open legend-row context menu (kept so it can be torn down). */
-    private rowMenu: Menu | null = null;
-    private rowMenuId: string | null = null;
     /** The single fold toggle, on the price-pane legend: a bordered ^ chevron under the
      *  rows, or the bordered "˅ N" chip (N counts every pane's indicators) when folded. */
     private foldToggle: HTMLButtonElement | null = null;
@@ -236,6 +267,37 @@ export class InputsUI {
      *  pane-anchored rows always stay in the container. */
     private dialogHost: HTMLElement | null = null;
 
+    /** The chart's translator — the settings dialog's calendar reads its locale. */
+    private i18n: Translator | null = null;
+
+    setI18n(i18n: Translator | null): void {
+        this.i18n = i18n;
+        this.relabel();
+    }
+
+    private t(m: MessageLike, values?: Record<string, string | number>): string {
+        return textOf(this.i18n, m, values);
+    }
+
+    /** Re-read the chrome text of every row in the current language (tooltips read it live). */
+    private relabel(): void {
+        for (const row of this.rows.values()) {
+            row.eyeEl?.setAttribute('aria-label', this.t(row.hidden ? TEXT.show : TEXT.hide));
+            const label = (ctl: string, m: MessageLike): void => row.el.querySelector(`[data-vela-ctl="${ctl}"]`)?.setAttribute('aria-label', this.t(m));
+            label('settings', TEXT.settings);
+            label('move', TEXT.moveToPaneButton);
+            label('remove', TEXT.remove);
+            const beta = row.el.querySelector('[data-vela-ctl="beta"]');
+            if (beta) beta.textContent = this.t(TEXT.beta);
+        }
+        if (this.foldToggle) this.foldToggle.setAttribute('aria-label', this.foldLabel());
+    }
+
+    /** The fold toggle's label for its current state. */
+    private foldLabel(): string {
+        return this.t(this.overviewAction !== null ? TEXT.indicators : this.legendFolded ? TEXT.showLegend : TEXT.hideLegend);
+    }
+
     setDialogHost(host: HTMLElement | null): void {
         this.dialogHost = host;
         if (host && getComputedStyle(host).position === 'static') host.style.position = 'relative';
@@ -256,6 +318,7 @@ export class InputsUI {
             mobile: () => this.mobileLayout,
             dialogHost: () => this.dialogHost,
             symbolPicker: () => this.symbolPicker,
+            i18n: () => this.i18n,
             onChange: (c) => this.onChange?.(c),
             onBackdropClose: () => this.clearSelection(),
         });
@@ -484,11 +547,19 @@ export class InputsUI {
         // an ellipsis rather than a clipped number that reads as a different value.
         row.valuesEl.style.display = 'block';
         row.valuesEl.replaceChildren();
+        // Each value is a left-to-right isolate, so a sign stays in front of its number in a
+        // right-to-left page. The gap sits on an outer span that follows the page: a logical
+        // margin resolves against its element's own direction, and only the page's puts it
+        // between neighbouring values.
         row.plotValues.forEach((v, i) => {
             const span = document.createElement('span');
-            span.textContent = v.value;
             span.style.color = v.color;
-            if (i > 0) span.style.marginLeft = `${LEGEND_VALUES_GAP_PX}px`;
+            if (i > 0) span.style.marginInlineStart = `${LEGEND_VALUES_GAP_PX}px`;
+            const value = document.createElement('span');
+            value.dir = 'ltr';
+            value.style.unicodeBidi = 'isolate';
+            value.textContent = v.value;
+            span.appendChild(value);
             row.valuesEl.appendChild(span);
         });
     }
@@ -506,7 +577,8 @@ export class InputsUI {
         const items: Array<{ label: string; target: MoveTarget }> = [];
         for (const p of panes) {
             if (p.id === currentPane) continue;
-            items.push({ label: `Move to ${p.label}`, target: p.kind === 'price' ? 'price' : { pane: p.id } });
+            const label = p.kind === 'price' ? this.t(TEXT.moveToMainChart) : this.t(TEXT.moveToPane, { pane: p.label });
+            items.push({ label, target: p.kind === 'price' ? 'price' : { pane: p.id } });
         }
         // Offer only moves that actually change something:
         //  • the sole indicator of a study pane owns it already — a "new pane" beside its own
@@ -515,8 +587,8 @@ export class InputsUI {
         const soleInStudyPane = currentPane !== 'price'
             && [...this.rows.values()].filter((r) => r.paneId === currentPane).length <= 1;
         if (!soleInStudyPane) {
-            if (currentPane !== 'price') items.push({ label: 'New pane above', target: { newPane: { before: currentPane } } });
-            items.push({ label: 'New pane below', target: { newPane: { after: currentPane } } });
+            if (currentPane !== 'price') items.push({ label: this.t(TEXT.newPaneAbove), target: { newPane: { before: currentPane } } });
+            items.push({ label: this.t(TEXT.newPaneBelow), target: { newPane: { after: currentPane } } });
         }
         this.moveTargets = items.map((it) => it.target);
         this.moveMenuId = id;
@@ -527,10 +599,10 @@ export class InputsUI {
         if (moves[0] && stack.length > 0) moves[0].separatorBefore = true;
         const descriptors = [...stack, ...moves];
         if (!this.moveMenu) {
-            this.moveMenu = new Menu({
+            this.moveMenu = new DropdownMenu({
                 host: this.container,
                 items: descriptors,
-                placement: 'bottom-start',
+                side: 'bottom', align: 'start',
                 onSelect: (itemId) => {
                     const rowId = this.moveMenuId;
                     if (!rowId || this.runStackItem(itemId, rowId)) return;
@@ -551,49 +623,43 @@ export class InputsUI {
 
     // ── legend row context menu (right-click) ───────────────────────────────
 
-    /** Open the row's action menu at the pointer: an overlay indicator's restacking steps
-     *  first (where a layer is there to pass), then the values toggle. */
-    private openRowMenu(id: string, x: number, y: number): void {
-        this.closeRowMenu();
-        this.closeMoveMenu();
+    /** A row's right-click menu: an overlay indicator's restacking steps first (where a layer
+     *  is there to pass), then the values toggle. */
+    private rowMenu(id: string, el: HTMLElement): ContextMenu {
+        return new ContextMenu({
+            target: el,
+            host: this.container,
+            // The legend sits over the chart, where a long press is the touch crosshair.
+            longPress: false,
+            items: (e) => {
+                // This right-click is the row's: the chart-body menu (bound higher up) stays closed.
+                e.stopPropagation();
+                this.closeMoveMenu();
+                return this.rowMenuItems(id);
+            },
+            onSelect: (itemId) => {
+                if (this.runStackItem(itemId, id) || itemId !== 'values') return;
+                const row = this.rows.get(id);
+                if (!row) return;
+                row.showValues = !this.rowValuesShown(row);
+                this.renderRowValues(row);
+            },
+        });
+    }
+
+    private rowMenuItems(id: string): MenuItemDescriptor[] | null {
         const row = this.rows.get(id);
-        if (!row) return;
-        this.rowMenuId = id;
+        if (!row) return null;
         const stack = this.stackItems(id);
-        const items: MenuItemDescriptor[] = [
+        return [
             ...stack,
             {
                 id: 'values',
-                label: 'Indicator values',
+                label: this.t(TEXT.indicatorValues),
                 checked: this.rowValuesShown(row),
                 separatorBefore: stack.length > 0,
             },
         ];
-        if (!this.rowMenu) {
-            this.rowMenu = new Menu({
-                host: this.container,
-                items,
-                placement: 'bottom-start',
-                // Right-click action menu — checked state reads as a leading ✓ (see the kit Menu).
-                checkmarks: true,
-                onSelect: (itemId) => {
-                    const rowId = this.rowMenuId;
-                    if (!rowId || this.runStackItem(itemId, rowId)) return;
-                    if (itemId !== 'values') return;
-                    const target = this.rows.get(rowId);
-                    if (!target) return;
-                    target.showValues = !this.rowValuesShown(target);
-                    this.renderRowValues(target);
-                },
-            });
-        } else {
-            this.rowMenu.setItems(items);
-        }
-        this.rowMenu.openAt(x, y);
-    }
-
-    private closeRowMenu(): void {
-        this.rowMenu?.close();
     }
 
     /** A row's one-step restacking entries (forward, then back), for whichever neighbor exists. */
@@ -601,17 +667,20 @@ export class InputsUI {
         const api = this.stackApi;
         if (!api) return [];
         const items: MenuItemDescriptor[] = [];
-        const forward = this.stackLabel('Bring in front of', api.above(id), 'the indicator in front');
+        const forward = this.stackLabel(api.above(id), { price: TEXT.bringInFrontOfPrice, named: TEXT.bringInFrontOf, unnamed: TEXT.bringInFrontOfNext });
         if (forward) items.push({ id: STACK_RAISE, label: forward });
-        const back = this.stackLabel('Send behind', api.below(id), 'the indicator behind');
+        const back = this.stackLabel(api.below(id), { price: TEXT.sendBehindPrice, named: TEXT.sendBehind, unnamed: TEXT.sendBehindNext });
         if (back) items.push({ id: STACK_LOWER, label: back });
         return items;
     }
 
-    private stackLabel(verb: string, neighbor: LegendStackNeighbor, fallback: string): string | null {
+    /** One restacking entry's label: a whole sentence per neighbor kind (the candles, a named
+     *  indicator, or one whose row is gone). */
+    private stackLabel(neighbor: LegendStackNeighbor, text: { price: MessageLike; named: MessageLike; unnamed: MessageLike }): string | null {
         if (neighbor === null) return null;
-        if (neighbor === 'price') return `${verb} price`;
-        return `${verb} ${this.rows.get(neighbor.indicator)?.title ?? fallback}`;
+        if (neighbor === 'price') return this.t(text.price);
+        const name = this.rows.get(neighbor.indicator)?.title;
+        return name !== undefined ? this.t(text.named, { indicator: name }) : this.t(text.unnamed);
     }
 
     /** Run a restacking entry; false when `itemId` is not one. */
@@ -755,7 +824,7 @@ export class InputsUI {
             btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'vela-ind-fold';
-            this.tip(this.rowTips, 'fold', btn, () => (this.overviewAction !== null ? 'Indicators' : this.legendFolded ? 'Show indicator legend' : 'Hide indicator legend'));
+            this.tip(this.rowTips, 'fold', btn, () => this.foldLabel());
             btn.addEventListener('click', () => {
                 if (this.overviewAction !== null) {
                     this.overviewAction();
@@ -767,7 +836,7 @@ export class InputsUI {
             this.foldToggle = btn;
         }
         const folded = this.legendFolded;
-        btn.setAttribute('aria-label', this.overviewAction !== null ? 'Indicators' : folded ? 'Show indicator legend' : 'Hide indicator legend');
+        btn.setAttribute('aria-label', this.foldLabel());
         // Bordered chip in both states; folded shows chevron then the count to its right
         // (reference: "˅ 12"), expanded is just the up chevron that folds the list away.
         // Fill AND ink follow the LIVE plot theme (same as legend rows) — chrome tokens
@@ -794,6 +863,14 @@ export class InputsUI {
         // may carry no indicator itself while study panes do).
         this.legendFor('price').appendChild(btn);
         this.reposition(); // every pane's rows follow the fold, not just the price pane's
+    }
+
+    /** Rename a row in place (the chart's language changed). */
+    setTitle(id: string, title: string): void {
+        const row = this.rows.get(id);
+        if (!row || row.title === title) return;
+        row.title = title;
+        row.titleEl.textContent = title;
     }
 
     /** Create or update an indicator's legend row (in the legend for its pane). */
@@ -858,13 +935,6 @@ export class InputsUI {
             e.preventDefault();
             this.onRemove?.(id);
         });
-        // Right-click opens the row's own action menu — swallowed here so the host's
-        // chart-body context menu (bound higher up the tree) doesn't open over it.
-        el.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            this.openRowMenu(id, e.clientX, e.clientY);
-        });
         // Status indicator (right of the title): pulsing load dots while fetching, a
         // pulse while live, hidden when idle. Lives next to the title — not the row's
         // far end — so the dots stay a title companion even before values arrive.
@@ -886,7 +956,8 @@ export class InputsUI {
         titleWrap.appendChild(titleEl);
         if (opts.beta) {
             const beta = document.createElement('sup');
-            beta.textContent = 'beta';
+            beta.textContent = this.t(TEXT.beta);
+            beta.dataset.velaCtl = 'beta';
             beta.style.cssText = 'font-size:8px;font-weight:700;opacity:0.7;margin-left:1px;letter-spacing:0.2px;';
             titleWrap.appendChild(beta);
         }
@@ -903,7 +974,7 @@ export class InputsUI {
         const valuesEl = document.createElement('span');
         valuesEl.style.cssText =
             `display:none;flex:1 1 0%;min-width:0;overflow:hidden;text-overflow:ellipsis;` +
-            `margin-left:${LEGEND_TITLE_VALUES_GAP_PX}px;white-space:nowrap;font-variant-numeric:tabular-nums;`;
+            `margin-inline-start:${LEGEND_TITLE_VALUES_GAP_PX}px;white-space:nowrap;font-variant-numeric:tabular-nums;`;
         el.appendChild(valuesEl);
         // Action cluster (eye / gear / move / extras / ✕) — one tight row of equal hit targets.
         // Revealed on hover/selection; a hidden indicator keeps its eye reachable without hover.
@@ -914,8 +985,8 @@ export class InputsUI {
         if (this.onToggleVisible) {
             const eye = document.createElement('button');
             eye.type = 'button';
-            eye.setAttribute('aria-label', 'Hide');
-            this.tip(this.rowTips, id, eye, () => (this.rows.get(id)?.hidden ? 'Show' : 'Hide'));
+            eye.setAttribute('aria-label', this.t(TEXT.hide));
+            this.tip(this.rowTips, id, eye, () => this.t(this.rows.get(id)?.hidden ? TEXT.show : TEXT.hide));
             eye.innerHTML = EYE_SVG;
             eye.className = 'vela-ind-ctl';
             eye.style.cssText = LEGEND_CTL_CSS;
@@ -929,8 +1000,9 @@ export class InputsUI {
         if (inputs.length > 0 || (opts.props ?? []).length > 0) {
             const gear = document.createElement('button');
             gear.type = 'button';
-            gear.setAttribute('aria-label', 'Settings');
-            this.tip(this.rowTips, id, gear, 'Settings');
+            gear.setAttribute('aria-label', this.t(TEXT.settings));
+            gear.dataset.velaCtl = 'settings';
+            this.tip(this.rowTips, id, gear, () => this.t(TEXT.settings));
             gear.innerHTML = GEAR_SVG;
             gear.className = 'vela-ind-ctl';
             gear.style.cssText = LEGEND_CTL_CSS;
@@ -942,8 +1014,9 @@ export class InputsUI {
         if (this.moveApi) {
             const mv = document.createElement('button');
             mv.type = 'button';
-            mv.setAttribute('aria-label', 'Move to pane');
-            this.tip(this.rowTips, id, mv, 'Move to pane');
+            mv.setAttribute('aria-label', this.t(TEXT.moveToPaneButton));
+            mv.dataset.velaCtl = 'move';
+            this.tip(this.rowTips, id, mv, () => this.t(TEXT.moveToPaneButton));
             mv.innerHTML = iconAt('move', LEGEND_ICON_PX);
             mv.className = 'vela-ind-ctl';
             mv.style.cssText = LEGEND_CTL_CSS;
@@ -958,8 +1031,9 @@ export class InputsUI {
         // Remove (✕) — a built-in control to drop the indicator from the chart.
         const close = document.createElement('button');
         close.type = 'button';
-        close.setAttribute('aria-label', 'Remove indicator');
-        this.tip(this.rowTips, id, close, 'Remove indicator');
+        close.setAttribute('aria-label', this.t(TEXT.remove));
+        close.dataset.velaCtl = 'remove';
+        this.tip(this.rowTips, id, close, () => this.t(TEXT.remove));
         close.innerHTML = CLOSE_SVG;
         close.className = 'vela-ind-close';
         close.style.cssText = LEGEND_CTL_CSS;
@@ -968,7 +1042,7 @@ export class InputsUI {
         el.appendChild(controlsEl);
 
         this.attach(this.legendFor(paneId), el, !!opts.native);
-        const row: LegendRow = { id, title, inputs, values: { ...values }, props: opts.props ?? [], propValues: { ...(opts.propValues ?? {}) }, el, titleEl, statusEl, valuesEl, plotValues: [], plotValuesKey: '', showValues: null, highlighted: false, paneId, hidden: false, eyeEl, controlsEl, extrasEl, calloutsEl, callouts: [], native: !!opts.native };
+        const row: LegendRow = { id, title, inputs, values: { ...values }, props: opts.props ?? [], propValues: { ...(opts.propValues ?? {}) }, el, titleEl, statusEl, valuesEl, plotValues: [], plotValuesKey: '', showValues: null, highlighted: false, paneId, hidden: false, eyeEl, controlsEl, extrasEl, calloutsEl, callouts: [], native: !!opts.native, menu: this.rowMenu(id, el) };
         this.rows.set(id, row);
         this.renderCallouts(row);
         this.syncFoldToggle(); // 2+ indicators grow the fold chevron; a folded legend hides the new row too
@@ -1043,7 +1117,7 @@ export class InputsUI {
         row.el.style.opacity = visible ? '1' : '0.5';
         if (row.eyeEl) {
             row.eyeEl.innerHTML = visible ? EYE_SVG : EYE_OFF_SVG;
-            row.eyeEl.setAttribute('aria-label', visible ? 'Hide' : 'Show'); // the tooltip reads live state itself
+            row.eyeEl.setAttribute('aria-label', this.t(visible ? TEXT.hide : TEXT.show)); // the tooltip reads live state itself
         }
         this.syncRowActions(row);
     }
@@ -1116,6 +1190,7 @@ export class InputsUI {
     remove(id: string): void {
         const row = this.rows.get(id);
         for (const bubble of row?.callouts ?? []) bubble.destroy(); // an open panel must not outlive its row
+        row?.menu.destroy();
         row?.el.remove();
         this.rows.delete(id);
         this.disposeTips(this.rowTips, id);
@@ -1135,8 +1210,7 @@ export class InputsUI {
         this.inputsDialog.close();
         this.moveMenu?.destroy();
         this.moveMenu = null;
-        this.rowMenu?.destroy();
-        this.rowMenu = null;
+        for (const row of this.rows.values()) row.menu.destroy();
         for (const id of [...this.rowTips.keys()]) this.disposeTips(this.rowTips, id);
         for (const id of [...this.extrasTips.keys()]) this.disposeTips(this.extrasTips, id);
         for (const id of [...this.calloutTips.keys()]) this.disposeTips(this.calloutTips, id);

@@ -13,13 +13,14 @@
 //   single `c1` cell, and that is exactly what the workspace reads back.
 import { VelaWorkspace } from '../workspace/VelaWorkspace';
 import type { Vela } from '../Vela';
-import type { VelaOptions, VelaTheme, ThemeName, MarketSession } from '../core/options';
+import type { VelaOptions, MarketSession } from '../core/options';
 import type { WorkspaceState } from '../state/document';
 import type { VelaShellOptions } from './shell-options';
 import type { WidgetContext } from './contributions';
 import type { WidgetHistory } from './history';
 import type { KeymapManager } from '../ui/keymap';
 import type { RangePreset } from './bottombar';
+import type { LocaleChangedEvent, LocalizationOptions, Translator } from '../core/i18n/types';
 
 export interface VelaWidgetOptions extends VelaOptions, VelaShellOptions {
     /** @deprecated No longer supported — the option is ignored (a console warning
@@ -113,12 +114,22 @@ export class VelaWidget {
         this.ws.active.setIndicatorValuesVisible(visible);
     }
 
-    setTheme(theme: ThemeName | VelaTheme): void {
+    setTheme(theme: NonNullable<VelaOptions['theme']>): void {
         this.ws.setTheme(theme);
     }
 
     setTimezone(zone: string): void {
         this.ws.setTimezone(zone);
+    }
+
+    /** The widget's translator (see `VelaWorkspace.i18n`). */
+    get i18n(): Translator {
+        return this.ws.i18n;
+    }
+
+    /** Change the language, direction or formatting at runtime (see `VelaWorkspace.setLocale`). */
+    setLocale(next: string | LocalizationOptions): void {
+        this.ws.setLocale(next);
     }
 
     applyRange(preset: RangePreset): void {
@@ -135,10 +146,13 @@ export class VelaWidget {
         this.ws.applyState(state);
     }
 
-    /** Subscribe to `state:changed` (the only widget event — unknown names no-op). */
-    on(event: 'state:changed', handler: () => void): () => void {
-        if (event !== 'state:changed') return () => undefined;
-        return this.ws.on('state:changed', handler);
+    /** Subscribe to `state:changed` or `locale:changed` (unknown names no-op). */
+    on(event: 'state:changed', handler: () => void): () => void;
+    on(event: 'locale:changed', handler: (payload: LocaleChangedEvent) => void): () => void;
+    on(event: 'state:changed' | 'locale:changed', handler: ((payload: LocaleChangedEvent) => void) | (() => void)): () => void {
+        if (event === 'state:changed') return this.ws.on('state:changed', handler as () => void);
+        if (event === 'locale:changed') return this.ws.on('locale:changed', handler as (payload: LocaleChangedEvent) => void);
+        return () => undefined;
     }
 
     destroy(): void {

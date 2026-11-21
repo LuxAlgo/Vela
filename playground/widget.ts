@@ -48,7 +48,7 @@ const ws = new VelaWorkspace('#chart', {
     //                                 //  group ('canvas.grid'), or a row; ids via chart.renderer.listSettingsIds()
     // data: myBars,                   // offline OHLCV[] — replaces the provider entirely (no fetches, no live)
     // visibleRange: '3M',             // initial window: '1D'|'1W'|'1M'|'3M'|'6M'|'1Y'|'5Y'|'YTD'|'ALL' or {from,to} in ms (default: frame the tail)
-    // priceStyle: 'candles',          // 'candles'|'bars'|'line'|'area'|'baseline'|'heikinashi' or a registered chart-type id
+    // priceStyle: 'candles',          // 'candles'|'bars'|'line'|'linemarkers'|'stepline'|'area'|'baseline'|'columns'|'heikinashi' or a registered chart-type id
     // volume: true,                   // the built-in volume columns (native indicator); false opts out
     // logScale: false,                // logarithmic price scale
     // currentPriceLine: true,         // dashed line + axis chip at the latest price
@@ -74,13 +74,14 @@ const ws = new VelaWorkspace('#chart', {
     // bottombar: true,                // chrome: the range-presets + timezone bar
     // topbar: {                       // COMPOSE the topbar: each side lists its VISIBLE
     //     left: ['symbol', 'timeframes', 'style', 'layout', 'indicators', 'actions', 'undo-redo'],
-    //     right: ['actions', 'alerts', 'panels', 'screenshot'],
+    //     right: ['actions', 'alerts', 'panels', 'screenshot', 'fullscreen'],
     // },
     //                                 // These values ARE the defaults (an undeclared side keeps
     //                                 //  them; 'layout' simply never renders on this single-chart
     //                                 //  page). Entries render in LIST ORDER; omitting an id also
     //                                 //  removes its mobile entry and keyboard chord (mod+alt+S
-    //                                 //  with 'screenshot', `/` with 'indicators'). 'actions' is
+    //                                 //  with 'screenshot', alt+enter with 'fullscreen', `/`
+    //                                 //  with 'indicators'). 'actions' is
     //                                 //  the flow slot for contributed actions — naming an
     //                                 //  action's ID instead pins it at that spot. An explicit
     //                                 //  list is the side's complete (and frozen) contract.
@@ -130,6 +131,17 @@ ws.chart.on('theme:changed', (t) => {
 //     offState();
 // }, 5000);
 
+
+// ── Drawing action: a demo button on line drawings (selection toolbar + settings dialog). ──
+import { registerDrawingAction } from '../src/plugin';
+
+registerDrawingAction({
+    id: 'dev.drawing-info',
+    icon: 'code',
+    label: 'Show drawing info',
+    when: (d) => d.type === 'hline' || d.type === 'trendline' || d.type === 'hray',
+    run: (ctx, d) => ctx.toast(`${d.type} at ${d.anchors[0]?.price.toFixed(2) ?? '?'}`, 'info'),
+});
 
 // ── "Code" topbar entry — paste a script, Run it, injected on success (SDK showcase:
 // contributed action + kit Dialog + chart.runIndicator; errors surface inline). ──

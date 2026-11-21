@@ -1,3 +1,5 @@
+import { msg } from '../i18n/message';
+import type { MessageLike } from '../i18n/types';
 import type { Drawing } from './Drawing';
 import type { DrawingStyle, DrawingText } from './style';
 import { defaultText } from './style';
@@ -64,7 +66,10 @@ export function sanitizeToolDefaults(raw: unknown): DrawingToolDefaults | null {
 /** A named, saved look for one tool (a "style"): applied, it sets the same settings a
  *  remembered default does — style, text styling and per-type settings. */
 export interface DrawingToolTemplate {
+    /** The style's name: its identity among the tool's styles. */
     name: string;
+    /** What a built-in style's name reads as in the chart's language. Absent ⇒ {@link name}. */
+    label?: MessageLike;
     settings: DrawingToolDefaults;
 }
 
@@ -92,15 +97,15 @@ const AREA_TOOLS = new Set(['box', 'rotatedrect', 'ellipse', 'circle', 'triangle
 export function builtinToolTemplates(type: string): DrawingToolTemplate[] {
     if (LINE_TOOLS.has(type)) {
         return [
-            { name: 'Support', settings: { style: { lineColor: BULLISH, lineWidth: 2, lineStyle: 'solid' } } },
-            { name: 'Resistance', settings: { style: { lineColor: BEARISH, lineWidth: 2, lineStyle: 'solid' } } },
-            { name: 'Projection', settings: { style: { lineColor: NEUTRAL, lineWidth: 1, lineStyle: 'dashed' } } },
+            { name: 'Support', label: msg('drawing.template.support', 'Support'), settings: { style: { lineColor: BULLISH, lineWidth: 2, lineStyle: 'solid' } } },
+            { name: 'Resistance', label: msg('drawing.template.resistance', 'Resistance'), settings: { style: { lineColor: BEARISH, lineWidth: 2, lineStyle: 'solid' } } },
+            { name: 'Projection', label: msg('drawing.template.projection', 'Projection'), settings: { style: { lineColor: NEUTRAL, lineWidth: 1, lineStyle: 'dashed' } } },
         ];
     }
     if (AREA_TOOLS.has(type)) {
         return [
-            { name: 'Demand', settings: { style: { lineColor: BULLISH, fillColor: `${BULLISH}26` } } },
-            { name: 'Supply', settings: { style: { lineColor: BEARISH, fillColor: `${BEARISH}26` } } },
+            { name: 'Demand', label: msg('drawing.template.demand', 'Demand'), settings: { style: { lineColor: BULLISH, fillColor: `${BULLISH}26` } } },
+            { name: 'Supply', label: msg('drawing.template.supply', 'Supply'), settings: { style: { lineColor: BEARISH, fillColor: `${BEARISH}26` } } },
         ];
     }
     return [];

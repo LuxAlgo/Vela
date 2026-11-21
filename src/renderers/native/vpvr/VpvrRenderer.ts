@@ -4,6 +4,7 @@ import type { VelaTheme } from '../../../core/options';
 import type { CoordinateSystem, PriceScale, PaneBounds } from '../core/CoordinateSystem';
 import { buildVpvrProfile, type VpvrProfile } from './profile';
 import { paintVpvr } from './paintVpvr';
+import { beginPlotFrame } from '../core/plotDirection';
 
 interface VpvrRenderArgs {
     bars: readonly OHLCV[];
@@ -51,7 +52,7 @@ export class VpvrRenderer {
         const { bars, data, visible, coords, scale, bounds, theme } = args;
 
         const dpr = coords.dpr;
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        beginPlotFrame(ctx, dpr);
         ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr); // always clear — a hide/remove must wipe the last frame
         if (!data || !visible || bars.length === 0 || bounds.height <= 0) return;
 

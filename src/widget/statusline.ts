@@ -3,56 +3,65 @@
 // `bar` event; hover values from the renderer crosshair seam (RendererControl.onCrosshairMove).
 import type { Vela } from '../Vela';
 import type { OHLCV } from '../core/model/ohlcv';
-import { injectStyles } from '../ui/styles';
-import { Tooltip } from '../ui/components/tooltip';
-import { CalloutBubble } from '../ui/components/callout-bubble';
-import { Menu } from '../ui/components/menu';
-import { segmentVisibility, statuslineMenuItems, STATUSLINE_LADDER, readoutCells, type StatuslinePart, type StatuslineLayout } from './statusline-model';
+import { injectChromeStyles } from '../ui/chromeStyles';
+import { Tooltip } from '@luxalgo/vela-ui/tooltip';
+import { CalloutBubble } from '@luxalgo/vela-ui/callout-bubble';
+import type { MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
+import { ContextMenu } from '@luxalgo/vela-ui/context-menu';
+import { segmentVisibility, statuslineMenuItems, STATUSLINE_LADDER, readoutCells, SHOW_CHART_LABEL, type StatuslinePart, type StatuslineLayout } from './statusline-model';
+import { msg } from '../core/i18n/message';
+import { textOf } from '../core/i18n/text';
+import type { MessageDescriptor, Translator } from '../core/i18n/types';
 import { SESSION_PRE, SESSION_POST, SESSION_OFF } from '../core/palette';
+import { withAlpha } from '../core/color';
 import { iconAt } from '../core/icons';
-import { fmtPrice, fmtChange, fmtChangePct, decimalsFor } from './format';
+import { decimalsFor } from './format';
+import { tickDecimals } from '../core/format/numbers';
 import { timeframeLabel } from './timeframe';
 import { tickerIconEl } from './symbol-icon';
 import { parseSymbol } from '../data/ProviderRegistry';
 import { LEGEND_AT_TOP_ATTR } from '../renderers/shared/InputsUI';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 const STYLE_ID = 'vela-widget-statusline';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 .vela-statusline {
     position: absolute;
-    top: var(--vela-space-2);
+    top: ${t.space[2]};
     /* Track the indicator legend's left edge: the renderer publishes its toolbar gutter
      * on the mount container, and the legend sits 10px into the plot to its right —
      * so the two columns stay aligned whether the toolbar is docked (44px), collapsed
      * (16px), or absent entirely (a workspace cell: 0). */
-    left: calc(var(--vela-toolbar-gutter, 0px) + 10px);
+    inset-inline-start: calc(var(--vela-toolbar-gutter, 0px) + 10px);
     z-index: 10;
     display: flex;
     align-items: baseline;
-    gap: var(--vela-space-2);
+    gap: ${t.space[2]};
     /* The chip never grows past the plot: fit() measures overflow against this width to
      * walk the layout ladder (stack, then shed values), so overflow:hidden only guards
      * the transient between a resize and the next measure. */
     max-width: calc(100% - var(--vela-toolbar-gutter, 0px) - var(--vela-scale-gutter, 0px) - 24px);
     overflow: hidden;
-    color: var(--vela-fg);
-    font-size: var(--vela-font-size-md);
+    color: ${t.fg};
+    font-size: ${t.fontSize.md};
     /* Same chip treatment as the indicator legend rows (InputsUI): a translucent wash of
      * the chart background when idle — enough to keep the readout legible when candles
      * reach it — and the solid chart background on hover. Symmetric 7px padding with a
      * compensating negative margin (mirroring the legend rows) keeps the avatar's left
-     * edge on the legend column's left edge (both at left:10px) while the chip itself
+     * edge on the legend column's left edge (both at inset-inline-start:10px) while the chip itself
      * extends 7px further left, so both columns' chips share the same left edge. */
     pointer-events: auto;
-    background: color-mix(in srgb, var(--vela-bg) 60%, transparent);
-    border-radius: 4px;
+    background: color-mix(in srgb, ${t.bg} 60%, transparent);
+    border-radius: ${t.radius.sm};
     padding: 2px 7px;
-    margin-left: -7px;
+    margin-inline-start: -7px;
 }
 /* Hovering opens the chip the same way a legend row opens: solid chart background
  * plus the same inset neutral outline the indicator rows wear (InputsUI's
  * setRowHighlighted) — the two columns read as one family. */
-.vela-statusline:hover { background: var(--vela-bg); box-shadow: inset 0 0 0 1px var(--vela-border); }
+.vela-statusline:hover { background: ${t.bg}; box-shadow: inset 0 0 0 1px ${t.border}; }
 /* Chart hidden (the price series' eye — renderer 'candleVisible'): the line dims to
  * the same 0.5 wash a hidden indicator's legend row wears. */
 .vela-statusline.vela-sl-chart-hidden { opacity: 0.5; }
@@ -63,7 +72,7 @@ const CSS = `
 .vela-statusline .vela-sl-row {
     display: flex;
     align-items: baseline;
-    gap: var(--vela-space-2);
+    gap: ${t.space[2]};
     white-space: nowrap;
 }
 .vela-statusline.vela-sl-stacked {
@@ -71,7 +80,7 @@ const CSS = `
     align-items: flex-start;
     /* The same air between the two rows as between the values row and the legend row
      * that follows the chip (see the stacked legend shift below). */
-    row-gap: var(--vela-space-1);
+    row-gap: ${t.space[1]};
 }
 /* Stacked, the identity row may shrink (the meta carries the ellipsis) — the values row
  * never does, so its overflow is what fit() measures to keep descending the ladder. */
@@ -90,15 +99,15 @@ const CSS = `
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: var(--vela-fg-on-fill);
+    color: ${t.fg.onFill};
     font-size: 10px;
     font-weight: 700;
 }
-.vela-statusline .vela-sl-symbol { font-weight: 600; font-size: var(--vela-font-size-lg); }
-.vela-statusline .vela-sl-meta { color: var(--vela-fg-muted); font-size: var(--vela-font-size-md); font-weight: 600; }
+.vela-statusline .vela-sl-symbol { font-weight: 600; font-size: ${t.fontSize.lg}; }
+.vela-statusline .vela-sl-meta { color: ${t.fg.muted}; font-size: ${t.fontSize.md}; font-weight: 600; }
 /* The meta opens with "· " — sit its dot one space-width after the ticker, as far as the
  * venue sits after it, not a full row gap away. */
-.vela-statusline .vela-sl-symbol + .vela-sl-meta { margin-left: calc(var(--vela-space-1) - var(--vela-space-2)); }
+.vela-statusline .vela-sl-symbol + .vela-sl-meta { margin-inline-start: calc(${t.space[1]} - ${t.space[2]}); }
 /* Market status badge — a kit callout bubble (icon-only 16px circle, label on hover
  * via the kit tooltip); the session tint is applied per status in setMarketStatus. While
  * the chart replays past bars it wears the replay badge instead (the inverse chip). */
@@ -108,12 +117,15 @@ const CSS = `
 /* Tabular figures: every digit has one advance, so a readout whose text changes only in
  * its digits keeps its width — render() skips the ladder for those (see widthKey). */
 .vela-statusline .vela-sl-values { font-variant-numeric: tabular-nums; }
-.vela-statusline .vela-sl-ohlc { display: flex; gap: var(--vela-space-1); color: var(--vela-fg-muted); }
-.vela-statusline .vela-sl-ohlc b { color: var(--vela-fg); font-weight: 500; }
+.vela-statusline .vela-sl-ohlc { display: flex; gap: ${t.space[1]}; color: ${t.fg.muted}; }
+.vela-statusline .vela-sl-ohlc b { color: ${t.fg}; font-weight: 500; }
+/* Prices and the signed change are left-to-right isolates (each carries dir="ltr"): inside a
+ * right-to-left page the row's order mirrors, but a sign stays in front of its number. */
+.vela-statusline .vela-sl-ohlc b, .vela-statusline .vela-sl-change { unicode-bidi: isolate; }
 /* The change value wears the SAME ink as the OHLC values (set inline per render) —
  * these are the pre-ink fallbacks only. */
-.vela-statusline .vela-sl-change[data-dir='up'] { color: var(--vela-up); }
-.vela-statusline .vela-sl-change[data-dir='down'] { color: var(--vela-down); }
+.vela-statusline .vela-sl-change[data-dir='up'] { color: ${t.up}; }
+.vela-statusline .vela-sl-change[data-dir='down'] { color: ${t.down}; }
 /* The show-chart eye — out only while the chart is hidden (syncParts drives display),
  * replacing the value readout it took away. Same footprint as a legend action button. */
 .vela-statusline .vela-sl-eye {
@@ -126,12 +138,12 @@ const CSS = `
     border: none;
     border-radius: 3px;
     background: none;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
     cursor: pointer;
     line-height: 0;
     flex: none;
 }
-.vela-statusline .vela-sl-eye:hover { color: var(--vela-fg); background: color-mix(in srgb, var(--vela-fg) 12%, transparent); }
+.vela-statusline .vela-sl-eye:hover { color: ${t.fg}; background: color-mix(in srgb, ${t.fg} 12%, transparent); }
 /* Stack the TOP pane's legend below the status line (lower study panes stay put).
  * The renderer marks whichever legend sits at the plot's top edge — the price pane
  * normally, or a maximized study pane filling the plot — so the legend never merges
@@ -146,9 +158,10 @@ const CSS = `
 .vela-has-statusline.vela-sl-stacked-host [${LEGEND_AT_TOP_ATTR}] { transform: translateY(40px); }
 /* Mobile: the same ladder at the phone's type scale — the width alone decides how much
  * of the readout fits, exactly as on a narrow desktop chart. */
-[data-layout='mobile'] .vela-statusline { font-size: var(--vela-font-size-sm); }
-[data-layout='mobile'] .vela-statusline .vela-sl-symbol { font-size: var(--vela-font-size-md); }
-`;
+[data-layout='mobile'] .vela-statusline { font-size: ${t.fontSize.sm}; }
+[data-layout='mobile'] .vela-statusline .vela-sl-symbol { font-size: ${t.fontSize.md}; }
+
+}`;
 
 interface BarLike {
     open: number;
@@ -168,7 +181,8 @@ interface RendererReads {
 }
 
 /** How the status line reads a bar out: the four O/H/L/C values (bar-shaped styles),
- *  or the single plotted value — the close — for one-line styles (line/area/baseline). */
+ *  or the single plotted value — the close — for the single-value styles (the line
+ *  family, area, baseline, columns). */
 export type StatuslineReadout = 'ohlc' | 'value';
 
 /** The market session states the status badge can wear. Crypto venues trade
@@ -177,15 +191,18 @@ export type StatuslineReadout = 'ohlc' | 'value';
  *  tapes wear the single 'extended' state — they have no pre/post split. */
 export type MarketStatus = 'open' | 'pre' | 'post' | 'extended' | 'closed' | 'holiday';
 
-const MARKET_LABELS: Record<MarketStatus, string> = {
-    open: 'Market Open',
-    pre: 'Pre-Market',
-    post: 'Post-Market',
-    extended: 'Extended Hours',
-    closed: 'Market Closed',
-    holiday: 'Market Holiday',
+const MARKET_LABELS: Record<MarketStatus, MessageDescriptor> = {
+    open: msg('widget.statusline.market.open', 'Market Open'),
+    pre: msg('widget.statusline.market.pre', 'Pre-Market'),
+    post: msg('widget.statusline.market.post', 'Post-Market'),
+    extended: msg('widget.statusline.market.extended', 'Extended Hours'),
+    closed: msg('widget.statusline.market.closed', 'Market Closed'),
+    holiday: msg('widget.statusline.market.holiday', 'Market Holiday'),
 };
-const REPLAY_LABEL = 'Replay Mode';
+const REPLAY_LABEL = msg('widget.statusline.replay', 'Replay Mode');
+/** The bar change beside the values: the price change, then the percent change. */
+const CHANGE_TEXT = msg('widget.statusline.change', '{change} ({percent})');
+const EM_DASH = '—';
 /**
  * The replay badge: the circle and its glyph (two left-pointing triangles) in ONE drawing —
  * a circle behind an icon element rounds to device pixels separately from it, so the glyph
@@ -214,12 +231,13 @@ const MARKET_INKS: Record<MarketStatus, string> = {
  * The active price style's value readout for the status line, read live from the
  * renderer: the up/down COLORS from the cosmetic config (candle bodies for candles/HA —
  * and plugin styles, which paint candles as their base — bar ticks for bars, the single
- * plot color for line/area, the two baseline line colors for baseline), the DIRECTION
- * rule that decides which of the two a bar wears, and the readout SHAPE. Candles/bars
- * compare close to open and show O/H/L/C; single-line styles show just the plotted
- * value; baseline compares close to the LIVE baseline reference price (the paint splits
- * by position, not by bar direction — a bar that closed down can still sit in the green
- * region). Null colors fall back to the theme tokens.
+ * plot color for the line family and area, the two baseline line colors for baseline,
+ * the column colors made opaque for columns), the DIRECTION rule that decides which of
+ * the two a bar wears, and the readout SHAPE. Candles/bars compare close to open and show
+ * O/H/L/C; single-value styles show just the plotted value; baseline compares close to
+ * the LIVE baseline reference price (the paint splits by position, not by bar direction —
+ * a bar that closed down can still sit in the green region), and columns compare it to
+ * the previous bar's close, as they are painted. Null colors fall back to the theme tokens.
  */
 export function statuslineInkOf(renderer: RendererReads, priceStyle: string): [string | null, string | null, ((bar: { open: number; close: number }) => boolean) | null, StatuslineReadout] {
     const cfg = renderer.getConfig() as
@@ -229,6 +247,7 @@ export function statuslineInkOf(renderer: RendererReads, priceStyle: string): [s
               line?: { color?: unknown };
               area?: { lineColor?: unknown };
               baseline?: { topLineColor?: unknown; bottomLineColor?: unknown };
+              columns?: { upColor?: unknown; downColor?: unknown };
           }
         | null
         | undefined;
@@ -236,7 +255,9 @@ export function statuslineInkOf(renderer: RendererReads, priceStyle: string): [s
     switch (priceStyle) {
         case 'bars':
             return [c(cfg?.bars?.upColor), c(cfg?.bars?.downColor), null, 'ohlc'];
-        case 'line': {
+        case 'line':
+        case 'linemarkers':
+        case 'stepline': {
             const v = c(cfg?.line?.color);
             return [v, v, null, 'value'];
         }
@@ -251,6 +272,17 @@ export function statuslineInkOf(renderer: RendererReads, priceStyle: string): [s
                 return Number.isFinite(level) ? bar.close >= level : bar.close >= bar.open;
             };
             return [c(cfg?.baseline?.topLineColor), c(cfg?.baseline?.bottomLineColor), isUp, 'value'];
+        }
+        case 'columns': {
+            // Resolved per render: the previous close follows the bar the readout shows. The
+            // first bar has none and is up, as its column is.
+            const isUp = (bar: { open: number; close: number }): boolean => {
+                const prev = renderer.get('previousClose');
+                return typeof prev === 'number' && Number.isFinite(prev) ? bar.close >= prev : true;
+            };
+            // Text in the columns' translucent wash would read faint: the readout wears it opaque.
+            const solid = (v: unknown): string | null => (typeof v === 'string' ? withAlpha(v, 1) : null);
+            return [solid(cfg?.columns?.upColor), solid(cfg?.columns?.downColor), isUp, 'value'];
         }
         default:
             return [c(cfg?.candles?.upColor), c(cfg?.candles?.downColor), null, 'ohlc'];
@@ -291,12 +323,14 @@ export class Statusline {
     /** The chart replays past bars — the badge shows the replay mode (see {@link setReplaying}). */
     private replaying = false;
     /** The right-click action menu — present once a host wires it via {@link attachMenu}. */
-    private menu: Menu | null = null;
+    private menu: ContextMenu | null = null;
     private menuHooks: StatuslineMenuHooks | null = null;
     /** Mirror of the renderer's `candleVisible` — see {@link setChartHidden}. */
     private chartHidden = false;
     private lastBar: BarLike | null = null;
     private hoverBar: BarLike | null = null;
+    private mintick: number | undefined;
+    private priceDecimals: number | undefined;
     private unsubs: Array<() => void> = [];
     /** Up/down ink for the OHLC + change values — the ACTIVE price style's configured
      *  colors (candle bodies, bar ticks, the line color, …); null falls back to the theme
@@ -320,6 +354,13 @@ export class Statusline {
     private fitKey: string | null = null;
     /** Web fonts landing after the last fit change every width without a resize. */
     private readonly onFontsLoaded = (): void => this.fit();
+    /** The bound chart's translator (English until {@link onChart}). */
+    private i18n: Translator | null = null;
+    private meta: { timeframe: string; provider: string } | null = null;
+
+    private t(text: MessageDescriptor): string {
+        return textOf(this.i18n, text);
+    }
 
     constructor(
         private readonly host: HTMLElement,
@@ -329,7 +370,7 @@ export class Statusline {
         private readonly iconFor?: (symbol: string) => string | undefined,
     ) {
         const doc = host.ownerDocument;
-        injectStyles(STYLE_ID, CSS, doc);
+        injectChromeStyles(STYLE_ID, CSS, doc);
         host.classList.add('vela-has-statusline'); // scopes the price-legend shift to THIS host
         this.el = doc.createElement('div');
         this.el.className = 'vela-statusline';
@@ -350,7 +391,7 @@ export class Statusline {
             icon: 'market-open',
             background: `color-mix(in srgb, ${MARKET_INKS.open} 20%, transparent)`,
             color: MARKET_INKS.open,
-            label: MARKET_LABELS.open,
+            label: this.t(MARKET_LABELS.open),
             host,
         });
         this.replayBadge = doc.createElement('span');
@@ -365,13 +406,14 @@ export class Statusline {
         this.ohlcEl.className = 'vela-sl-ohlc';
         this.changeEl = doc.createElement('span');
         this.changeEl.className = 'vela-sl-change';
+        this.changeEl.dir = 'ltr';
         // Show-chart eye: takes the value readout's place while the chart is hidden
         // (same glyph the legend rows wear on a hidden indicator). syncParts drives it.
         this.eyeEl = doc.createElement('button');
         this.eyeEl.type = 'button';
         this.eyeEl.className = 'vela-sl-eye';
         this.eyeEl.innerHTML = iconAt('eye-off', 14);
-        this.eyeEl.setAttribute('aria-label', 'Show chart');
+        this.eyeEl.setAttribute('aria-label', this.t(SHOW_CHART_LABEL));
         this.eyeEl.style.display = 'none';
         this.eyeEl.addEventListener('click', (e) => {
             e.stopPropagation(); // never bubbles into the chip's own handlers
@@ -394,8 +436,8 @@ export class Statusline {
         doc.fonts?.addEventListener('loadingdone', this.onFontsLoaded);
         // The tooltips portal to the nearest `.vela-ui` ancestor for theme tokens — resolve
         // them AFTER the statusline is in the DOM. The badge's content follows setMarketStatus.
-        this.marketTip = new Tooltip(this.marketEl, { content: MARKET_LABELS.open, placement: 'bottom' });
-        this.eyeTip = new Tooltip(this.eyeEl, { content: 'Show chart', placement: 'bottom' });
+        this.marketTip = new Tooltip(this.marketEl, { content: this.t(MARKET_LABELS.open), side: 'bottom' });
+        this.eyeTip = new Tooltip(this.eyeEl, { content: this.t(SHOW_CHART_LABEL), side: 'bottom' });
         this.setMarketStatus('open'); // crypto trades continuously (no session model yet)
         this.render();
     }
@@ -494,7 +536,18 @@ export class Statusline {
 
     /** The "· BINANCE · 1h" segment after the symbol — venue first, then resolution. */
     setMeta(timeframe: string, provider: string): void {
-        this.metaEl.textContent = `${provider ? `· ${provider.toUpperCase()} ` : ''}· ${timeframeLabel(timeframe)}`;
+        this.meta = { timeframe, provider };
+        this.metaEl.textContent = `${provider ? `· ${provider.toUpperCase()} ` : ''}· ${timeframeLabel(timeframe, this.i18n)}`;
+        this.fit();
+    }
+
+    /** Re-read every label and value in the chart's language. */
+    relocalize(): void {
+        this.eyeEl.setAttribute('aria-label', this.t(SHOW_CHART_LABEL));
+        this.eyeTip.setContent(this.t(SHOW_CHART_LABEL));
+        this.dressBadge();
+        if (this.meta) this.setMeta(this.meta.timeframe, this.meta.provider);
+        this.fitKey = null;
         this.fit();
     }
 
@@ -518,7 +571,7 @@ export class Statusline {
         this.replayBadge.hidden = !this.replaying;
         if (this.replaying) {
             this.marketEl.dataset.status = 'replay';
-            this.marketTip.setContent(REPLAY_LABEL);
+            this.marketTip.setContent(this.t(REPLAY_LABEL));
             return;
         }
         const status = this.marketStatus;
@@ -528,9 +581,9 @@ export class Statusline {
             icon: `market-${status}`,
             background: `color-mix(in srgb, ${ink} 20%, transparent)`,
             color: ink,
-            label: MARKET_LABELS[status],
+            label: this.t(MARKET_LABELS[status]),
         });
-        this.marketTip.setContent(MARKET_LABELS[status]);
+        this.marketTip.setContent(this.t(MARKET_LABELS[status]));
     }
 
     /** Show/hide one part — the settings dialog's Status line tab and the right-click
@@ -565,27 +618,23 @@ export class Statusline {
     attachMenu(hooks: StatuslineMenuHooks): void {
         this.menuHooks = hooks;
         if (this.menu) return;
-        this.menu = new Menu({
+        this.menu = new ContextMenu({
+            target: this.el,
             host: this.host,
-            items: [],
-            placement: 'bottom-start',
-            // Pointer-anchored action menu — checked state reads as a leading ✓ (the
-            // same shape as the chart's own context menu).
-            checkmarks: true,
+            items: this.menuItemsAt,
+            // The status line sits over the chart, where a long press is the touch crosshair.
+            longPress: false,
             onSelect: (id) => this.runMenuItem(id),
         });
-        this.el.addEventListener('contextmenu', this.onContextMenu);
     }
 
-    private readonly onContextMenu = (e: MouseEvent): void => {
-        if (!this.menu || !this.menuHooks) return;
+    private readonly menuItemsAt = (e: MouseEvent | PointerEvent): readonly MenuItemDescriptor[] | null => {
+        if (!this.menuHooks) return null;
         // This right-click is the status line's — keep the chart's own context menu closed.
-        e.preventDefault();
         e.stopPropagation();
         const chartVisible = this.menuHooks.chartVisible();
         this.setChartHidden(!chartVisible); // opportunistic re-sync with the live renderer
-        this.menu.setItems(statuslineMenuItems(this.parts, chartVisible));
-        this.menu.openAt(e.clientX, e.clientY);
+        return statuslineMenuItems(this.parts, chartVisible, this.i18n);
     };
 
     private runMenuItem(id: string): void {
@@ -604,12 +653,21 @@ export class Statusline {
     /** (Re)bind to a chart instance — called after every widget rebuild. */
     onChart(chart: Vela): void {
         this.detach();
+        const relabel = this.i18n !== chart.i18n;
+        this.i18n = chart.i18n;
+        if (relabel) this.relocalize();
         this.lastBar = null;
         this.hoverBar = null;
+        this.setPriceTick(chart.symbolFacts()?.mintick);
         this.unsubs.push(
             chart.on('bar', (b: OHLCV) => {
                 this.lastBar = b;
                 if (!this.hoverBar) this.render();
+            }),
+            chart.on('symbol:facts', ({ facts }) => {
+                if (this.mintick === facts?.mintick) return;
+                this.setPriceTick(facts?.mintick);
+                this.render();
             }),
             // A replay cut or restore replaces the newest bar without a `bar` event.
             chart.on('replay:start', () => {
@@ -636,7 +694,6 @@ export class Statusline {
         this.fitRO?.disconnect();
         this.fitRO = null;
         this.el.ownerDocument.fonts?.removeEventListener('loadingdone', this.onFontsLoaded);
-        this.el.removeEventListener('contextmenu', this.onContextMenu);
         this.menu?.destroy();
         this.menu = null;
         this.marketTip.destroy();
@@ -649,6 +706,12 @@ export class Statusline {
     private detach(): void {
         for (const u of this.unsubs) u();
         this.unsubs = [];
+    }
+
+    private setPriceTick(mintick: number | undefined): void {
+        this.mintick = mintick;
+        this.priceDecimals = mintick === undefined ? undefined : tickDecimals(mintick) || 2;
+        this.fitKey = null;
     }
 
     private render(): void {
@@ -670,7 +733,7 @@ export class Statusline {
     private widthKey(): string {
         const bar = this.hoverBar ?? this.lastBar;
         if (!bar) return this.readout;
-        const dp = decimalsFor(bar.close);
+        const dp = this.priceDecimals ?? decimalsFor(bar.close);
         const diff = bar.close - bar.open;
         const text = [bar.open, bar.high, bar.low, bar.close, diff].map((v) => v.toFixed(dp));
         text.push(((diff / bar.open) * 100).toFixed(2));
@@ -685,17 +748,23 @@ export class Statusline {
             this.changeEl.textContent = '';
             return;
         }
-        const dp = decimalsFor(bar.close);
+        const dp = this.priceDecimals ?? decimalsFor(bar.close);
         const doc = this.el.ownerDocument;
         const up = this.isUp ? this.isUp(bar) : bar.close >= bar.open;
         // ONE ink for the whole readout — OHLC values and the change share it, so the
         // row always reads in the color the plot wears at this bar.
         const ink = up ? (this.upColor ?? 'var(--vela-up)') : (this.downColor ?? 'var(--vela-down)');
+        const format = this.i18n?.format;
+        // Grouped like a price readout (`1,234.50`); English when no chart is bound yet.
+        const price = (v: number): string =>
+            !Number.isFinite(v) ? EM_DASH : format ? format.price(v, { decimals: dp, mintick: this.mintick, grouping: true, surface: 'statusLine' }) : v.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp });
+        const percent = (v: number): string => (format ? format.percent(v, { surface: 'statusLine' }) : `${v >= 0 ? '+' : '-'}${Math.abs(v).toFixed(2)}%`);
         const cell = (k: string, v: number) => {
             const s = doc.createElement('span');
             if (k) s.append(`${k} `);
             const b = doc.createElement('b');
-            b.textContent = fmtPrice(v, dp);
+            b.dir = 'ltr';
+            b.textContent = price(v);
             b.style.color = ink;
             s.appendChild(b);
             return s;
@@ -705,8 +774,15 @@ export class Statusline {
         // readout is that value — the close — at every level. The minimal level keeps the
         // percent delta alone.
         const { level } = this.layout;
-        this.ohlcEl.replaceChildren(...readoutCells(level, this.readout).map((c) => cell(c.label, bar[c.key])));
-        this.changeEl.textContent = level === 'minimal' ? fmtChangePct(bar.open, bar.close) : fmtChange(bar.open, bar.close);
+        this.ohlcEl.replaceChildren(...readoutCells(level, this.readout, this.i18n).map((c) => cell(c.label, bar[c.key])));
+        let change = '';
+        if (Number.isFinite(bar.open) && Number.isFinite(bar.close) && bar.open !== 0) {
+            const diff = bar.close - bar.open;
+            const pct = percent((diff / bar.open) * 100);
+            const signed = (diff >= 0 ? '+' : '') + price(diff);
+            change = level === 'minimal' ? pct : textOf(this.i18n, CHANGE_TEXT, { change: signed, percent: pct });
+        }
+        this.changeEl.textContent = change;
         this.changeEl.dataset.dir = up ? 'up' : 'down';
         this.changeEl.style.color = ink;
     }

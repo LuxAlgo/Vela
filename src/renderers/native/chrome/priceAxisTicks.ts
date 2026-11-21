@@ -15,6 +15,7 @@ interface TickMemo {
     indexed: boolean;
     mintick: number | undefined;
     format: PaneNode['axisFormat'];
+    fmt: SceneGraph['format'];
     fontSize: number;
     ticks: readonly PriceAxisTick[];
 }
@@ -52,7 +53,7 @@ export class PriceAxisTickSource {
         const pct = percentScaleFor(scene, pane);
         const height = pane.bounds.height;
         const fn = this.fn;
-        if (!fn || !(height > 0)) return paneAxisTicks(pane.scale, height, pct, scene.priceMintick, format);
+        if (!fn || !(height > 0)) return paneAxisTicks(pane.scale, height, pct, scene.priceMintick, format, scene.format);
         const s = pane.scale;
         const m = this.memo.get(pane);
         const fontSize = scene.style.fontSize;
@@ -68,11 +69,12 @@ export class PriceAxisTickSource {
             m.indexed === !!pct?.indexed &&
             m.mintick === scene.priceMintick &&
             m.format === format &&
+            m.fmt === scene.format &&
             m.fontSize === fontSize
         ) {
             return m.ticks;
         }
-        const defaults = paneAxisTicks(s, height, pct, scene.priceMintick, format);
+        const defaults = paneAxisTicks(s, height, pct, scene.priceMintick, format, scene.format);
         const ticks = this.callHook(fn, scene, pane, coords, defaults, pct?.baseline, pct ? (pct.indexed ? 'indexed' : 'percent') : 'price');
         this.memo.set(pane, {
             kind: pane.kind,
@@ -85,6 +87,7 @@ export class PriceAxisTickSource {
             indexed: !!pct?.indexed,
             mintick: scene.priceMintick,
             format,
+            fmt: scene.format,
             fontSize,
             ticks,
         });

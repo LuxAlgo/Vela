@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/message';
 import { Drawing, type AnchorSlot, type SerializedDrawing } from '../Drawing';
 import type { LineStyle } from '../../model/series';
 import type { Projector } from '../geometry';
@@ -254,15 +255,15 @@ export class RegressionChannel extends Drawing {
         // (per-line color + style, the two area fills, and the R² toggle).
         return {
             fields: [
-                { path: 'reg.midColor', label: 'Midline color', kind: 'color', group: 'line' },
-                { path: 'reg.midStyle', label: 'Midline style', kind: 'lineStyle', group: 'line' },
-                { path: 'reg.upperColor', label: 'Upper line color', kind: 'color', group: 'line' },
-                { path: 'reg.upperStyle', label: 'Upper line style', kind: 'lineStyle', group: 'line' },
-                { path: 'reg.lowerColor', label: 'Lower line color', kind: 'color', group: 'line' },
-                { path: 'reg.lowerStyle', label: 'Lower line style', kind: 'lineStyle', group: 'line' },
-                { path: 'reg.upperFill', label: 'Upper fill', kind: 'color', group: 'fill' },
-                { path: 'reg.lowerFill', label: 'Lower fill', kind: 'color', group: 'fill' },
-                { path: 'reg.showR2', label: 'Show R²', kind: 'boolean', group: 'behavior' },
+                { path: 'reg.midColor', label: msg('drawing.regressionchannel.regMidColor', 'Midline color'), kind: 'color', group: 'line' },
+                { path: 'reg.midStyle', label: msg('drawing.regressionchannel.regMidStyle', 'Midline style'), kind: 'lineStyle', group: 'line' },
+                { path: 'reg.upperColor', label: msg('drawing.regressionchannel.regUpperColor', 'Upper line color'), kind: 'color', group: 'line' },
+                { path: 'reg.upperStyle', label: msg('drawing.regressionchannel.regUpperStyle', 'Upper line style'), kind: 'lineStyle', group: 'line' },
+                { path: 'reg.lowerColor', label: msg('drawing.regressionchannel.regLowerColor', 'Lower line color'), kind: 'color', group: 'line' },
+                { path: 'reg.lowerStyle', label: msg('drawing.regressionchannel.regLowerStyle', 'Lower line style'), kind: 'lineStyle', group: 'line' },
+                { path: 'reg.upperFill', label: msg('drawing.regressionchannel.regUpperFill', 'Upper fill'), kind: 'color', group: 'fill' },
+                { path: 'reg.lowerFill', label: msg('drawing.regressionchannel.regLowerFill', 'Lower fill'), kind: 'color', group: 'fill' },
+                { path: 'reg.showR2', label: msg('drawing.regressionchannel.regShowR2', 'Show R²'), kind: 'boolean', group: 'behavior' },
             ],
         };
     }

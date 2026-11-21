@@ -1,11 +1,13 @@
+import { msg, withValues } from '../../i18n/message';
+import type { MessageLike } from '../../i18n/types';
 import type { OHLCV } from '../../model/ohlcv';
 import type { MarkerPoint } from '../../model/series';
 import type { DrawingPolyline } from '../../model/drawings';
-import { BULLISH, BEARISH, NEUTRAL, WARNING } from '../../palette';
+import { BULLISH, BEARISH, INFO, NEUTRAL, WARNING } from '../../palette';
 import type { ClassicBand, ClassicIndicatorSpec, ClassicPlot } from './define';
 import { bool, num, str } from './define';
 import { SETTINGS, STYLE, boolInput, colorInput, floatInput, intInput, optionInput, sourceInput, transp } from './shared';
-import { sourceValues } from './math';
+import { sourceValues, type SourceName } from './math';
 
 /** Price-anchored specials: stops, anchored averages, levels, pivots, patterns. */
 
@@ -36,15 +38,15 @@ function barInterval(bars: readonly OHLCV[]): number {
 
 const parabolicSar: ClassicIndicatorSpec = {
     type: 'parabolic-sar',
-    title: 'Parabolic SAR',
-    shortTitle: 'SAR',
+    title: msg('indicator.parabolicSar.title', 'Parabolic SAR'),
+    shortTitle: msg('indicator.parabolicSar.shortTitle', 'SAR'),
     overlay: true,
     inputs: [
-        floatInput('start', 'Start', 0.02, 0, 1, 0.01, 'Initial acceleration factor applied when a new trend begins.'),
-        floatInput('increment', 'Increment', 0.02, 0, 1, 0.01, 'Amount added to the acceleration factor each time the trend makes a new extreme point.'),
-        floatInput('maximum', 'Maximum', 0.2, 0.01, 1, 0.01, 'Upper cap on the acceleration factor.'),
-        colorInput(BULLISH, 'Bullish', 'bullColor', 'Color of the SAR crosses while they trail below price — uptrend, the stop sits under the market.'),
-        colorInput(BEARISH, 'Bearish', 'bearColor', 'Color of the SAR crosses while they sit above price — downtrend, the stop sits over the market.'),
+        floatInput('start', msg('indicator.parabolicSar.start', 'Start'), 0.02, 0, 1, 0.01, msg('indicator.parabolicSar.start.tooltip', 'Initial acceleration factor applied when a new trend begins.')),
+        floatInput('increment', msg('indicator.parabolicSar.increment', 'Increment'), 0.02, 0, 1, 0.01, msg('indicator.parabolicSar.increment.tooltip', 'Amount added to the acceleration factor each time the trend makes a new extreme point.')),
+        floatInput('maximum', msg('indicator.parabolicSar.maximum', 'Maximum'), 0.2, 0.01, 1, 0.01, msg('indicator.parabolicSar.maximum.tooltip', 'Upper cap on the acceleration factor.')),
+        colorInput(BULLISH, msg('indicator.parabolicSar.bullColor', 'Bullish'), 'bullColor', msg('indicator.parabolicSar.bullColor.tooltip', 'Color of the SAR crosses while they trail below price — uptrend, the stop sits under the market.')),
+        colorInput(BEARISH, msg('indicator.parabolicSar.bearColor', 'Bearish'), 'bearColor', msg('indicator.parabolicSar.bearColor.tooltip', 'Color of the SAR crosses while they sit above price — downtrend, the stop sits over the market.')),
     ],
     compute: (bars, inputs) => {
         const start = num(inputs, 'start', 0.02);
@@ -82,7 +84,7 @@ const parabolicSar: ClassicIndicatorSpec = {
         const bull = str(inputs, 'bullColor', BULLISH);
         const bear = str(inputs, 'bearColor', BEARISH);
         const colors = values.map((x, i) => (Number.isFinite(x) ? (x < bars[i]!.close ? bull : bear) : null));
-        return { plots: [{ key: 'sar', title: 'SAR', values, kind: 'cross', color: bull, colors }] };
+        return { plots: [{ key: 'sar', title: msg('indicator.parabolicSar.plot.sar', 'SAR'), values, kind: 'cross', color: bull, colors }] };
     },
 };
 
@@ -95,24 +97,38 @@ const VWAP_BANDS = [
     { show: 'band3', mult: 'band3Mult', defMult: 3, defOn: false },
 ] as const;
 
+/** The VWAP's per-band text; `{n}` is the band's number (1 to 3). */
+const VWAP_BAND_TEXT = {
+    show: msg('indicator.vwap.band', 'Band #{n}'),
+    showTooltips: [
+        msg('indicator.vwap.band1.tooltip', 'Show the first band pair.'),
+        msg('indicator.vwap.band2.tooltip', 'Show the second band pair.'),
+        msg('indicator.vwap.band3.tooltip', 'Show the third band pair.'),
+    ],
+    mult: msg('indicator.vwap.bandMult', 'Band #{n} Multiplier'),
+    multTooltip: msg('indicator.vwap.bandMult.tooltip', 'Multiplier for this band pair, in standard deviations or percent depending on the bands mode.'),
+    upper: msg('indicator.vwap.plot.upperBand', 'Upper Band #{n}'),
+    lower: msg('indicator.vwap.plot.lowerBand', 'Lower Band #{n}'),
+};
+
 const vwap: ClassicIndicatorSpec = {
     type: 'vwap',
-    title: 'Volume Weighted Average Price',
-    shortTitle: 'VWAP',
+    title: msg('indicator.vwap.title', 'Volume Weighted Average Price'),
+    shortTitle: msg('indicator.vwap.shortTitle', 'VWAP'),
     overlay: true,
     inputs: [
-        optionInput('anchor', 'Anchor Period', 'Session', VWAP_ANCHORS, 'Period anchoring the average. VWAP and its bands reset on the first bar of each new session, week, month, quarter or year (UTC).'),
-        sourceInput('HLC3', 'source', 'Source', 'Price used in the volume weighted average. Typical price (HLC3) is the classic choice.'),
-        optionInput('bandsMode', 'Bands Mode', BANDS_STDEV, [BANDS_STDEV, BANDS_PERCENT], 'Bands offset method: multiples of the volume weighted standard deviation of price around VWAP, or a percentage of the VWAP value.'),
+        optionInput('anchor', msg('indicator.vwap.anchor', 'Anchor Period'), 'Session', VWAP_ANCHORS, msg('indicator.vwap.anchor.tooltip', 'Period anchoring the average. VWAP and its bands reset on the first bar of each new session, week, month, quarter or year (UTC).')),
+        sourceInput('HLC3', 'source', msg('indicator.vwap.source', 'Source'), msg('indicator.vwap.source.tooltip', 'Price used in the volume weighted average. Typical price (HLC3) is the classic choice.')),
+        optionInput('bandsMode', msg('indicator.vwap.bandsMode', 'Bands Mode'), BANDS_STDEV, [BANDS_STDEV, BANDS_PERCENT], msg('indicator.vwap.bandsMode.tooltip', 'Bands offset method: multiples of the volume weighted standard deviation of price around VWAP, or a percentage of the VWAP value.')),
         ...VWAP_BANDS.flatMap((b, i) => [
-            boolInput(b.show, `Band #${i + 1}`, b.defOn, SETTINGS, `Show the ${['first', 'second', 'third'][i]} band pair.`),
-            floatInput(b.mult, `Band #${i + 1} Multiplier`, b.defMult, 0, 50, 0.5, 'Multiplier for this band pair, in standard deviations or percent depending on the bands mode.'),
+            boolInput(b.show, withValues(VWAP_BAND_TEXT.show, { n: i + 1 }), b.defOn, SETTINGS, VWAP_BAND_TEXT.showTooltips[i]),
+            floatInput(b.mult, withValues(VWAP_BAND_TEXT.mult, { n: i + 1 }), b.defMult, 0, 50, 0.5, VWAP_BAND_TEXT.multTooltip),
         ]),
-        boolInput('hideDwm', 'Hide VWAP on 1D or Above', true, SETTINGS, 'Hide the VWAP and its bands on daily and higher timeframes, where an intraday anchored VWAP is not meaningful.'),
-        colorInput(BULLISH, 'Bullish', 'bullColor', 'VWAP line color while price closes above it, and the color of the lower (support) bands.'),
-        colorInput(BEARISH, 'Bearish', 'bearColor', 'VWAP line color while price closes below it, and the color of the upper (resistance) bands.'),
-        colorInput(NEUTRAL, 'Bands', 'bandsColor', 'Deviation bands fill color.'),
-        boolInput('fill', 'Bands Fill', true, STYLE, 'Fill the area between each visible band pair.'),
+        boolInput('hideDwm', msg('indicator.vwap.hideDwm', 'Hide VWAP on 1D or Above'), true, SETTINGS, msg('indicator.vwap.hideDwm.tooltip', 'Hide the VWAP and its bands on daily and higher timeframes, where an intraday anchored VWAP is not meaningful.')),
+        colorInput(BULLISH, msg('indicator.vwap.bullColor', 'Bullish'), 'bullColor', msg('indicator.vwap.bullColor.tooltip', 'VWAP line color while price closes above it, and the color of the lower (support) bands.')),
+        colorInput(BEARISH, msg('indicator.vwap.bearColor', 'Bearish'), 'bearColor', msg('indicator.vwap.bearColor.tooltip', 'VWAP line color while price closes below it, and the color of the upper (resistance) bands.')),
+        colorInput(NEUTRAL, msg('indicator.vwap.bandsColor', 'Bands'), 'bandsColor', msg('indicator.vwap.bandsColor.tooltip', 'Deviation bands fill color.')),
+        boolInput('fill', msg('indicator.vwap.fill', 'Bands Fill'), true, STYLE, msg('indicator.vwap.fill.tooltip', 'Fill the area between each visible band pair.')),
     ],
     compute: (bars, inputs) => {
         const anchor = str(inputs, 'anchor', 'Session') as Anchor;
@@ -160,13 +176,13 @@ const vwap: ClassicIndicatorSpec = {
         const bear = str(inputs, 'bearColor', BEARISH);
         const fillColor = transp(str(inputs, 'bandsColor', NEUTRAL), 95);
         const plots: ClassicPlot[] = [
-            { key: 'vwap', title: 'VWAP', values, color: bull, colors: values.map((x, i) => (Number.isFinite(x) ? (bars[i]!.close >= x ? bull : bear) : null)) },
+            { key: 'vwap', title: msg('indicator.vwap.plot.vwap', 'VWAP'), values, color: bull, colors: values.map((x, i) => (Number.isFinite(x) ? (bars[i]!.close >= x ? bull : bear) : null)) },
         ];
         const fills: ClassicBand[] = [];
         bands.forEach((band, i) => {
             plots.push(
-                { key: `up${i}`, title: `Upper Band #${i + 1}`, values: band.up, color: transp(bear, 40) },
-                { key: `down${i}`, title: `Lower Band #${i + 1}`, values: band.down, color: transp(bull, 40) },
+                { key: `up${i}`, title: withValues(VWAP_BAND_TEXT.upper, { n: i + 1 }), values: band.up, color: transp(bear, 40) },
+                { key: `down${i}`, title: withValues(VWAP_BAND_TEXT.lower, { n: i + 1 }), values: band.down, color: transp(bull, 40) },
             );
             if (bool(inputs, 'fill', true)) fills.push({ key: `band${i}`, from: `up${i}`, to: `down${i}`, color: fillColor });
         });
@@ -182,15 +198,15 @@ const PIVOT_AUTO = 'Auto';
 
 const pivotPoints: ClassicIndicatorSpec = {
     type: 'pivot-points',
-    title: 'Pivot Points Standard',
-    shortTitle: 'Pivots',
+    title: msg('indicator.pivotPoints.title', 'Pivot Points Standard'),
+    shortTitle: msg('indicator.pivotPoints.shortTitle', 'Pivots'),
     overlay: true,
     inputs: [
-        optionInput('kind', 'Type', PIVOT_TRADITIONAL, [PIVOT_TRADITIONAL, PIVOT_FIBONACCI, PIVOT_CAMARILLA, PIVOT_WOODIE], 'Formula used to calculate the levels. Traditional is the classic floor-trader method; Fibonacci projects 38.2/61.8/100% of the prior range around the pivot; Camarilla scales the prior range around the prior close; Woodie gives extra weight to the period open.'),
-        optionInput('anchor', 'Pivots Timeframe', PIVOT_AUTO, [PIVOT_AUTO, 'Daily', 'Weekly', 'Monthly', 'Yearly'], "Period the pivots are anchored to. 'Auto' follows the chart's bar spacing: daily pivots up to 15-minute bars, weekly on other intraday bars, monthly on daily bars, yearly above."),
-        colorInput(WARNING, 'Pivot', 'pivotColor', 'Color of the central pivot (P) level.'),
-        colorInput(BEARISH, 'Resistances', 'resistanceColor', 'Color of the resistance (R) levels.'),
-        colorInput(BULLISH, 'Supports', 'supportColor', 'Color of the support (S) levels.'),
+        optionInput('kind', msg('indicator.pivotPoints.kind', 'Type'), PIVOT_TRADITIONAL, [PIVOT_TRADITIONAL, PIVOT_FIBONACCI, PIVOT_CAMARILLA, PIVOT_WOODIE], withValues(msg('indicator.pivotPoints.kind.tooltip', 'Formula used to calculate the levels. Traditional is the classic floor-trader method; Fibonacci projects {level1, number}/{level2, number}/{level3, number}% of the prior range around the pivot; Camarilla scales the prior range around the prior close; Woodie gives extra weight to the period open.'), { level1: 38.2, level2: 61.8, level3: 100 })),
+        optionInput('anchor', msg('indicator.pivotPoints.anchor', 'Pivots Timeframe'), PIVOT_AUTO, [PIVOT_AUTO, 'Daily', 'Weekly', 'Monthly', 'Yearly'], msg('indicator.pivotPoints.anchor.tooltip', "Period the pivots are anchored to. Auto follows the chart's timeframe: daily pivots up to 15-minute bars, weekly on other intraday bars, monthly on daily bars, yearly above.")),
+        colorInput(WARNING, msg('indicator.pivotPoints.pivotColor', 'Pivot'), 'pivotColor', msg('indicator.pivotPoints.pivotColor.tooltip', 'Color of the central pivot (P) level.')),
+        colorInput(BEARISH, msg('indicator.pivotPoints.resistanceColor', 'Resistances'), 'resistanceColor', msg('indicator.pivotPoints.resistanceColor.tooltip', 'Color of the resistance (R) levels.')),
+        colorInput(BULLISH, msg('indicator.pivotPoints.supportColor', 'Supports'), 'supportColor', msg('indicator.pivotPoints.supportColor.tooltip', 'Color of the support (S) levels.')),
     ],
     compute: (bars, inputs) => {
         const interval = barInterval(bars);
@@ -275,15 +291,15 @@ const pivotPoints: ClassicIndicatorSpec = {
 
 const fiftyTwoWeek: ClassicIndicatorSpec = {
     type: '52-week-high-low',
-    title: '52 Week High/Low',
-    shortTitle: '52W H/L',
+    title: msg('indicator.n52WeekHighLow.title', '52-Week High/Low'),
+    shortTitle: msg('indicator.n52WeekHighLow.shortTitle', '52W H/L'),
     overlay: true,
     inputs: [
-        intInput('weeks', 'Weeks', 52, 1, 520, 'Length of the rolling window, in weeks.'),
-        boolInput('showAllTime', 'Show All-Time High/Low', false, SETTINGS, "Additionally display the all-time high and low, tracked over the symbol's full loaded history."),
-        colorInput(BULLISH, '52 Week High', 'highColor', 'Color of the 52 week high level.'),
-        colorInput(BEARISH, '52 Week Low', 'lowColor', 'Color of the 52 week low level.'),
-        colorInput(NEUTRAL, 'All-Time High/Low', 'allTimeColor', 'Color of the all-time high and all-time low levels.'),
+        intInput('weeks', msg('indicator.n52WeekHighLow.weeks', 'Weeks'), 52, 1, 520, msg('indicator.n52WeekHighLow.weeks.tooltip', 'Length of the rolling window, in weeks.')),
+        boolInput('showAllTime', msg('indicator.n52WeekHighLow.showAllTime', 'Show All-Time High/Low'), false, SETTINGS, msg('indicator.n52WeekHighLow.showAllTime.tooltip', "Additionally display the all-time high and low, tracked over the symbol's full loaded history.")),
+        colorInput(BULLISH, msg('indicator.n52WeekHighLow.highColor', '52-Week High'), 'highColor', msg('indicator.n52WeekHighLow.highColor.tooltip', 'Color of the 52-week high level.')),
+        colorInput(BEARISH, msg('indicator.n52WeekHighLow.lowColor', '52-Week Low'), 'lowColor', msg('indicator.n52WeekHighLow.lowColor.tooltip', 'Color of the 52-week low level.')),
+        colorInput(NEUTRAL, msg('indicator.n52WeekHighLow.allTimeColor', 'All-Time High/Low'), 'allTimeColor', msg('indicator.n52WeekHighLow.allTimeColor.tooltip', 'Color of the all-time high and all-time low levels.')),
     ],
     compute: (bars, inputs) => {
         const span = num(inputs, 'weeks', 52) * 7 * DAY_MS;
@@ -315,12 +331,12 @@ const fiftyTwoWeek: ClassicIndicatorSpec = {
             atl[i] = runLow;
         }
         const plots: ClassicPlot[] = [
-            { key: 'high', title: '52 Week High', values: hi, kind: 'step', color: str(inputs, 'highColor', BULLISH), width: 2 },
-            { key: 'low', title: '52 Week Low', values: lo, kind: 'step', color: str(inputs, 'lowColor', BEARISH), width: 2 },
+            { key: 'high', title: '52 Week High', displayTitle: msg('indicator.n52WeekHighLow.plot.high', '52-Week High'), values: hi, kind: 'step', color: str(inputs, 'highColor', BULLISH), width: 2 },
+            { key: 'low', title: '52 Week Low', displayTitle: msg('indicator.n52WeekHighLow.plot.low', '52-Week Low'), values: lo, kind: 'step', color: str(inputs, 'lowColor', BEARISH), width: 2 },
         ];
         if (bool(inputs, 'showAllTime', false)) {
             const ink = str(inputs, 'allTimeColor', NEUTRAL);
-            plots.push({ key: 'ath', title: 'All-Time High', values: ath, kind: 'step', color: ink }, { key: 'atl', title: 'All-Time Low', values: atl, kind: 'step', color: ink });
+            plots.push({ key: 'ath', title: msg('indicator.n52WeekHighLow.plot.ath', 'All-Time High'), values: ath, kind: 'step', color: ink }, { key: 'atl', title: msg('indicator.n52WeekHighLow.plot.atl', 'All-Time Low'), values: atl, kind: 'step', color: ink });
         }
         return { plots };
     },
@@ -328,14 +344,14 @@ const fiftyTwoWeek: ClassicIndicatorSpec = {
 
 const zigzag: ClassicIndicatorSpec = {
     type: 'zigzag',
-    title: 'ZigZag',
+    title: msg('indicator.zigzag.title', 'ZigZag'),
     overlay: true,
     inputs: [
-        floatInput('deviation', 'Deviation (%)', 5, 0.01, 100, 0.1, 'Minimum reversal from the leg extreme, as a percentage of that extreme, required to confirm a new pivot.'),
-        { ...intInput('depth', 'Depth', 10, 2, 500, 'Minimum number of bars required between two consecutive pivots.') },
-        colorInput(BULLISH, 'Up Leg', 'bullColor', 'Color of rising zigzag segments.'),
-        colorInput(BEARISH, 'Down Leg', 'bearColor', 'Color of falling zigzag segments.'),
-        { key: 'lineWidth', title: 'Width', type: 'int', defval: 2, min: 1, max: 10, step: 1, group: STYLE, tooltip: 'Width of the zigzag segments.' },
+        floatInput('deviation', msg('indicator.zigzag.deviation', 'Deviation (%)'), 5, 0.01, 100, 0.1, msg('indicator.zigzag.deviation.tooltip', 'Minimum reversal from the leg extreme, as a percentage of that extreme, required to confirm a new pivot.')),
+        { ...intInput('depth', msg('indicator.zigzag.depth', 'Depth'), 10, 2, 500, msg('indicator.zigzag.depth.tooltip', 'Minimum number of bars required between two consecutive pivots.')) },
+        colorInput(BULLISH, msg('indicator.zigzag.bullColor', 'Up Leg'), 'bullColor', msg('indicator.zigzag.bullColor.tooltip', 'Color of rising zigzag segments.')),
+        colorInput(BEARISH, msg('indicator.zigzag.bearColor', 'Down Leg'), 'bearColor', msg('indicator.zigzag.bearColor.tooltip', 'Color of falling zigzag segments.')),
+        { key: 'lineWidth', title: msg('indicator.zigzag.lineWidth', 'Width'), type: 'int', defval: 2, min: 1, max: 10, step: 1, group: STYLE, tooltip: msg('indicator.zigzag.lineWidth.tooltip', 'Width of the zigzag segments.') },
     ],
     compute: (bars, inputs) => {
         const dev = num(inputs, 'deviation', 5) / 100;
@@ -395,13 +411,13 @@ const zigzag: ClassicIndicatorSpec = {
 
 const williamsFractal: ClassicIndicatorSpec = {
     type: 'williams-fractal',
-    title: 'Williams Fractal',
-    shortTitle: 'Fractals',
+    title: msg('indicator.williamsFractal.title', 'Williams Fractal'),
+    shortTitle: msg('indicator.williamsFractal.shortTitle', 'Fractals'),
     overlay: true,
     inputs: [
-        intInput('periods', 'Periods', 2, 2, 50, "Bars required on each side of the candidate bar. 2 is Bill Williams' classic 5-bar fractal; a fractal is confirmed only once this many later bars have closed."),
-        colorInput(BEARISH, 'Up Fractal', 'upColor', 'Color of the up fractal marker (swing high), drawn above the fractal bar.'),
-        colorInput(BULLISH, 'Down Fractal', 'downColor', 'Color of the down fractal marker (swing low), drawn below the fractal bar.'),
+        intInput('periods', msg('indicator.williamsFractal.periods', 'Periods'), 2, 2, 50, msg('indicator.williamsFractal.periods.tooltip', "Bars required on each side of the candidate bar. 2 is Bill Williams' classic 5-bar fractal; a fractal is confirmed only once this many later bars have closed.")),
+        colorInput(BEARISH, msg('indicator.williamsFractal.upColor', 'Up Fractal'), 'upColor', msg('indicator.williamsFractal.upColor.tooltip', 'Color of the up fractal marker (swing high), drawn above the fractal bar.')),
+        colorInput(BULLISH, msg('indicator.williamsFractal.downColor', 'Down Fractal'), 'downColor', msg('indicator.williamsFractal.downColor.tooltip', 'Color of the down fractal marker (swing low), drawn below the fractal bar.')),
     ],
     compute: (bars, inputs) => {
         const p = num(inputs, 'periods', 2);
@@ -425,4 +441,33 @@ const williamsFractal: ClassicIndicatorSpec = {
     },
 };
 
-export const overlaySpecs: ClassicIndicatorSpec[] = [parabolicSar, vwap, pivotPoints, fiftyTwoWeek, zigzag, williamsFractal];
+/** One of a bar's summary prices as a study of its own — the line a source input names, found by its name. */
+function priceStudy(type: string, source: SourceName, text: { title: MessageLike; plot: MessageLike; colorTooltip: MessageLike }): ClassicIndicatorSpec {
+    return {
+        type,
+        title: text.title,
+        overlay: true,
+        inputs: [colorInput(INFO, undefined, 'color', text.colorTooltip)],
+        compute: (bars, inputs) => ({ plots: [{ key: 'price', title: text.plot, values: sourceValues(bars, source), color: str(inputs, 'color', INFO) }] }),
+    };
+}
+
+const medianPrice = priceStudy('median-price', 'HL2', {
+    title: msg('indicator.medianPrice.title', 'Median Price'),
+    plot: msg('indicator.medianPrice.plot.price', 'Median Price'),
+    colorTooltip: msg('indicator.medianPrice.color.tooltip', 'Color of the line through the midpoint of each bar: the average of its high and low.'),
+});
+
+const typicalPrice = priceStudy('typical-price', 'HLC3', {
+    title: msg('indicator.typicalPrice.title', 'Typical Price'),
+    plot: msg('indicator.typicalPrice.plot.price', 'Typical Price'),
+    colorTooltip: msg('indicator.typicalPrice.color.tooltip', 'Color of the line through the average of each bar’s high, low and close.'),
+});
+
+const averagePrice = priceStudy('average-price', 'OHLC4', {
+    title: msg('indicator.averagePrice.title', 'Average Price'),
+    plot: msg('indicator.averagePrice.plot.price', 'Average Price'),
+    colorTooltip: msg('indicator.averagePrice.color.tooltip', 'Color of the line through the average of each bar’s open, high, low and close.'),
+});
+
+export const overlaySpecs: ClassicIndicatorSpec[] = [parabolicSar, vwap, pivotPoints, fiftyTwoWeek, zigzag, williamsFractal, medianPrice, typicalPrice, averagePrice];

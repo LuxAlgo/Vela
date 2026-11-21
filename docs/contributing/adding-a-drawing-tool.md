@@ -78,7 +78,9 @@ rather than asking the type for behavior:
   state machine how to place the tool — click-to-place, press-drag-release, or freehand capture —
   with no per-type interaction code. `anchorSchema()` drives how many anchors and which axis each is
   free on; `constrainHandleDrag` / `translateBody` / `onPlaced` re-impose any cross-anchor
-  invariants.
+  invariants. Handle `i` moves anchor `i` by default; a type with more handles than anchors
+  overrides `dragHandle` to say which anchor coordinates each extra handle edits (the
+  Rectangle's edge midpoints move one side each).
 - **The settings popup.** `schema()` (dot-paths + control kinds, assembled from the reusable
   `LINE_FIELDS` / `FILL_FIELDS` / `TEXT_FIELDS` bundles) is rendered generically — no per-type UI.
 - **Persistence, undo, clipboard.** The type serializes to plain JSON automatically; any per-instance

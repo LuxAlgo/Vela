@@ -1,7 +1,32 @@
 // Status line MODEL — the segment visibility the parts config implies, plus the item
 // descriptors for the status line's right-click menu. Pure functions over plain state,
 // so both can be tested without a DOM; `Statusline` projects them onto its elements.
-import type { MenuItemDescriptor } from '../ui/components/menu';
+import type { MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
+import { msg } from '../core/i18n/message';
+import { textOf } from '../core/i18n/text';
+import type { MessageDescriptor, Translator } from '../core/i18n/types';
+
+/** The readout cells' one-letter labels. */
+const CELL_LABELS = {
+    open: msg('widget.statusline.openShort', 'O'),
+    high: msg('widget.statusline.highShort', 'H'),
+    low: msg('widget.statusline.lowShort', 'L'),
+    close: msg('widget.statusline.closeShort', 'C'),
+};
+
+/** Each part's name — the status line's right-click menu and the settings rows that toggle it. */
+export const STATUSLINE_PART_LABELS: Readonly<Record<'logo' | 'name' | 'market' | 'ohlc' | 'change', MessageDescriptor>> = {
+    logo: msg('widget.statusline.part.logo', 'Symbol logo'),
+    name: msg('widget.statusline.part.name', 'Symbol name'),
+    market: msg('widget.statusline.part.market', 'Market status'),
+    ohlc: msg('widget.statusline.part.ohlc', 'OHLC values'),
+    change: msg('widget.statusline.part.change', 'Bar change values'),
+};
+
+const TEXT = {
+    hideChart: msg('widget.statusline.hideChart', 'Hide chart'),
+    showChart: msg('widget.statusline.showChart', 'Show chart'),
+};
 
 /** The status line's toggleable segments — the settings dialog's Status line tab and
  *  the status line's own right-click menu drive these. */
@@ -45,29 +70,34 @@ export const STATUSLINE_LADDER: readonly StatuslineLayout[] = [
  *  One-line styles ('value') only ever plot the close, so their readout is the single
  *  unlabeled value at every level; bar-shaped styles drop O/H/L below 'full' and keep
  *  the labeled close, whose 'C' the 'minimal' level drops too. */
-export function readoutCells(level: StatuslineLevel, readout: 'ohlc' | 'value'): ReadonlyArray<{ key: 'open' | 'high' | 'low' | 'close'; label: string }> {
+export function readoutCells(level: StatuslineLevel, readout: 'ohlc' | 'value', i18n?: Translator | null): ReadonlyArray<{ key: 'open' | 'high' | 'low' | 'close'; label: string }> {
     if (readout === 'value') return [{ key: 'close', label: '' }];
+    const label = (key: keyof typeof CELL_LABELS): string => textOf(i18n, CELL_LABELS[key]);
     if (level === 'full') {
         return [
-            { key: 'open', label: 'O' },
-            { key: 'high', label: 'H' },
-            { key: 'low', label: 'L' },
-            { key: 'close', label: 'C' },
+            { key: 'open', label: label('open') },
+            { key: 'high', label: label('high') },
+            { key: 'low', label: label('low') },
+            { key: 'close', label: label('close') },
         ];
     }
-    return [{ key: 'close', label: level === 'compact' ? 'C' : '' }];
+    return [{ key: 'close', label: level === 'compact' ? label('close') : '' }];
 }
 
 /** Right-click menu rows: one checkable toggle per part (same labels as the settings
  *  dialog's Status line tab), then the chart itself — the same hide/show of the price
  *  series the object tree's eye drives. */
-export function statuslineMenuItems(parts: Record<StatuslinePart, boolean>, chartVisible: boolean): MenuItemDescriptor[] {
+export function statuslineMenuItems(parts: Record<StatuslinePart, boolean>, chartVisible: boolean, i18n?: Translator | null): MenuItemDescriptor[] {
+    const t = (m: MessageDescriptor): string => textOf(i18n, m);
     return [
-        { id: 'part:logo', label: 'Symbol logo', checked: parts.logo },
-        { id: 'part:name', label: 'Symbol name', checked: parts.name },
-        { id: 'part:market', label: 'Market status', checked: parts.market },
-        { id: 'part:ohlc', label: 'OHLC values', checked: parts.ohlc },
-        { id: 'part:change', label: 'Bar change values', checked: parts.change },
-        { id: 'chart', label: chartVisible ? 'Hide chart' : 'Show chart', separatorBefore: true },
+        { id: 'part:logo', label: t(STATUSLINE_PART_LABELS.logo), checked: parts.logo },
+        { id: 'part:name', label: t(STATUSLINE_PART_LABELS.name), checked: parts.name },
+        { id: 'part:market', label: t(STATUSLINE_PART_LABELS.market), checked: parts.market },
+        { id: 'part:ohlc', label: t(STATUSLINE_PART_LABELS.ohlc), checked: parts.ohlc },
+        { id: 'part:change', label: t(STATUSLINE_PART_LABELS.change), checked: parts.change },
+        { id: 'chart', label: t(chartVisible ? TEXT.hideChart : TEXT.showChart), separatorBefore: true },
     ];
 }
+
+/** The show-chart eye's label (the same text as the menu row). */
+export const SHOW_CHART_LABEL = TEXT.showChart;

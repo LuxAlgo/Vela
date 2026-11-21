@@ -9,12 +9,16 @@
 // The layout itself lives in `object-tree-model.ts` — this file pulls a snapshot off the
 // chart, hands it over, and paints the result. Kept in sync via the chart's event bus, and
 // rebound to each new chart instance after a widget rebuild.
+import { msg } from '../core/i18n/message';
+import { sliceGraphemes } from '../core/i18n/text';
+import type { Translator } from '../core/i18n/types';
 import type { Vela } from '../Vela';
 import type { IndicatorHandle } from '../core/IndicatorHandle';
 import type { SerializedDrawing } from '../core/drawings/Drawing';
-import { injectStyles } from '../ui/styles';
-import { iconEl } from '../ui/icons';
-import { Menu, type MenuItemDescriptor } from '../ui/components/menu';
+import { injectChromeStyles } from '../ui/chromeStyles';
+import { iconEl } from '@luxalgo/vela-ui/icons';
+import type { MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
+import { ContextMenu } from '@luxalgo/vela-ui/context-menu';
 import { tickerIconEl } from './symbol-icon';
 import { parseSymbol } from '../data/ProviderRegistry';
 import {
@@ -47,13 +51,69 @@ import {
     type TreeSnapshot,
 } from './object-tree-model';
 import { SidePanel } from './side-panel';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
+
+const TEXT = {
+    objectTree: msg('widget.objectTree.objectTree', 'Object tree'),
+    price: msg('widget.objectTree.price', 'Price'),
+    emptyHint: msg('widget.objectTree.emptyHint', 'Add an indicator or a drawing to populate the tree'),
+    groupDrawings: msg('widget.objectTree.groupDrawings', '{count, plural, one {Group this drawing} other {Group these drawings}}'),
+    alreadyInAGroup: msg('widget.objectTree.alreadyInAGroup', 'Already in a group'),
+    duplicateSelected: msg('widget.objectTree.duplicateSelected', 'Duplicate the selected drawings'),
+    duplicate: msg('widget.objectTree.duplicate', 'Duplicate'),
+    movePaneUp: msg('widget.objectTree.movePaneUp', 'Move panel up'),
+    movePaneDown: msg('widget.objectTree.movePaneDown', 'Move panel down'),
+    expandPane: msg('widget.objectTree.expandPane', 'Expand panel'),
+    collapsePane: msg('widget.objectTree.collapsePane', 'Collapse panel'),
+    restorePanes: msg('widget.objectTree.restorePanes', 'Restore panels'),
+    maximizePane: msg('widget.objectTree.maximizePane', 'Maximize panel'),
+    hide: msg('widget.objectTree.hide', 'Hide'),
+    show: msg('widget.objectTree.show', 'Show'),
+    restackHint: msg('widget.objectTree.restackHint', 'Drag to change what draws in front'),
+    remove: msg('widget.objectTree.remove', 'Remove'),
+    moveIndicatorHint: msg('widget.objectTree.moveIndicatorHint', 'Drag to another panel, or between panels for a new one'),
+    unlockAll: msg('widget.objectTree.unlockAll', 'Unlock all'),
+    lockAll: msg('widget.objectTree.lockAll', 'Lock all'),
+    showAll: msg('widget.objectTree.showAll', 'Show all'),
+    hideAll: msg('widget.objectTree.hideAll', 'Hide all'),
+    removeAll: msg('widget.objectTree.removeAll', 'Remove all'),
+    unlock: msg('widget.objectTree.unlock', 'Unlock'),
+    lock: msg('widget.objectTree.lock', 'Lock'),
+    moveDrawingHint: msg('widget.objectTree.moveDrawingHint', 'Drag to restack, or onto another panel to move it there'),
+    ownScaleHint: msg('widget.objectTree.ownScaleHint', 'Draws against its own price scale'),
+    bringToFront: msg('widget.objectTree.bringToFront', 'Bring to front'),
+    sendToBack: msg('widget.objectTree.sendToBack', 'Send to back'),
+    indicatorSettings: msg('widget.objectTree.indicatorSettings', 'Indicator settings'),
+    moveTo: msg('widget.objectTree.moveTo', 'Move to'),
+    newPaneAbove: msg('widget.objectTree.newPaneAbove', 'New panel above'),
+    newPaneBelow: msg('widget.objectTree.newPaneBelow', 'New panel below'),
+    newGroup: msg('widget.objectTree.newGroup', 'New group'),
+    addToGroup: msg('widget.objectTree.addToGroup', 'Add to group'),
+    moveToGroup: msg('widget.objectTree.moveToGroup', 'Move to group'),
+    rename: msg('widget.objectTree.rename', 'Rename…'),
+    selectAll: msg('widget.objectTree.selectAll', 'Select all'),
+    bringAllToFront: msg('widget.objectTree.bringAllToFront', 'Bring all to front'),
+    sendAllToBack: msg('widget.objectTree.sendAllToBack', 'Send all to back'),
+    ungroup: msg('widget.objectTree.ungroup', 'Ungroup'),
+    selected: msg('widget.objectTree.selected', '{count, plural, one {# selected} other {# selected}}'),
+    groupMembers: msg('widget.objectTree.groupMembers', '{count, plural, one {# drawing — drag to move it} other {# drawings — drag to move them together}}'),
+    groupPick: msg('widget.objectTree.groupPick', 'Group selection ({count})'),
+    groupDropHint: msg('widget.objectTree.groupDropHint', 'Drag drawings here'),
+    removeFromGroup: msg('widget.objectTree.removeFromGroup', 'Remove from {group}'),
+    scaleTag: msg('widget.objectTree.scaleTag', 'scale'),
+};
+
+/** The panel's title (also its toggle's tooltip). */
+export const OBJECT_TREE_TITLE = TEXT.objectTree;
 
 const STYLE_ID = 'vela-widget-objtree';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 /* One pane's block. The transparent border reserves the drop-target outline. */
 .vela-ot-pane {
     border: 1px solid transparent;
-    border-radius: 6px;
+    border-radius: ${t.radius.md};
     margin: 2px 0;
 }
 .vela-ot-panehead { display: flex; align-items: center; gap: 2px; padding: 5px 6px; }
@@ -63,24 +123,24 @@ const CSS = `
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
     font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.08em;
 }
-.vela-ot-panesep { height: 1px; background: var(--vela-border); margin: 6px 8px; }
+.vela-ot-panesep { height: 1px; background: ${t.border}; margin: 6px 8px; }
 
 .vela-ot-row {
     display: flex;
     align-items: center;
     gap: 9px;
     padding: 6px 6px;
-    border-radius: 6px;
+    border-radius: ${t.radius.md};
     cursor: default;
 }
-.vela-ot-row:hover { background: var(--vela-hover); }
-.vela-ot-row > .vela-icon { color: var(--vela-fg-muted); width: 14px; height: 14px; font-size: 14px; justify-content: center; flex: none; }
+.vela-ot-row:hover { background: ${t.hover}; }
+.vela-ot-row > .vela-icon { color: ${t.fg.muted}; width: 14px; height: 14px; font-size: 14px; justify-content: center; flex: none; }
 /* Drawing glyphs come from the type registry at toolbar scale — bring them down to row size. */
 .vela-ot-row > .vela-icon svg { width: 14px; height: 14px; }
 .vela-ot-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -88,9 +148,9 @@ const CSS = `
 .vela-ot-row[data-hidden] > .vela-icon { opacity: 0.45; }
 /* Two different states, and both can be true at once: "picked" is what the panel has selected
    (the group/duplicate candidates), "selected" mirrors what the CHART has selected. */
-.vela-ot-row[data-picked] { background: var(--vela-active); }
-.vela-ot-row[data-picked] .vela-ot-name { color: var(--vela-fg-bright); }
-.vela-ot-row[data-selected] { box-shadow: inset 2px 0 0 var(--vela-accent); }
+.vela-ot-row[data-picked] { background: ${t.active}; }
+.vela-ot-row[data-picked] .vela-ot-name { color: ${t.fg.bright}; }
+.vela-ot-row[data-selected] { box-shadow: inset 2px 0 0 ${t.accent}; }
 .vela-ot-avatar {
     width: 14px;
     height: 14px;
@@ -99,7 +159,7 @@ const CSS = `
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: var(--vela-fg-on-fill);
+    color: ${t.fg.onFill};
     font-size: 10px;
     font-weight: 700;
 }
@@ -110,8 +170,8 @@ const CSS = `
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--vela-fg-muted);
-    background: var(--vela-hover);
+    color: ${t.fg.muted};
+    background: ${t.hover};
     border-radius: 3px;
     padding: 1px 4px;
 }
@@ -120,6 +180,7 @@ const CSS = `
 .vela-ot-acts { display: flex; align-items: center; gap: 0; flex: none; }
 .vela-ot-btn {
     all: unset;
+    box-sizing: border-box;
     cursor: pointer;
     flex: none;
     width: 20px;
@@ -128,7 +189,7 @@ const CSS = `
     align-items: center;
     justify-content: center;
     border-radius: 3px;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
     font-size: 12px;
     visibility: hidden;
 }
@@ -136,30 +197,40 @@ const CSS = `
 .vela-ot-panehead:hover .vela-ot-btn { visibility: visible; }
 /* An engaged action stays out: hidden and locked are states, and a state the user can only
    see by hovering is a state they will not find. */
-.vela-ot-row .vela-ot-btn[data-engaged] { visibility: visible; color: var(--vela-fg); }
-.vela-ot-btn:hover:not(:disabled) { background: var(--vela-active); color: var(--vela-fg-bright); }
+.vela-ot-row .vela-ot-btn[data-engaged] { visibility: visible; color: ${t.fg}; }
+.vela-ot-btn:hover:not(:disabled) { background: ${t.active}; color: ${t.fg.bright}; }
 .vela-ot-btn:disabled { opacity: 0.35; cursor: default; }
-.vela-ot-empty { padding: 20px 10px; text-align: center; color: var(--vela-fg-muted); font-size: 12px; }
+.vela-ot-empty { padding: 20px 10px; text-align: center; color: ${t.fg.muted}; font-size: 12px; }
 
 /* ── drawing groups ── */
 /* One top-level entry in a pane's drawing list: a lone drawing, or a whole group block. No
    border of its own — units stack flush, so consecutive highlighted rows read as one block; the
    drop-into-group outline is drawn inside the box instead (see the drag-and-drop rules). */
-.vela-ot-unit { border-radius: 6px; }
+.vela-ot-unit { border-radius: ${t.radius.md}; }
 /* Adjacent picked rows merge into one contiguous highlight: the shared edge loses its rounding. */
 .vela-ot-unit:has(> .vela-ot-row[data-picked]) + .vela-ot-unit > .vela-ot-row[data-picked] { border-top-left-radius: 0; border-top-right-radius: 0; }
 .vela-ot-unit:has(+ .vela-ot-unit > .vela-ot-row[data-picked]) > .vela-ot-row[data-picked] { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .vela-ot-row[data-row-kind='group'] > .vela-icon { width: 12px; font-size: 11px; }
 /* A member sits indented under its group's header. */
-.vela-ot-subrow { padding-left: 26px; }
+.vela-ot-subrow { padding-inline-start: 26px; }
+/* An empty group's only content: where its first drawing goes. */
+.vela-ot-grouphint {
+    margin-block: 2px 4px;
+    margin-inline: 26px 6px;
+    padding: 4px 8px;
+    border: 1px dashed ${t.border};
+    border-radius: ${t.radius.sm};
+    color: ${t.fg.muted};
+    font-size: 11px;
+}
 .vela-ot-rename {
     flex: 1;
     min-width: 0;
     padding: 1px 4px;
-    border: 1px solid var(--vela-accent);
-    border-radius: var(--vela-radius-sm);
-    background: var(--vela-surface-elev);
-    color: var(--vela-fg-bright);
+    border: 1px solid ${t.accent};
+    border-radius: ${t.radius.sm};
+    background: ${t.surface.elev};
+    color: ${t.fg.bright};
     font: inherit;
 }
 /* The selection bar. Always there — the actions it holds are the panel's, not a row's, so they
@@ -174,10 +245,10 @@ const CSS = `
     gap: 2px;
     margin: -8px -8px 6px;
     padding: 6px 8px;
-    border-bottom: 1px solid var(--vela-border);
-    background: var(--vela-bg);
+    border-bottom: 1px solid ${t.border};
+    background: ${t.bg};
 }
-.vela-ot-selcount { flex: 1; min-width: 0; color: var(--vela-fg-muted); font-size: 11px; }
+.vela-ot-selcount { flex: 1; min-width: 0; color: ${t.fg.muted}; font-size: 11px; }
 .vela-ot-selbar .vela-ot-btn { visibility: visible; width: 24px; height: 22px; }
 .vela-ot-selbar .vela-ot-btn[data-icon='group'] .vela-icon { width: 16px; height: 16px; font-size: 16px; }
 
@@ -195,23 +266,23 @@ const CSS = `
 .vela-ot-gap::before {
     content: '';
     position: absolute;
-    left: 0;
-    right: 0;
+    inset-inline-start: 0;
+    inset-inline-end: 0;
     top: 50%;
     height: 1px;
-    background: var(--vela-border);
+    background: ${t.border};
     transform: translateY(-50%);
 }
-.vela-ot-gap[data-drop] { height: 4px; background: var(--vela-fg-bright); }
+.vela-ot-gap[data-drop] { height: 4px; background: ${t.fg.bright}; }
 .vela-ot-gap[data-drop]::before { display: none; }
 /* A whole container accepts the drop: merging into a pane, or a pane with no drawings yet.
    The pane block's transparent border reserves the room for this outline; a group unit has no
    border to color, so it draws the same line as an inset outline (no layout footprint). */
-.vela-ot [data-drop='target'] { border-color: var(--vela-fg-bright); background: var(--vela-hover); }
-.vela-ot-unit[data-drop='target'] { outline: 1px solid var(--vela-fg-bright); outline-offset: -1px; }
+.vela-ot [data-drop='target'] { border-color: ${t.fg.bright}; background: ${t.hover}; }
+.vela-ot-unit[data-drop='target'] { outline: 1px solid ${t.fg.bright}; outline-offset: -1px; }
 /* Where a reorder would insert. */
-.vela-ot [data-drop='before'] { box-shadow: inset 0 2px 0 var(--vela-fg-bright); }
-.vela-ot [data-drop='after'] { box-shadow: inset 0 -2px 0 var(--vela-fg-bright); }
+.vela-ot [data-drop='before'] { box-shadow: inset 0 2px 0 ${t.fg.bright}; }
+.vela-ot [data-drop='after'] { box-shadow: inset 0 -2px 0 ${t.fg.bright}; }
 
 .vela-ot-ghost {
     position: fixed;
@@ -219,17 +290,18 @@ const CSS = `
     pointer-events: none;
     max-width: 220px;
     padding: 3px 10px;
-    border: 1px solid var(--vela-fg-bright);
-    border-radius: var(--vela-radius-sm);
-    background: var(--vela-surface-overlay);
-    color: var(--vela-fg);
-    box-shadow: var(--vela-shadow);
+    border: 1px solid ${t.fg.bright};
+    border-radius: ${t.radius.sm};
+    background: ${t.surface.overlay};
+    color: ${t.fg};
+    box-shadow: ${t.shadow};
     font-size: 12px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-`;
+
+}`;
 
 const REFRESH_EVENTS = [
     'indicator:added',
@@ -240,6 +312,9 @@ const REFRESH_EVENTS = [
     'drawing:created',
     'drawing:edited',
     'drawing:removed',
+    // An undo, a redo and a replaced document change the drawings without any of the three above.
+    'drawing:history',
+    'drawing:replaced',
 ] as const;
 
 /** How far a press has to travel before it counts as a drag rather than a click. */
@@ -374,7 +449,7 @@ export class ObjectTree extends SidePanel {
     }
     /** The last render's model, kept so a right-click reads the same state the rows show. */
     private pass: Pass | null = null;
-    private menu: Menu | null = null;
+    private readonly menu: ContextMenu;
     private menuActions = new Map<string, () => void>();
     private drag: DragSession | null = null;
 
@@ -383,11 +458,14 @@ export class ObjectTree extends SidePanel {
         /** The price row's avatar icon URL for a raw symbol — routed by the shell to the
          *  owning provider's `resolveSymbolIcon`. Absent ⇒ the initials badge. */
         private readonly iconFor?: (symbol: string) => string | undefined,
+        /** The shell's translator. Absent: English. */
+        i18n?: Translator,
     ) {
-        super(host, 'Object tree', 'vela-ot');
-        injectStyles(STYLE_ID, CSS, host.ownerDocument);
+        super(host, TEXT.objectTree, 'vela-ot', i18n ? { i18n } : {});
+        injectChromeStyles(STYLE_ID, CSS, host.ownerDocument);
 
-        this.body.addEventListener('contextmenu', (e) => this.onContextMenu(e));
+        // A side panel: a long press opens a row's menu on touch screens.
+        this.menu = new ContextMenu({ target: this.body, items: (e) => this.menuItemsAt(e), onSelect: (id) => this.menuActions.get(id)?.() });
         this.body.addEventListener('pointerdown', (e) => this.onPointerDown(e));
     }
 
@@ -431,8 +509,7 @@ export class ObjectTree extends SidePanel {
     override destroy(): void {
         this.detach();
         this.endDrag(false); // a drag in flight has nothing left to drop onto
-        this.menu?.destroy();
-        this.menu = null;
+        this.menu.destroy();
         super.destroy();
     }
 
@@ -449,15 +526,21 @@ export class ObjectTree extends SidePanel {
             panes: chart.panes.list(),
             indicatorVisible: (id) => handle(id)?.visible !== false,
             handleTitle: (id) => handle(id)?.title,
+            i18n: this.i18n,
             stackable,
             interleave: stackable && chart.drawings.supported && chart.renderer.capabilities.drawingDepth === true,
             zOrder: stackable ? ((chart.renderer.get('seriesOrder') as Array<{ id: string; z: number }> | undefined) ?? []) : [],
             candleZ: stackable ? Number(chart.renderer.get('candleZOrder')) || 0 : 0,
-            priceLabel: this.symbolName || 'Price',
+            priceLabel: this.symbolName || this.t(TEXT.price),
             priceVisible: chart.renderer.get('candleVisible') !== false,
             drawings: chart.drawings.supported ? chart.drawings.all() : [],
             groups: this.groups,
         };
+    }
+
+    override relocalize(): void {
+        super.relocalize();
+        this.refresh();
     }
 
     /**
@@ -495,13 +578,14 @@ export class ObjectTree extends SidePanel {
         if (treeIsEmpty(panes)) {
             const empty = doc.createElement('div');
             empty.className = 'vela-ot-empty';
-            empty.textContent = 'Add an indicator or a drawing to populate the tree';
+            empty.textContent = this.t(TEXT.emptyHint);
             this.body.appendChild(empty);
         }
     }
 
-    /** What the panel itself can do to the selected drawings: bundle them into a group, or
-     *  duplicate all of them. Always in place, dim until there is a selection to act on. */
+    /** What the panel itself can do: bundle the selected drawings into a group (with nothing
+     *  selected, start an empty one to drag drawings into), or duplicate all of them. Always in
+     *  place; duplicate stays dim until there is a selection to act on. */
     private selectionBar(pass: Pass): HTMLElement {
         const doc = this.el.ownerDocument;
         const bar = doc.createElement('div');
@@ -511,15 +595,15 @@ export class ObjectTree extends SidePanel {
         bar.appendChild(
             this.btn({
                 icon: 'group',
-                title: ids.length === 0 ? 'Group the selected drawings' : groupable ? `Group ${ids.length === 1 ? 'this drawing' : 'these drawings'}` : 'Already in a group',
-                disabled: !groupable,
-                run: () => this.makeGroup(ids),
+                title: ids.length === 0 ? this.t(TEXT.newGroup) : groupable ? this.t(TEXT.groupDrawings, { count: ids.length }) : this.t(TEXT.alreadyInAGroup),
+                disabled: !pass.chart.drawings.supported || (ids.length > 0 && !groupable),
+                run: () => (ids.length === 0 ? this.makeEmptyGroup() : this.makeGroup(ids)),
             }),
         );
         bar.appendChild(
             this.btn({
                 icon: 'clone',
-                title: ids.length === 0 ? 'Duplicate the selected drawings' : 'Duplicate',
+                title: ids.length === 0 ? this.t(TEXT.duplicateSelected) : this.t(TEXT.duplicate),
                 disabled: ids.length === 0,
                 run: () => {
                     for (const id of ids) this.cloneInto(pass, id);
@@ -529,7 +613,7 @@ export class ObjectTree extends SidePanel {
         );
         const count = doc.createElement('span');
         count.className = 'vela-ot-selcount';
-        count.textContent = ids.length > 1 ? `${ids.length} selected` : '';
+        count.textContent = ids.length > 1 ? this.t(TEXT.selected, { count: ids.length }) : '';
         bar.appendChild(count);
         return bar;
     }
@@ -583,6 +667,12 @@ export class ObjectTree extends SidePanel {
             wrap.appendChild(this.groupRow(pass, pane, unit.group));
             if (!this.collapsed.has(unit.group.id)) {
                 for (const m of unit.members) wrap.appendChild(this.drawRow(pass, m, true));
+                if (unit.members.length === 0) {
+                    const hint = doc.createElement('div');
+                    hint.className = 'vela-ot-grouphint';
+                    hint.textContent = this.t(TEXT.groupDropHint);
+                    wrap.appendChild(hint);
+                }
             }
         }
         return wrap;
@@ -608,11 +698,11 @@ export class ObjectTree extends SidePanel {
             acts.appendChild(this.btn({ icon, title, run }));
         };
         if (pane.kind !== 'price') {
-            if (pane.order > 1) op('arrow-up', 'Move pane up', () => chart.panes.move(pane.id, 'up'));
-            if (pane.order < pass.panes.length - 1) op('arrow-down', 'Move pane down', () => chart.panes.move(pane.id, 'down'));
-            op(pane.collapsed ? 'expand' : 'collapse', pane.collapsed ? 'Expand pane' : 'Collapse pane', () => chart.panes.collapse(pane.id, !pane.collapsed));
+            if (pane.order > 1) op('arrow-up', this.t(TEXT.movePaneUp), () => chart.panes.move(pane.id, 'up'));
+            if (pane.order < pass.panes.length - 1) op('arrow-down', this.t(TEXT.movePaneDown), () => chart.panes.move(pane.id, 'down'));
+            op(pane.collapsed ? 'expand' : 'collapse', pane.collapsed ? this.t(TEXT.expandPane) : this.t(TEXT.collapsePane), () => chart.panes.collapse(pane.id, !pane.collapsed));
         }
-        op(pane.maximized ? 'restore' : 'maximize', pane.maximized ? 'Restore panes' : 'Maximize pane', () => chart.panes.maximize(pane.maximized ? null : pane.id));
+        op(pane.maximized ? 'restore' : 'maximize', pane.maximized ? this.t(TEXT.restorePanes) : this.t(TEXT.maximizePane), () => chart.panes.maximize(pane.maximized ? null : pane.id));
         return head;
     }
 
@@ -621,11 +711,12 @@ export class ObjectTree extends SidePanel {
         const { chart } = pass;
         if (row.kind === 'price') {
             const base = this.symbolName.replace(/[-_/]?(USDT|USDC|USD1|USDS|BUSD|USD|EUR|PERP)$/i, '') || this.symbolName;
-            const icon = tickerIconEl(doc, base || 'P', this.symbolName || 'Price', 'vela-ot-avatar', this.symbolRaw ? this.iconFor?.(this.symbolRaw) : undefined);
+            // Without a symbol the badge shows the first letter of "Price" in the panel's language.
+            const icon = tickerIconEl(doc, base || sliceGraphemes(this.t(TEXT.price), 1), this.symbolName || this.t(TEXT.price), 'vela-ot-avatar', this.symbolRaw ? this.iconFor?.(this.symbolRaw) : undefined);
             const el = this.row(icon, row.label, row.visible, [
                 {
                     icon: row.visible ? 'eye' : 'eye-off',
-                    title: row.visible ? 'Hide' : 'Show',
+                    title: row.visible ? this.t(TEXT.hide) : this.t(TEXT.show),
                     engaged: !row.visible,
                     run: () => {
                         chart.renderer.set('candleVisible', !row.visible);
@@ -638,7 +729,7 @@ export class ObjectTree extends SidePanel {
             // The candles can only be restacked — they never leave the main pane.
             if (pass.stackable) {
                 el.dataset.drag = '1';
-                el.title = 'Drag to change what draws in front';
+                el.title = this.t(TEXT.restackHint);
             }
             return el;
         }
@@ -650,7 +741,7 @@ export class ObjectTree extends SidePanel {
             [
                 {
                     icon: row.visible ? 'eye' : 'eye-off',
-                    title: row.visible ? 'Hide' : 'Show',
+                    title: row.visible ? this.t(TEXT.hide) : this.t(TEXT.show),
                     engaged: !row.visible,
                     run: () => {
                         handle?.setVisible(!row.visible);
@@ -659,21 +750,21 @@ export class ObjectTree extends SidePanel {
                 },
                 {
                     icon: 'trash',
-                    title: 'Remove',
+                    title: this.t(TEXT.remove),
                     run: () => {
                         handle?.remove();
                         this.refresh();
                     },
                 },
             ],
-            row.ownScale ? 'scale' : undefined,
+            row.ownScale ? this.t(TEXT.scaleTag) : undefined,
         );
         el.dataset.rowKind = 'indicator';
         el.dataset.id = row.id;
         el.dataset.pane = pane.id;
         if (pass.repanable || pass.stackable) {
             el.dataset.drag = '1';
-            el.title = pass.repanable ? 'Drag to another pane, or between panes for a new one' : 'Drag to change what draws in front';
+            el.title = pass.repanable ? this.t(TEXT.moveIndicatorHint) : this.t(TEXT.restackHint);
         }
         return el;
     }
@@ -690,25 +781,27 @@ export class ObjectTree extends SidePanel {
         const members = pass.chart.drawings.all().filter((d) => g.ids.includes(d.id));
         const { allHidden, allLocked } = groupState(members);
         const ids = [...g.ids];
-        const el = this.row(iconEl(folded ? 'chevron-right' : 'chevron-down', doc), g.name, !allHidden, [
+        // An empty group has nothing to lock or hide — only itself to remove.
+        const actions: RowAction[] = g.ids.length === 0 ? [{ icon: 'trash', title: this.t(TEXT.remove), run: () => this.removeGroup(pass, g.id, false) }] : [
             {
                 icon: allLocked ? 'lock' : 'unlock',
-                title: allLocked ? 'Unlock all' : 'Lock all',
+                title: allLocked ? this.t(TEXT.unlockAll) : this.t(TEXT.lockAll),
                 engaged: allLocked,
                 run: () => this.setMembers(pass, ids, { locked: !allLocked }),
             },
             {
                 icon: allHidden ? 'eye-off' : 'eye',
-                title: allHidden ? 'Show all' : 'Hide all',
+                title: allHidden ? this.t(TEXT.showAll) : this.t(TEXT.hideAll),
                 engaged: allHidden,
                 run: () => this.setMembers(pass, ids, { visible: allHidden }),
             },
-            { icon: 'trash', title: 'Remove all', run: () => this.removeGroup(pass, g.id, true) },
-        ]);
+            { icon: 'trash', title: this.t(TEXT.removeAll), run: () => this.removeGroup(pass, g.id, true) },
+        ];
+        const el = this.row(iconEl(folded ? 'chevron-right' : 'chevron-down', doc), g.name, !allHidden, actions);
         el.dataset.rowKind = 'group';
         el.dataset.id = g.id;
         el.dataset.pane = pane.id;
-        el.title = `${members.length} drawing${members.length === 1 ? '' : 's'} — drag to move them together`;
+        el.title = g.ids.length === 0 ? this.t(TEXT.groupDropHint) : this.t(TEXT.groupMembers, { count: members.length });
         if (this.renaming === g.id) {
             // A row being renamed is a text field, not a handle: dragging it would leave the
             // rename open with the tree frozen behind it.
@@ -734,7 +827,8 @@ export class ObjectTree extends SidePanel {
             // Clicking away keeps what was typed, the way a rename in a file list does.
             input.addEventListener('blur', () => this.commitRename(g.id, input.value));
         } else {
-            el.dataset.drag = '1';
+            // An empty group has no drawings to carry, so there is nothing to drag.
+            if (g.ids.length > 0) el.dataset.drag = '1';
             el.addEventListener('click', () => {
                 if (folded) this.collapsed.delete(g.id);
                 else this.collapsed.add(g.id);
@@ -747,7 +841,7 @@ export class ObjectTree extends SidePanel {
     private drawRow(pass: Pass, d: SerializedDrawing, inGroup = false): HTMLElement {
         const doc = this.el.ownerDocument;
         const { chart } = pass;
-        const markup = drawingMeta(d.type).icon;
+        const markup = drawingMeta(d.type, this.i18n).icon;
         let icon: HTMLElement;
         if (markup) {
             icon = doc.createElement('span');
@@ -757,10 +851,10 @@ export class ObjectTree extends SidePanel {
         } else {
             icon = iconEl('pen', doc);
         }
-        const el = this.row(icon, drawingLabel(d), d.visible, [
+        const el = this.row(icon, drawingLabel(d, this.i18n), d.visible, [
             {
                 icon: d.locked ? 'lock' : 'unlock',
-                title: d.locked ? 'Unlock' : 'Lock',
+                title: d.locked ? this.t(TEXT.unlock) : this.t(TEXT.lock),
                 engaged: d.locked,
                 run: () => {
                     chart.drawings.lock(d.id, !d.locked);
@@ -769,7 +863,7 @@ export class ObjectTree extends SidePanel {
             },
             {
                 icon: d.visible ? 'eye' : 'eye-off',
-                title: d.visible ? 'Hide' : 'Show',
+                title: d.visible ? this.t(TEXT.hide) : this.t(TEXT.show),
                 engaged: !d.visible,
                 run: () => {
                     chart.drawings.show(d.id, !d.visible);
@@ -778,7 +872,7 @@ export class ObjectTree extends SidePanel {
             },
             {
                 icon: 'trash',
-                title: 'Remove',
+                title: this.t(TEXT.remove),
                 run: () => {
                     chart.drawings.remove(d.id);
                     this.refresh();
@@ -789,7 +883,7 @@ export class ObjectTree extends SidePanel {
         el.dataset.id = d.id;
         el.dataset.pane = d.paneId;
         el.dataset.drag = '1';
-        el.title = 'Drag to restack, or onto another pane to move it there';
+        el.title = this.t(TEXT.moveDrawingHint);
         if (inGroup) el.classList.add('vela-ot-subrow');
         if (this.selectedDrawings.has(d.id)) el.dataset.selected = '1';
         if (this.picked.has(d.id)) el.dataset.picked = '1';
@@ -840,7 +934,7 @@ export class ObjectTree extends SidePanel {
             const t = doc.createElement('span');
             t.className = 'vela-ot-tag';
             t.textContent = tag;
-            t.title = 'Draws against its own price scale';
+            t.title = this.t(TEXT.ownScaleHint);
             el.appendChild(t);
         }
         const acts = doc.createElement('span');
@@ -874,8 +968,19 @@ export class ObjectTree extends SidePanel {
     private makeGroup(ids: readonly string[]): void {
         if (!canGroup(ids, this.groups)) return;
         this.groupSeq += 1;
-        this.groups = [...this.groups, { id: `grp-${this.groupSeq}`, name: nextGroupName(this.groups), ids: [...ids] }];
+        this.groups = [...this.groups, { id: `grp-${this.groupSeq}`, name: nextGroupName(this.groups, this.i18n), ids: [...ids] }];
         this.picked.clear();
+        this.render();
+    }
+
+    /** Start an empty group at the top of the main chart, named and ready to rename, for
+     *  drawings to be dragged into. */
+    private makeEmptyGroup(): void {
+        this.groupSeq += 1;
+        const id = `grp-${this.groupSeq}`;
+        this.groups = [...this.groups, { id, name: nextGroupName(this.groups, this.i18n), ids: [], pane: PRICE_PANE_ID }];
+        this.picked.clear();
+        this.renaming = id;
         this.render();
     }
 
@@ -1223,19 +1328,16 @@ export class ObjectTree extends SidePanel {
     // Right-clicking a row opens the same actions its buttons expose, plus the ones with no
     // room on a row: re-paning an indicator, and reordering what draws in front.
 
-    private onContextMenu(e: MouseEvent): void {
+    private menuItemsAt(e: MouseEvent | PointerEvent): MenuItemDescriptor[] | null {
         const pass = this.pass;
-        if (!pass) return;
+        if (!pass) return null;
         const rowEl = (e.target as HTMLElement).closest<HTMLElement>('.vela-ot-row');
-        if (!rowEl) return;
+        if (!rowEl) return null;
         e.preventDefault();
         const b = new MenuBuilder();
         const items = this.itemsForRow(b, pass, rowEl);
-        if (items.length === 0) return;
         this.menuActions = b.actions;
-        const menu = this.ensureMenu();
-        menu.setItems(items);
-        menu.openAt(e.clientX, e.clientY);
+        return items;
     }
 
     private itemsForRow(b: MenuBuilder, pass: Pass, rowEl: HTMLElement): MenuItemDescriptor[] {
@@ -1267,14 +1369,6 @@ export class ObjectTree extends SidePanel {
         return (this.el.closest('.vela-ui') as HTMLElement | null) ?? this.el;
     }
 
-    /** The menu, built on first use — by then the panel is mounted, so the theme host resolves. */
-    private ensureMenu(): Menu {
-        if (!this.menu) {
-            this.menu = new Menu({ host: this.uiHost(), items: [], onSelect: (id) => this.menuActions.get(id)?.() });
-        }
-        return this.menu;
-    }
-
     private findIndicatorRow(pass: Pass, id: string): IndicatorRow | undefined {
         for (const pane of pass.panes) {
             for (const row of paneRows(pane)) if (row.kind === 'indicator' && row.id === id) return row;
@@ -1286,20 +1380,20 @@ export class ObjectTree extends SidePanel {
         const { chart } = pass;
         const visible = chart.renderer.get('candleVisible') !== false;
         const items = [
-            b.entry(visible ? 'Hide' : 'Show', visible ? 'eye-off' : 'eye', () => {
+            b.entry(visible ? this.t(TEXT.hide) : this.t(TEXT.show), visible ? 'eye-off' : 'eye', () => {
                 chart.renderer.set('candleVisible', !visible);
                 this.refresh();
             }),
         ];
         if (pass.stackable) {
             items.push(
-                b.entry('Bring to front', 'arrow-up', () => {
+                b.entry(this.t(TEXT.bringToFront), 'arrow-up', () => {
                     chart.renderer.set('candleZOrder', this.stackBounds(pass, PRICE_PANE_ID).top + 1);
                     this.refresh();
                 }, true),
             );
             items.push(
-                b.entry('Send to back', 'arrow-down', () => {
+                b.entry(this.t(TEXT.sendToBack), 'arrow-down', () => {
                     chart.renderer.set('candleZOrder', this.stackBounds(pass, PRICE_PANE_ID).bottom - 1);
                     this.refresh();
                 }),
@@ -1330,7 +1424,7 @@ export class ObjectTree extends SidePanel {
         const { chart } = pass;
         const handle = pass.handle(row.id);
         const items = [
-            b.entry(row.visible ? 'Hide' : 'Show', row.visible ? 'eye-off' : 'eye', () => {
+            b.entry(row.visible ? this.t(TEXT.hide) : this.t(TEXT.show), row.visible ? 'eye-off' : 'eye', () => {
                 handle?.setVisible(!row.visible);
                 this.refresh();
             }),
@@ -1338,18 +1432,18 @@ export class ObjectTree extends SidePanel {
         // The legend gear's twin — reachable here even where the legend is folded away
         // (mobile) or replaced by the overview chip (multi-chart grids).
         if (chart.renderer.supportsIndicatorSettings) {
-            items.push(b.entry('Indicator settings', 'gear', () => chart.renderer.openIndicatorSettings(row.id)));
+            items.push(b.entry(this.t(TEXT.indicatorSettings), 'gear', () => chart.renderer.openIndicatorSettings(row.id)));
         }
         if (chart.panes.supported) {
             const moves = this.moveItems(b, pass, row.id, paneId);
-            if (moves.length > 0) items.push(b.submenu('Move to', 'move-vertical', moves));
+            if (moves.length > 0) items.push(b.submenu(this.t(TEXT.moveTo), 'move-vertical', moves));
         }
         if (pass.stackable) {
-            items.push(b.entry('Bring to front', 'arrow-up', () => chart.renderer.set('seriesOrder', { id: row.id, z: this.stackBounds(pass, paneId).top + 1 }), true));
-            items.push(b.entry('Send to back', 'arrow-down', () => chart.renderer.set('seriesOrder', { id: row.id, z: this.stackBounds(pass, paneId).bottom - 1 })));
+            items.push(b.entry(this.t(TEXT.bringToFront), 'arrow-up', () => chart.renderer.set('seriesOrder', { id: row.id, z: this.stackBounds(pass, paneId).top + 1 }), true));
+            items.push(b.entry(this.t(TEXT.sendToBack), 'arrow-down', () => chart.renderer.set('seriesOrder', { id: row.id, z: this.stackBounds(pass, paneId).bottom - 1 })));
         }
         items.push(
-            b.entry('Remove', 'trash', () => {
+            b.entry(this.t(TEXT.remove), 'trash', () => {
                 handle?.remove();
                 this.refresh();
             }, true),
@@ -1370,8 +1464,8 @@ export class ObjectTree extends SidePanel {
         const current = pass.panes.find((p) => p.id === fromPane);
         const alone = current !== undefined && current.kind !== 'price' && paneRows(current).length <= 1;
         if (!alone) {
-            if (fromPane !== PRICE_PANE_ID) items.push(b.entry('New pane above', undefined, () => chart.panes.moveIndicator(id, { newPane: { before: fromPane } })));
-            items.push(b.entry('New pane below', undefined, () => chart.panes.moveIndicator(id, { newPane: { after: fromPane } })));
+            if (fromPane !== PRICE_PANE_ID) items.push(b.entry(this.t(TEXT.newPaneAbove), undefined, () => chart.panes.moveIndicator(id, { newPane: { before: fromPane } })));
+            items.push(b.entry(this.t(TEXT.newPaneBelow), undefined, () => chart.panes.moveIndicator(id, { newPane: { after: fromPane } })));
         }
         return items;
     }
@@ -1379,25 +1473,25 @@ export class ObjectTree extends SidePanel {
     private drawingMenu(b: MenuBuilder, pass: Pass, d: SerializedDrawing): MenuItemDescriptor[] {
         const { chart } = pass;
         const items = [
-            b.entry(d.visible ? 'Hide' : 'Show', d.visible ? 'eye-off' : 'eye', () => {
+            b.entry(d.visible ? this.t(TEXT.hide) : this.t(TEXT.show), d.visible ? 'eye-off' : 'eye', () => {
                 chart.drawings.show(d.id, !d.visible);
                 this.refresh();
             }),
-            b.entry(d.locked ? 'Unlock' : 'Lock', d.locked ? 'unlock' : 'lock', () => {
+            b.entry(d.locked ? this.t(TEXT.unlock) : this.t(TEXT.lock), d.locked ? 'unlock' : 'lock', () => {
                 chart.drawings.lock(d.id, !d.locked);
                 this.refresh();
             }),
-            b.entry('Duplicate', 'clone', () => {
+            b.entry(this.t(TEXT.duplicate), 'clone', () => {
                 this.cloneInto(pass, d.id);
                 this.render();
             }),
             // Front/back clear the WHOLE stack on a shared-z renderer — over or under the
             // candles and every indicator, not just the other drawings.
-            b.entry('Bring to front', 'arrow-up', () => chart.drawings.bringToFront(d.id), true),
-            b.entry('Send to back', 'arrow-down', () => chart.drawings.sendToBack(d.id)),
+            b.entry(this.t(TEXT.bringToFront), 'arrow-up', () => chart.drawings.bringToFront(d.id), true),
+            b.entry(this.t(TEXT.sendToBack), 'arrow-down', () => chart.drawings.sendToBack(d.id)),
         ];
         items.push(...this.groupingItems(b, d.id));
-        items.push(b.entry('Remove', 'trash', () => chart.drawings.remove(d.id), true));
+        items.push(b.entry(this.t(TEXT.remove), 'trash', () => chart.drawings.remove(d.id), true));
         return items;
     }
 
@@ -1410,15 +1504,15 @@ export class ObjectTree extends SidePanel {
         // that row — same rule the platform's file managers use.
         const pick = this.picked.has(id) && this.picked.size > 1 ? [...this.picked] : null;
         if (pick && canGroup(pick, this.groups)) {
-            items.push(b.entry(`Group selection (${pick.length})`, 'group', () => this.makeGroup(pick), true));
+            items.push(b.entry(this.t(TEXT.groupPick, { count: pick.length }), 'group', () => this.makeGroup(pick), true));
         } else if (!pick && mine === null) {
-            items.push(b.entry('New group', 'group', () => this.makeGroup([id]), true));
+            items.push(b.entry(this.t(TEXT.newGroup), 'group', () => this.makeGroup([id]), true));
         }
         const others = this.groups.filter((g) => g.id !== mine?.id);
         if (!pick && others.length > 0) {
             items.push(
                 b.submenu(
-                    mine === null ? 'Add to group' : 'Move to group',
+                    mine === null ? this.t(TEXT.addToGroup) : this.t(TEXT.moveToGroup),
                     'folder-plus',
                     others.map((g) =>
                         b.entry(g.name, undefined, () => {
@@ -1432,7 +1526,7 @@ export class ObjectTree extends SidePanel {
         }
         if (mine !== null) {
             items.push(
-                b.entry(`Remove from ${mine.name}`, 'folder-minus', () => {
+                b.entry(this.t(TEXT.removeFromGroup, { group: mine.name }), 'folder-minus', () => {
                     this.groups = removeFromGroups(this.groups, [id]);
                     this.render();
                 }, items.length === 0),
@@ -1442,17 +1536,20 @@ export class ObjectTree extends SidePanel {
     }
 
     private groupMenu(b: MenuBuilder, pass: Pass, g: DrawGroup): MenuItemDescriptor[] {
+        const rename = b.entry(this.t(TEXT.rename), 'pen', () => {
+            this.renaming = g.id;
+            this.render();
+        });
+        // Until a drawing joins there is nothing to show, lock, select or restack.
+        if (g.ids.length === 0) return [rename, b.entry(this.t(TEXT.remove), 'trash', () => this.removeGroup(pass, g.id, false), true)];
         const ids = [...g.ids];
         const members = pass.chart.drawings.all().filter((d) => g.ids.includes(d.id));
         const { allHidden, allLocked } = groupState(members);
         const items = [
-            b.entry('Rename…', 'pen', () => {
-                this.renaming = g.id;
-                this.render();
-            }),
-            b.entry(allHidden ? 'Show all' : 'Hide all', allHidden ? 'eye' : 'eye-off', () => this.setMembers(pass, ids, { visible: allHidden }), true),
-            b.entry(allLocked ? 'Unlock all' : 'Lock all', allLocked ? 'unlock' : 'lock', () => this.setMembers(pass, ids, { locked: !allLocked })),
-            b.entry('Select all', 'group', () => {
+            rename,
+            b.entry(allHidden ? this.t(TEXT.showAll) : this.t(TEXT.hideAll), allHidden ? 'eye' : 'eye-off', () => this.setMembers(pass, ids, { visible: allHidden }), true),
+            b.entry(allLocked ? this.t(TEXT.unlockAll) : this.t(TEXT.lockAll), allLocked ? 'unlock' : 'lock', () => this.setMembers(pass, ids, { locked: !allLocked })),
+            b.entry(this.t(TEXT.selectAll), 'group', () => {
                 this.picked = new Set(ids);
                 this.selectOnChart(ids);
                 this.render();
@@ -1461,12 +1558,12 @@ export class ObjectTree extends SidePanel {
         // The whole bundle moves to an end of its pane's stack — over or under the candles and
         // every indicator — as one contiguous run, keeping its internal order.
         if (members.length > 0) {
-            items.push(b.entry('Bring all to front', 'arrow-up', () => this.restackGroup(pass, g, 'front')));
-            items.push(b.entry('Send all to back', 'arrow-down', () => this.restackGroup(pass, g, 'back')));
+            items.push(b.entry(this.t(TEXT.bringAllToFront), 'arrow-up', () => this.restackGroup(pass, g, 'front')));
+            items.push(b.entry(this.t(TEXT.sendAllToBack), 'arrow-down', () => this.restackGroup(pass, g, 'back')));
         }
         // Ungrouping keeps the drawings; the group is only the panel's bookkeeping.
-        items.push(b.entry('Ungroup', 'ungroup', () => this.removeGroup(pass, g.id, false), true));
-        items.push(b.entry('Remove all', 'trash', () => this.removeGroup(pass, g.id, true)));
+        items.push(b.entry(this.t(TEXT.ungroup), 'ungroup', () => this.removeGroup(pass, g.id, false), true));
+        items.push(b.entry(this.t(TEXT.removeAll), 'trash', () => this.removeGroup(pass, g.id, true)));
         return items;
     }
 

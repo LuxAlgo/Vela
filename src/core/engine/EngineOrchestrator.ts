@@ -1,5 +1,5 @@
 import type { IChartRenderer, VisibleRange } from '../ports/IChartRenderer';
-import type { MarketDataFeed, BarRange } from '../ports/MarketDataFeed';
+import type { MarketDataFeed, BarRange, SymbolFacts, SymbolInfo } from '../ports/MarketDataFeed';
 import type { ScriptingEngine, ExecutionMarket, VisibleBarRange, BarsChangeReason, PreparedScript } from '../ports/ScriptingEngine';
 import type { Unsubscribe } from '../util/types';
 import type { OHLCV } from '../model/ohlcv';
@@ -18,8 +18,8 @@ import type { VelaEventMap } from '../events/types';
 import { TypedEventBus } from '../events/EventBus';
 import { IndicatorRegistry, type CodeSnapshot, type IndicatorRecord } from './IndicatorRegistry';
 import {
-    getNativeIndicator,
-    nativeIndicatorDescriptors,
+    nativeIndicatorEntry,
+    nativeIndicatorEntries,
     nativeInstanceChannel,
     type NativeIndicatorContext,
     type NativeIndicatorInfo,
@@ -37,9 +37,14 @@ import type { DrawingsOption } from '../drawings/toolbar';
 import type { DataControl } from '../DataControl';
 import { timeframeToMs } from '../../data/timeframe';
 import { parseSymbol } from '../../data/ProviderRegistry';
+import { isDataUnavailableError, type DataUnavailableError } from '../data-unavailable';
 import { barTransformFor, parseExtendedTicker, type BarTransform } from '../price-styles/BarTransform';
 import { chartType, type SeriesDataEngine } from '../../chart-types/registry';
 import { resolveTheme } from '../theme';
+import { englishTranslator } from '../i18n/translator';
+import { textOf } from '../i18n/text';
+import type { Translator } from '../i18n/types';
+import { messageOnly } from '../native-indicators/localize';
 import type { ReplayBounds, ReplayController, ReplayEndReason, ReplayStartOptions, ReplayState, ReplayTick, ReplayTickSource } from '../ReplayControl';
 
 export interface ResolvedConfig {
@@ -125,6 +130,8 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
     /** The maximized pane (mirror), or null when the split is normal. */
     private maximizedPaneId: string | null = null;
     private paneActionUnsub: Unsubscribe | null = null;
+    /** The chart's translator: native indicators' names read in its language. */
+    private i18n: Translator = englishTranslator();
     private readonly handles = new Map<string, IndicatorHandleImpl>();
     private readonly engines = new Map<string, ScriptingEngine>();
     private readonly defaultLanguage: string;
@@ -231,6 +238,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
     /** A load is in flight with nothing painted — the state behind the renderer's loading
      *  affordance and the `load:start`/`load:end` event pair (transition-guarded). */
     private loadingUp = false;
+    /** The load generation whose market the source refused for good (`data:unavailable`):
+     *  nothing streams, heals or re-asks until the next load. A new generation clears it. */
+    private unavailableGen = -1;
 
     constructor(
         container: HTMLElement,
@@ -298,7 +308,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
             chartTimeframe: () => this.config.market.timeframe ?? '60',
             marketKey: () => `${this.config.market.symbol ?? ''}|${this.config.market.session ?? ''}`,
         });
-        this.drawings = new DrawingController(this.renderer, this.events, config.drawings, drawingSeries);
+        this.drawings = new DrawingController(this.renderer, this.events, config.drawings, drawingSeries, () => this.i18n);
         this.marks = new MarksController(this.renderer, this.events);
         // A symbol nothing can serve leaves the load PARKED; publish it so a host can say so
         // instead of showing a blank chart forever (it still resumes if a provider registers).
@@ -337,12 +347,12 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         return r ? { left: r.from, right: r.to } : undefined;
     }
 
-    private notifyNativeViewport(record: IndicatorRecord, range: VisibleBarRange, revision: number): void {
+    private notifyNativeViewport(record: IndicatorRecord, range: VisibleRange, revision: number): void {
         const native = record.native!;
         if (!native.started) return;
         const instance = native.instance;
         if (this.nativeViewportRevisions.get(instance) === revision) return;
-        instance.onViewport({ from: range.left, to: range.right });
+        instance.onViewport(range);
         this.nativeViewportRevisions.set(instance, revision);
     }
 
@@ -367,6 +377,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
             timeframe: this.config.market.timeframe ?? '60',
             symbolInfo: this.feed.symbolInfo?.(this.config.market),
             chartStyle: this.priceStyle,
+            session: this.config.market.session,
         };
     }
 
@@ -394,7 +405,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
 
     private onViewportChange(range: VisibleRange): void {
         this.visibleRange = { left: range.from, right: range.to };
-        const revision = ++this.viewportRevision;
+        this.viewportRevision += 1;
         this.events.emit('viewport:changed', { from: range.from, to: range.to });
         if (this.viewportTimer != null) clearTimeout(this.viewportTimer);
         this.viewportTimer = setTimeout(() => {
@@ -402,13 +413,16 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
             if (this.switchingMarket) return; // old sessions must not re-run mid-switch
             const window = this.visibleRange;
             if (!window) return;
+            const revision = this.viewportRevision;
             for (const record of this.registry.all()) {
                 if (!record.renderHandle || record.hidden) continue;
                 // range-aware indicators re-run / refetch with the new window
                 if (record.session && record.prepared?.reactsToViewport) {
                     record.pendingCause = 'viewport';
                     record.session.setVisibleRange(window);
-                } else if (record.native?.descriptor.reactsToViewport) this.notifyNativeViewport(record, window, revision);
+                } else if (record.native?.descriptor.reactsToViewport) {
+                    this.notifyNativeViewport(record, { from: window.left, to: window.right }, revision);
+                }
             }
             // An active chart-type data engine streams in newly-visible data as the user scrolls.
             if (this.activeEngineStyle) this.typeEngines.get(this.activeEngineStyle)?.onViewport?.({ from: window.left, to: window.right });
@@ -432,6 +446,31 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         this.progressiveAbort = null;
         for (const w of this.supersedeWaiters.splice(0)) w();
         return gen;
+    }
+
+    /**
+     * The source refused THIS chart's market for good. Only the chart's own pipeline lands
+     * here — the initial/switch load, the history backfill and the gap heal, each tagged with
+     * its load generation; the engines' `fetchSeries` gateway never does (its promise rejects
+     * to the script instead). Ends the load like an empty answer would, stops live updates so
+     * nothing keeps polling a series that will never come, and reports once per load. The
+     * timeframe stays as set: falling back is the host's policy, not the core's.
+     */
+    private marketUnavailable(gen: number, e: DataUnavailableError): void {
+        if (this.generation !== gen || this.unavailableGen === gen) return;
+        this.unavailableGen = gen;
+        console.warn(`[vela] ${e.message}`);
+        this.stopLive();
+        this.completeHistory('aborted');
+        this.endLoad();
+        const m = this.config.market;
+        this.events.emit('data:unavailable', {
+            symbol: m.symbol ?? 'TEST',
+            timeframe: m.timeframe ?? '60',
+            reason: e.reason,
+            ...(e.finest !== undefined ? { finest: e.finest } : {}),
+            ...(e.default !== undefined ? { default: e.default } : {}),
+        });
     }
 
     /**
@@ -477,6 +516,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
     private async loadMarket(gen: number, opts: { firstLoad: boolean }): Promise<void> {
         try {
             await this.loadMarketInner(gen, opts);
+        } catch (e) {
+            if (!isDataUnavailableError(e)) throw e;
+            this.marketUnavailable(gen, e);
         } finally {
             // The owning load always ends the loading state — this is the belt for the paths
             // that never hand the renderer a non-empty series (a failed fetch, an empty
@@ -487,6 +529,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
 
     private async loadMarketInner(gen: number, opts: { firstLoad: boolean }): Promise<void> {
         const market = this.config.market;
+        // The new market's facts decide the style its first candles draw in: known ones apply
+        // now, the rest as soon as they land (the load's own metadata request, usually ahead
+        // of the bars). A symbol switch starts from unknown, so the chosen style comes back.
+        this.syncSymbolFacts();
         const requested = market.bars ?? 500;
         const initialRange = market.visibleRange;
         // Only a DEEP request is worth splitting, and only when a requested initial window
@@ -552,9 +598,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
                         this.completeHistory(full.length >= requested ? 'depth' : 'genesis');
                         signal(true);
                     })
-                    .catch(() => {
+                    .catch((e: unknown) => {
                         if (this.progressiveAbort === abort) this.progressiveAbort = null;
-                        if (this.generation === gen) this.completeHistory('aborted');
+                        if (isDataUnavailableError(e)) this.marketUnavailable(gen, e);
+                        else if (this.generation === gen) this.completeHistory('aborted');
                         signal(true);
                     });
             });
@@ -599,15 +646,14 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
             if (typeof initialRange === 'string') this.setVisibleRangePreset(initialRange);
             else this.renderer.setVisibleRange(initialRange);
         }
-        // Price-axis precision: try the (already cached) tick size now, then resolve async so the
-        // axis switches from the zoom formula to the symbol's true precision as soon as it lands.
-        this.refreshPriceFormat();
-        void this.ensurePriceFormat();
+        // The bar load may have resolved a provider or started refreshing expired metadata.
+        this.syncSymbolFacts({ refresh: true });
     }
 
-    /** Start the live tick subscription + the tab-restore catch-up listener. */
+    /** Start the live tick subscription + the tab-restore catch-up listener — never for a
+     *  market the source refused (nothing would ever stream). */
     private startLive(): void {
-        if (!this.config.live) return;
+        if (!this.config.live || this.unavailableGen === this.generation) return;
         this.live = new LiveSession(this.feed, this.config.market, (bar) => this.onBar(bar));
         this.live.start();
         // Tab-restore catch-up: browsers throttle hidden tabs (timers → 1/min, sockets can
@@ -665,7 +711,8 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
      * Switch the chart's market IN PLACE — no destroy/recreate. The renderer stays
      * mounted (canvases, viewport policy, cosmetic config), panes and indicator records
      * survive, and user drawings are untouched (per-symbol drawing documents are a HOST
-     * policy via `chart.drawings.toJSON()/fromJSON()`, keyed off `market:changed`). The
+     * policy via `chart.drawings.toJSON()/fromJSON()`, keyed off `market:changed`) unless
+     * the chart was told its drawings belong to the symbol (`clearOnSymbolChange`). The
      * bars reload through the shared {@link loadMarket} pipeline, then every consumer
      * restarts over the new market: Pine sessions re-execute, native indicators restart
      * with a fresh context, the active chart-type data engine is rebuilt, and the live
@@ -752,6 +799,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
             return;
         }
         const prev = { symbol: m.symbol ?? 'TEST', timeframe: m.timeframe ?? '60' };
+        // Drawings that belong to the symbol go as the switch STARTS, not once the new bars
+        // are in: until then they would sit on another instrument's prices. Synchronous, so
+        // a caller that loads the new symbol's document right after this call keeps it.
+        if (next.symbol !== undefined && next.symbol !== m.symbol) this.drawings.onSymbolChange();
         // A SESSION-ONLY flip (RTH↔ETH) changes WHICH bars exist but not the time axis:
         // the user's zoom/position carries over to the reload — captured here, before the
         // quiesce below discards it — unless the caller framed a window of its own. Any
@@ -1031,6 +1082,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
             }
             if (this.generation === gen) this.completeHistory('depth');
         } catch (e) {
+            if (isDataUnavailableError(e)) return this.marketUnavailable(gen, e);
             console.warn(`[vela] history backfill failed — keeping ${this.rawBars.length} bars (${e instanceof Error ? e.message : String(e)})`);
             if (this.generation === gen) this.completeHistory('aborted');
         }
@@ -1497,33 +1549,95 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         return market.symbol;
     }
 
-    /** Push the active symbol's tick size to the renderer's price axis. No-op when unknown (formula stays). */
-    private refreshPriceFormat(): void {
-        if (!this.renderer.setPricePrecision) return;
-        const raw = this.feed.symbolInfo?.(this.config.market)?.mintick;
-        this.renderer.setPricePrecision(typeof raw === 'number' && raw > 0 ? raw : undefined);
-    }
-
-    /** Resolve the symbol's tick size asynchronously (warming the sync cache) and push it once it lands. */
-    private async ensurePriceFormat(): Promise<void> {
-        if (!this.renderer.setPricePrecision) return;
-        const symbol = this.qualifiedSymbol();
-        if (!symbol) return;
-        try {
-            await this.dataControl.symbolInfo(symbol); // warms the sync metadata cache
-            this.refreshPriceFormat();
-        } catch {
-            // metadata unavailable — the renderer keeps its zoom-derived decimals
-        }
-    }
-
-    /** Auto-add the built-in volume indicator. Bar volume needs no capability probe (always supported). */
     /** The user removed the volume indicator — the auto-add must never override that. */
     private volumeOptedOut = false;
+    /** The volume auto-add waiting for its symbol's facts (they landed after the first candles). */
+    private volumeFactsWait: { symbol: string } | null = null;
 
+    /**
+     * Auto-add the built-in volume indicator, unless the symbol's facts say its source has no
+     * volume (`SymbolInfo.volume === false`). The load prefetches those facts beside the bars,
+     * so they are usually known by now; when they are still in flight the add waits for them
+     * rather than holding the first paint, and {@link pendingNativeIndicators} reports it.
+     */
     private maybeAutoAddVolume(): void {
         if (!this.config.volume || this.volumeOptedOut || !this.renderer.setNativeData) return; // off, opted out, or no layer
-        if (getNativeIndicator('volume')) this.addNativeIndicator('volume');
+        if (!nativeIndicatorEntry('volume')) return;
+        const known = this.feed.symbolInfo?.(this.config.market);
+        const symbol = this.qualifiedSymbol();
+        if (known === undefined && symbol && this.symbolFactsComing(symbol)) {
+            const wait = { symbol };
+            this.volumeFactsWait = wait;
+            void this.dataControl
+                .symbolInfo(symbol)
+                .catch(() => undefined)
+                .then((info) => {
+                    if (this.volumeFactsWait !== wait) return; // destroyed meanwhile
+                    this.volumeFactsWait = null;
+                    // A switch to another symbol meanwhile drops the add, as a switch before
+                    // the first candles does: only the first market gets one.
+                    if (this.qualifiedSymbol() !== symbol || this.volumeOptedOut) return;
+                    if (info?.volume !== false) this.addNativeIndicator('volume');
+                });
+            return;
+        }
+        if (known?.volume !== false) this.addNativeIndicator('volume');
+    }
+
+    /** Whether `symbol`'s facts will still arrive: the registry routes it to a provider that
+     *  answers them. Offline data and a custom feed state facts synchronously or not at all. */
+    private symbolFactsComing(symbol: string): boolean {
+        if (this.config.market.data?.length) return false;
+        const resolved = this.dataControl.resolve(symbol);
+        return !!resolved && typeof this.dataControl.providerInstance(resolved.provider)?.getSymbolInfo === 'function';
+    }
+
+    /** The facts the renderer was last handed (see {@link syncSymbolFacts}); null = unknown. */
+    private facts: SymbolFacts | null = null;
+    /** Bumped per facts probe and at destroy: only the latest probe may apply its answer. */
+    private factsProbe = 0;
+
+    /** The facts in force for the chart's symbol (a copy), null while unknown. */
+    symbolFacts(): SymbolFacts | null {
+        return this.facts ? { ...this.facts } : null;
+    }
+
+    /**
+     * Apply cached display facts immediately. After the bar load, also await the provider's
+     * refresh so a cached tick size can change once new metadata lands. Ignore an answer
+     * superseded by a symbol switch or a newer probe.
+     */
+    private syncSymbolFacts({ refresh = false } = {}): void {
+        const probe = ++this.factsProbe;
+        const known = this.feed.symbolInfo?.(this.config.market);
+        this.applySymbolFacts(symbolFactsOf(known));
+        const symbol = this.qualifiedSymbol();
+        if (!symbol || this.config.market.data?.length || (known !== undefined && !refresh)) return;
+        void this.dataControl
+            .symbolInfo(symbol)
+            .catch(() => undefined)
+            .then((info) => {
+                if (this.factsProbe !== probe || this.qualifiedSymbol() !== symbol) return;
+                if (info !== undefined) this.applySymbolFacts(symbolFactsOf(info));
+            });
+    }
+
+    private applySymbolFacts(facts: SymbolFacts | null): void {
+        const prev = this.facts;
+        const mintickChanged = prev?.mintick !== facts?.mintick;
+        if (prev === facts || (prev && facts && prev.ohlc === facts.ohlc && prev.volume === facts.volume && !mintickChanged)) return;
+        this.facts = facts;
+        if (mintickChanged) this.renderer.setPricePrecision?.(facts?.mintick);
+        this.renderer.setSymbolFacts?.(facts);
+        this.events.emit('symbol:facts', { symbol: this.config.market.symbol ?? 'TEST', facts: this.symbolFacts() });
+    }
+
+    /** The native types the chart is about to add on its own — the volume auto-add while it
+     *  waits for its symbol's facts. SYNC, for persistence snapshots (see the facade). */
+    pendingNativeIndicators(): string[] {
+        const wait = this.volumeFactsWait;
+        if (!wait || wait.symbol !== this.qualifiedSymbol() || this.volumeOptedOut) return [];
+        return this.presentNativeIndicators().includes('volume') ? [] : ['volume'];
     }
 
     /**
@@ -1800,8 +1914,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
             if (this.generation !== gen) return; // market switched / chart destroyed mid-heal — drop the stale bars
             if (this.replayQueue) return; // replay began mid-heal — these bars lie past its cursor
             for (const b of bars) this.applyBar(b, false);
-        } catch {
-            // transient — the buffered ticks still apply; a later discontinuity re-triggers the heal
+        } catch (e) {
+            // Transient — the buffered ticks still apply; a later discontinuity re-triggers the
+            // heal. A permanent refusal ends the market's updates instead.
+            if (isDataUnavailableError(e)) this.marketUnavailable(gen, e);
         } finally {
             // A superseded heal leaves the state alone: setMarket/destroy already reset it,
             // and replaying its buffer would push the OLD market's bars into the new array.
@@ -1837,7 +1953,8 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
     addIndicator(source: string, options: AddIndicatorOptions = {}): IndicatorHandle {
         const id = this.claimIndicatorId(options.id);
         const title = options.title ?? 'Indicator';
-        const handle = new IndicatorHandleImpl(id, title, this, source);
+        // The same resolution `engineFor` applies at prepare: `defaultLanguage` never changes.
+        const handle = new IndicatorHandleImpl(id, title, this, source, undefined, options.language ?? this.defaultLanguage);
         this.handles.set(id, handle);
         this.registry.add({ id, title, source, options, inputValues: { ...(options.inputs ?? {}) }, propValues: { ...(options.props ?? {}) } });
         void this.startIndicator(id, source, options, handle);
@@ -1853,14 +1970,14 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
      * addIndicator). Built-in single-instance types: `'volume'`, `'vpvr'`.
      */
     addNativeIndicator(type: string, options: { inputs?: Record<string, InputValue> } = {}): IndicatorHandle {
-        const descriptor = getNativeIndicator(type);
+        const descriptor = nativeIndicatorEntry(type);
         if (!descriptor?.multiInstance) {
             const existing = this.registry.all().find((r) => r.native?.type === type);
             if (existing) return this.handles.get(existing.id) ?? new IndicatorHandleImpl(existing.id, existing.title, this, undefined, type);
         }
 
         const id = this.registry.nextId('native', (candidate) => this.handles.has(candidate));
-        const title = descriptor?.title ?? type;
+        const title = descriptor ? textOf(this.i18n, descriptor.title) : type;
         const handle = new IndicatorHandleImpl(id, title, this, undefined, type);
         this.handles.set(id, handle);
         if (!descriptor) {
@@ -1894,9 +2011,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         const symbol = this.qualifiedSymbol();
         const present = new Set(this.presentNativeIndicators());
         return Promise.all(
-            nativeIndicatorDescriptors().map(async (d) => ({
+            nativeIndicatorEntries().map(async (d) => ({
                 type: d.type,
-                title: d.title,
+                title: textOf(this.i18n, d.title),
                 supported: await this.isNativeSupported(d, symbol),
                 present: present.has(d.type),
                 beta: d.beta,
@@ -2217,7 +2334,8 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
      */
     setTheme(theme: VelaTheme): void {
         const cur = this.config.theme;
-        if ((Object.keys(theme) as Array<keyof VelaTheme>).every((k) => theme[k] === cur[k])) return;
+        const keys = new Set([...Object.keys(theme), ...Object.keys(cur)] as Array<keyof VelaTheme>);
+        if ([...keys].every((k) => theme[k] === cur[k])) return;
         this.config.theme = theme;
         this.renderer.setTheme(theme);
         this.events.emit('theme:changed', theme);
@@ -2247,14 +2365,18 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         this.renderer.setVisibleRange({ from: r.from + delta, to: r.to + delta });
     }
 
-    /** Frame a named preset (e.g. `'1M'`, `'YTD'`, `'ALL'`) over the loaded bars. */
+    /** Frame a named preset (e.g. `'1M'`, `'YTD'`, `'ALL'`) over the loaded bars. Every
+     *  preset ends on the newest bar, so the frame keeps the configured right margin past it
+     *  (as scroll-to-latest and the first fit do) — "Reset chart view" frames `'ALL'`. */
     setVisibleRangePreset(preset: VisibleRangePreset): void {
         const range = presetToRange(preset, this.bars);
-        if (range) this.renderer.setVisibleRange(range);
+        if (range) this.renderer.setVisibleRange(range, { rightMargin: true });
     }
 
     destroy(): void {
         this.bumpGeneration(); // abandon backfill loops/loads mid-flight + release superseded setMarket awaiters
+        this.volumeFactsWait = null;
+        this.factsProbe += 1; // a facts answer landing after destroy must not reach the renderer
         this.resolveHistoryComplete(); // never leave historyComplete() awaiters hanging
         this.clearReplayTimer();
         this.replayQueue = null;
@@ -2471,11 +2593,17 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
                     if (alive && record.renderHandle && !record.hidden) this.renderer.setIndicatorStatus?.(record.renderHandle, status);
                 },
             };
+            const generation = this.generation;
             native.instance.start(ctx, record.inputValues);
+            // The first emit can call host listeners that remove or replace the instance.
+            if (!alive) return;
             native.started = true;
-            if (native.descriptor.reactsToViewport) {
-                const range = this.currentVisibleRange();
+            if (!record.hidden && this.generation === generation && native.descriptor.reactsToViewport) {
+                // A resize or reframe can move the renderer without publishing a viewport event.
+                // This snapshot supersedes any event already queued at this revision.
+                const range = this.renderer.getVisibleRange();
                 if (range) this.notifyNativeViewport(record, range, this.viewportRevision);
+                else this.nativeViewportRevisions.set(native.instance, this.viewportRevision);
             }
         } catch (err) {
             this.fail(id, handle, err);
@@ -2502,10 +2630,14 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         const d = record.native!.descriptor;
         const type = record.native!.type;
         const channel = this.nativeChannel(record);
+        const displayTitle = messageOnly(d.title);
+        const displayShorttitle = messageOnly(d.shortTitle);
         return {
             id: record.id,
             title: record.title,
-            ...(d.shortTitle ? { shorttitle: d.shortTitle } : {}),
+            ...(d.shortTitle ? { shorttitle: textOf(this.i18n, d.shortTitle) } : {}),
+            ...(displayTitle ? { displayTitle } : {}),
+            ...(displayShorttitle ? { displayShorttitle } : {}),
             overlay: d.overlay,
             paneHint: d.paneHint,
             native: { type, ...(channel !== type ? { channel } : {}) },
@@ -2653,6 +2785,30 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         if (i > 0) this.paneOrder.splice(i, 1); // never remove 'price' (index 0)
         this.collapsedPanes.delete(paneId);
         if (this.maximizedPaneId === paneId) this.maximizedPaneId = null;
+    }
+
+    /** Adopt the chart's translator (one object for the chart's lifetime). */
+    setTranslator(i18n: Translator): void {
+        this.i18n = i18n;
+        this.drawings.relocalize(); // the toolbar went out before the chart's translator arrived
+    }
+
+    /** The chart's language changed: the drawing toolbar's labels and native indicators'
+     *  names, as the handles, the pane listing and script runs report them, follow it. The
+     *  renderer re-reads the display names it shows on its own. */
+    relocalize(): void {
+        this.drawings.relocalize();
+        for (const r of this.registry.all()) {
+            const d = r.native?.descriptor;
+            if (!d) continue;
+            r.title = textOf(this.i18n, d.title);
+            const handle = this.handles.get(r.id);
+            if (handle) handle.title = r.title;
+            if (r.model) {
+                r.model.title = r.title;
+                if (d.shortTitle !== undefined) r.model.shorttitle = textOf(this.i18n, d.shortTitle);
+            }
+        }
     }
 
     // ── pane management (PaneController — backs chart.panes) ──────
@@ -2989,13 +3145,16 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         return overlay ? 'price' : `pane-${id}`;
     }
 
-    /** Each named value series' last plotted value — the model is the one source every
-     *  engine fills, so this works without an execution context. */
-    private static plotsAtLastBar(model: IndicatorModel): Record<string, number | null> {
+    /** Each named value series' value on the chart's last bar — the model is the one source
+     *  every engine fills, so this works without an execution context. Points past the last
+     *  bar (a series shifted forward) are skipped by time. */
+    private static plotsAtLastBar(model: IndicatorModel, lastBarTime: number | undefined): Record<string, number | null> {
         const out: Record<string, number | null> = {};
         for (const spec of model.series) {
             if (!isLineLikeSeries(spec)) continue;
-            out[spec.title] = spec.points[spec.points.length - 1]?.value ?? null;
+            let i = spec.points.length - 1;
+            if (lastBarTime !== undefined) while (i >= 0 && spec.points[i]!.time > lastBarTime) i -= 1;
+            out[spec.title] = spec.points[i]?.value ?? null;
         }
         return out;
     }
@@ -3077,7 +3236,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
             // whatever produced this run.
             forming: this.config.live && this.bars.length > 0,
             complete: this.historyState !== 'backfill',
-            plots: EngineOrchestrator.plotsAtLastBar(model),
+            plots: EngineOrchestrator.plotsAtLastBar(model, lastBar?.time),
             vars: snapshot?.variables ?? {},
             ...(snapshot?.strategy ? { strategy: snapshot.strategy } : {}),
             warnings: snapshot?.warnings ?? [],
@@ -3233,5 +3392,23 @@ function modelToValuePatch(model: IndicatorModel): ValuePatch {
         linefills: model.linefills ?? [],
         tables: model.tables ?? [],
         trades: model.trades ?? [],
+        // ALWAYS stated, like the drawings: a re-run arrives as a NEW model object, and the
+        // renderer keeps what a patch omits, so leaving these out froze a Toolkit's fill and
+        // candle colors at its first run once older bars loaded and it ran again.
+        fills: model.fills,
+        backgrounds: model.backgrounds,
+        priceLines: model.priceLines,
+        barColors: model.barColors ?? [],
     };
+}
+
+/** Display facts in a symbol's info: null while unknown, or `{}` for info with no display facts. */
+function symbolFactsOf(info: SymbolInfo | undefined): SymbolFacts | null {
+    if (!info) return null;
+    const facts: SymbolFacts = {};
+    const { mintick } = info;
+    if (typeof mintick === 'number' && Number.isFinite(mintick) && mintick > 0) facts.mintick = mintick;
+    if (typeof info.ohlc === 'boolean') facts.ohlc = info.ohlc;
+    if (typeof info.volume === 'boolean') facts.volume = info.volume;
+    return facts;
 }

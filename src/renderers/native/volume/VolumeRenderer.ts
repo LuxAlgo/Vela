@@ -2,6 +2,7 @@ import type { OHLCV } from '../../../core/model/ohlcv';
 import type { VolumeLayerData } from '../../../core/model/volume-layers';
 import type { CoordinateSystem, PaneBounds } from '../core/CoordinateSystem';
 import { paintVolume } from './paintVolume';
+import { beginPlotFrame } from '../core/plotDirection';
 
 /** Fraction of its own (study) pane the tallest visible volume column fills — leaves a sliver
  *  of headroom on top. Shared with the renderer's autoscale so the axis labels line up with the
@@ -55,7 +56,7 @@ export class VolumeRenderer {
         const { bars, data, visible, coords, bounds, fillPane } = args;
 
         const dpr = coords.dpr;
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        beginPlotFrame(ctx, dpr);
         ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr); // always clear — a hide/remove must wipe the last frame
         if (!data || !visible || bars.length === 0 || bounds.height <= 0) return;
 

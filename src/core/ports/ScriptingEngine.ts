@@ -11,6 +11,8 @@ import type { PriceStyle } from '../options';
  * (Pine `request.security` HTF/LTF/cross-symbol) are fetched + cached through
  * this so they get real, correctly-resolved data (no aggregation; timeframes
  * kept separate). Provided by the orchestrator, backed by `MarketDataFeed`.
+ * Rejects with a `DataUnavailableError` (`isDataUnavailableError`) when the source
+ * refuses the series for good: report its message instead of retrying.
  */
 export type FetchSeries = (symbol: string, timeframe: string, range: BarRange) => Promise<OHLCV[]>;
 
@@ -89,6 +91,14 @@ export interface ExecutionMarket {
      *  receives are already the style's view — this is metadata, not a request to
      *  transform. Optional; engines may ignore it. */
     chartStyle?: PriceStyle;
+    /** The chart's trading session (`'regular'` | `'extended'`); undefined = regular /
+     *  no session model. The BARS an execution receives are already that session's —
+     *  this is metadata, for session-aware built-ins or data the engine obtains outside
+     *  the gateway. A session switch stops every execution and starts new ones, so this
+     *  never changes within one execution. It follows the chart's setting, not the
+     *  symbol: a market without sessions may still carry one. Optional; engines may
+     *  ignore it. */
+    session?: string;
 }
 
 /**

@@ -1,3 +1,4 @@
+import type { Translator } from '../../../core/i18n/types';
 import type { VelaTheme } from '../../../core/options';
 import type { IndicatorModel } from '../../../core/model/indicator';
 import type { OHLCV } from '../../../core/model/ohlcv';
@@ -5,6 +6,8 @@ import type { LineStyle } from '../../../core/model/series';
 import type { CoordinateSystem } from '../core/CoordinateSystem';
 import type { SceneGraph, PaneNode } from '../core/SceneGraph';
 import { percentScaleFor } from '../core/SceneGraph';
+import { effectiveCandlePaint, withAlpha } from '../core/chartConfig';
+import { columnIsUp } from '../backend/close-styles';
 // Re-exported so existing importers (crosshair) can keep sourcing it from here.
 export { percentScaleFor } from '../core/SceneGraph';
 import { DrawingSceneRenderer, modelDrawingSet, type DrawingSet } from '../../shared/DrawingSceneRenderer';
@@ -14,12 +17,14 @@ import { paneAxisTicks, formatAxisValue, timeTicks } from './ticks';
 import { PriceAxisTickSource } from './priceAxisTicks';
 import { axisColumnX, PANE_SEPARATOR_PX } from './axisLayout';
 import { DARK_THEME } from '../../../core/theme';
-import { tzOffsetMs } from './tz';
+import { displayZone, tzOffsetMs } from './tz';
 import { countdownText } from './countdown';
+import { clockCorrection } from '../../../core/util/wall-clock';
 import { tagTextColor } from './contrast';
 import { markGroupVisible } from '../../shared/marks-state';
 import { clusterTooltip, layoutMarkLane, markGlyphAt, markStackAt, type MarkLaneLayout, type PlacedGlyph } from './marks/layout';
 import { MarkIconRaster, paintMarkLane } from './marks/paint';
+import { beginPlotFrame } from '../core/plotDirection';
 
 /** Opacity factor of a price-axis label whose tick is `major: false` (de-emphasized). */
 const MINOR_LABEL_ALPHA = 0.5;
@@ -78,9 +83,9 @@ export class ChromeRenderer {
     }
 
     /** Hover text of the mark glyph under a plot point, or null. */
-    markTooltipAt(x: number, y: number, groups: ReadonlyArray<{ id: string; label: string }>): string | null {
+    markTooltipAt(x: number, y: number, groups: ReadonlyArray<{ id: string; label: string }>, i18n?: Translator | null): string | null {
         const g = this.markGlyphAt(x, y);
-        return g ? clusterTooltip(g.cluster, groups) : null;
+        return g ? clusterTooltip(g.cluster, groups, i18n) : null;
     }
 
     /** Wire the drawing coordinate resolvers + theme (call once per frame before use). */
@@ -124,7 +129,7 @@ export class ChromeRenderer {
         // The gutters (and their labels) use the surface the host passes (the live chart
         // background); everything data-side keeps the live theme.
         this.axisTextColor = surface?.textColor ?? theme.textColor;
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        beginPlotFrame(ctx, dpr);
         ctx.clearRect(0, 0, fullW, fullH);
         // Paint the price-axis (right) + time-axis (bottom) gutters opaquely so drawings or
         // series pixels beneath never bleed into the scales. Data/drawings stay clear of
@@ -338,7 +343,7 @@ export class ChromeRenderer {
                 const sc = scene.indicatorScales.get(model.id)?.scale;
                 if (!sc) return;
                 const x = axisColumnX(dataW, k + 1); // column 0 is the master scale
-                for (const t of paneAxisTicks(sc, pane.bounds.height, undefined, scene.priceMintick)) {
+                for (const t of paneAxisTicks(sc, pane.bounds.height, undefined, scene.priceMintick, undefined, scene.format)) {
                     const y = coords.priceToY(t.price, sc, pane.bounds);
                     if (y < pane.bounds.top + 6 || y > pane.bounds.top + pane.bounds.height - 4) continue;
                     ctx.fillText(t.label, x + 5, y);
@@ -367,7 +372,7 @@ export class ChromeRenderer {
         const last = scene.bars[n - 1]!;
         const y = coords.priceToY(last.close, pricePane.scale, pricePane.bounds);
         if (y < pricePane.bounds.top || y > pricePane.bounds.top + pricePane.bounds.height) return;
-        const color = this.priceElementColor(scene, coords, theme, last);
+        const color = priceElementColor(scene, coords, theme, last);
 
         // ── dashed line (independent of the label) ──
         if (scene.showPriceLine) {
@@ -383,12 +388,14 @@ export class ChromeRenderer {
         }
 
         // ── axis chips: last-price label and/or countdown ──
-        const cdText = scene.showCountdown ? countdownText(last.time, coords.barInterval, Date.now()) : null;
+        // The corrected clock, not the device's: on a slow device the next candle lands
+        // while the device clock still reads before its open, and the chip read `01:04`.
+        const cdText = scene.showCountdown ? countdownText(last.time, coords.barInterval, clockCorrection.now(), scene.format) : null;
         const showCountdown = cdText !== null;
         const showLabel = scene.showPriceLabel;
         if (!showLabel && !showCountdown) return;
 
-        const priceText = formatAxisValue(pricePane.scale, pricePane.bounds.height, last.close, percentScaleFor(scene, pricePane), scene.priceMintick);
+        const priceText = formatAxisValue(pricePane.scale, pricePane.bounds.height, last.close, percentScaleFor(scene, pricePane), scene.priceMintick, undefined, scene.format, 'lastPrice');
         const PAD = 8;
         const x = dataW + 1;
         // Text color chosen for contrast against the chip's own color (so a white candle
@@ -423,30 +430,6 @@ export class ChromeRenderer {
         ctx.textAlign = 'start';
     }
 
-    /**
-     * The color of the latest price element for the active chart style — matches how the
-     * series itself is drawn: candle/bar body up-down, the line/area line color, or the
-     * baseline side (above/below the baseline price).
-     */
-    private priceElementColor(scene: SceneGraph, coords: CoordinateSystem, theme: VelaTheme, last: OHLCV): string {
-        const st = scene.style;
-        switch (scene.priceStyle) {
-            case 'bars':
-                return last.close >= last.open ? (st.bars.upColor ?? theme.upColor) : (st.bars.downColor ?? theme.downColor);
-            case 'line':
-                return st.line.color ?? theme.upColor;
-            case 'area':
-                return st.area.lineColor ?? theme.upColor;
-            case 'baseline': {
-                const i0 = Math.max(0, Math.floor(coords.visibleLogicalRange().from));
-                const baseline = scene.baselineValue ?? scene.bars[i0]?.close ?? 0;
-                return last.close >= baseline ? (st.baseline.topLineColor ?? theme.upColor) : (st.baseline.bottomLineColor ?? theme.downColor);
-            }
-            default: // 'candles'
-                return last.close >= last.open ? theme.upColor : theme.downColor;
-        }
-    }
-
     private drawTimeAxis(ctx: CanvasRenderingContext2D, scene: SceneGraph, coords: CoordinateSystem, theme: VelaTheme, dataW: number, dataH: number, fullH: number): void {
         ctx.strokeStyle = scene.style.borderColor ?? theme.borderColor;
         ctx.lineWidth = 1;
@@ -459,14 +442,14 @@ export class ChromeRenderer {
         ctx.textAlign = 'center';
         const y = dataH + (fullH - dataH) / 2;
         const tr = coords.visibleTimeRange();
-        const offset = tzOffsetMs((tr.from + tr.to) / 2, scene.timezone);
+        const offset = tzOffsetMs((tr.from + tr.to) / 2, displayZone(scene.timezone, coords.barInterval));
         // Width-adaptive density so a narrow surface — a phone, a multi-chart cell —
         // asks for fewer ticks instead of cramming the default eight. The floor of 3
         // keeps a narrow axis populated (a too-small target snaps the ladder to a huge
         // step whose few ticks can all miss the frame); the collision pass below is
         // what actually prevents overlap.
         const target = Math.max(3, Math.min(8, Math.floor(dataW / 64)));
-        const ticks = timeTicks(tr.from, tr.to, target, offset)
+        const ticks = timeTicks(tr.from, tr.to, target, offset, scene.format, coords.logicalToTime(0))
             .map((tick) => ({ ...tick, x: coords.timeToX(tick.time), half: ctx.measureText(tick.label).width / 2 }))
             .filter((tick) => tick.x >= 20 && tick.x <= dataW - 20);
         // Measured collision pass on top: label pitch in PIXELS isn't uniform (bar-index
@@ -500,4 +483,44 @@ function setDash(ctx: CanvasRenderingContext2D, style: LineStyle): void {
     else ctx.setLineDash([]);
 }
 
-
+/**
+ * The color of the latest price element for the active chart style — matches how the
+ * series itself is drawn: candle/bar body up-down, the line/area line color, the
+ * baseline side (above/below the baseline price), or the last column's up-down (worn
+ * opaque: the line and label are thin chrome, not a filled area). Candles resolve
+ * through the active style's own candle colors (a candle-based plugin style such as
+ * Footprint or TPO keeps its own), exactly as the candle painter does; with bodies
+ * hidden the candle reads as its outline, so the outline color is used.
+ */
+export function priceElementColor(scene: SceneGraph, coords: CoordinateSystem, theme: VelaTheme, last: OHLCV): string {
+    const st = scene.style;
+    switch (scene.priceStyle) {
+        case 'bars':
+            return last.close >= last.open ? (st.bars.upColor ?? theme.upColor) : (st.bars.downColor ?? theme.downColor);
+        case 'line':
+        case 'linemarkers':
+        case 'stepline':
+            return st.line.color ?? theme.upColor;
+        case 'columns': {
+            const up = columnIsUp(scene.bars, scene.bars.length - 1);
+            return withAlpha(up ? (st.columns.upColor ?? theme.upColor) : (st.columns.downColor ?? theme.downColor), 1);
+        }
+        case 'area':
+            return st.area.lineColor ?? theme.upColor;
+        case 'baseline': {
+            const i0 = Math.max(0, Math.floor(coords.visibleLogicalRange().from));
+            const baseline = scene.baselineValue ?? scene.bars[i0]?.close ?? 0;
+            return last.close >= baseline ? (st.baseline.topLineColor ?? theme.upColor) : (st.baseline.bottomLineColor ?? theme.downColor);
+        }
+        default: {
+            // 'candles', 'heikinashi', and candle-based plugin styles.
+            const paint = effectiveCandlePaint(st.candle, scene.candleOverride, theme.upColor, theme.downColor);
+            const up = last.close >= last.open;
+            const body = up ? paint.up : paint.down;
+            if (!paint.candle.bodyVisible && paint.candle.borderVisible) {
+                return (up ? paint.candle.borderUpColor : paint.candle.borderDownColor) ?? body;
+            }
+            return body;
+        }
+    }
+}

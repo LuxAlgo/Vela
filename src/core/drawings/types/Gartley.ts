@@ -1,11 +1,13 @@
+import { msg } from '../../i18n/message';
+import type { MessageLike } from '../../i18n/types';
 import { HarmonicPattern, type HarmonicRanges } from './HarmonicPattern';
 
 /** Gartley: AB≈0.618 XA, CD 1.13–1.618 BC, completion AD≈0.786 XA. */
 export class Gartley extends HarmonicPattern {
     readonly type = 'gartley' as const;
 
-    patternName(): string {
-        return 'Gartley';
+    patternName(): MessageLike {
+        return msg('drawing.gartley.patternName', 'Gartley');
     }
 
     protected ranges(): HarmonicRanges {

@@ -4,6 +4,7 @@ import type { Fill, Background, PriceLine } from './scene';
 import type { DrawingLine, DrawingBox, DrawingLabel, DrawingPolyline, DrawingLinefill, DrawingTable } from './drawings';
 import type { TradeExecution } from './trades';
 import type { InputSchema, InputValue } from './inputs';
+import type { MessageLike } from '../i18n/types';
 
 /** Declaration metadata from the Pine `indicator()` / `strategy()` call. */
 export interface IndicatorMeta {
@@ -43,6 +44,11 @@ export interface IndicatorModel {
      * `indicator(..., shorttitle=)`.
      */
     shorttitle?: string;
+    /** What the chart SHOWS for {@link title}, in its language (a native indicator's
+     *  translatable name). Absent ⇒ {@link title}. */
+    displayTitle?: MessageLike;
+    /** What the chart shows for {@link shorttitle}. Absent ⇒ {@link shorttitle}. */
+    displayShorttitle?: MessageLike;
     overlay: boolean;
     paneHint: PaneHint;
     /**

@@ -1,11 +1,13 @@
+import { msg } from '../../i18n/message';
+import type { MessageLike } from '../../i18n/types';
 import { HarmonicPattern, type HarmonicRanges } from './HarmonicPattern';
 
 /** Bat: AB 0.382–0.5 XA (never 0.618), CD 1.618–2.618 BC, completion AD≈0.886 XA (the defining ratio). */
 export class Bat extends HarmonicPattern {
     readonly type = 'bat' as const;
 
-    patternName(): string {
-        return 'Bat';
+    patternName(): MessageLike {
+        return msg('drawing.bat.patternName', 'Bat');
     }
 
     protected ranges(): HarmonicRanges {

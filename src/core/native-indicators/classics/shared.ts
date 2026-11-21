@@ -1,9 +1,10 @@
-import type { InputSchema } from '../../model/inputs';
+import { msg } from '../../i18n/message';
+import type { MessageLike } from '../../i18n/types';
 import type { OHLCV } from '../../model/ohlcv';
 import type { FillGradientStop } from '../../model/scene';
 import type { LineStyle } from '../../model/series';
 import { BULLISH, BEARISH, INFO, NEUTRAL } from '../../palette';
-import type { ClassicBand, ClassicLevel, ClassicPlot } from './define';
+import type { ClassicBand, ClassicInput, ClassicLevel, ClassicPlot } from './define';
 import { SOURCES } from './math';
 
 /** Input-schema builders and small color utilities shared by the catalog families. */
@@ -12,36 +13,36 @@ import { SOURCES } from './math';
 export const SETTINGS = 'Settings';
 export const STYLE = 'Style';
 
-export function lengthInput(defval: number, key = 'length', title = 'Length', max = 5000, tooltip?: string): InputSchema {
+export function lengthInput(defval: number, key = 'length', title: MessageLike = msg('indicator.common.length', 'Length'), max = 5000, tooltip?: MessageLike): ClassicInput {
     return { key, title, type: 'int', defval, min: 1, max, step: 1, group: SETTINGS, ...(tooltip != null ? { tooltip } : {}) };
 }
 
-export function intInput(key: string, title: string, defval: number, min = 1, max = 5000, tooltip?: string): InputSchema {
+export function intInput(key: string, title: MessageLike, defval: number, min = 1, max = 5000, tooltip?: MessageLike): ClassicInput {
     return { key, title, type: 'int', defval, min, max, step: 1, group: SETTINGS, ...(tooltip != null ? { tooltip } : {}) };
 }
 
-export function floatInput(key: string, title: string, defval: number, min = 0, max = 1000, step = 0.1, tooltip?: string): InputSchema {
+export function floatInput(key: string, title: MessageLike, defval: number, min = 0, max = 1000, step = 0.1, tooltip?: MessageLike): ClassicInput {
     return { key, title, type: 'float', defval, min, max, step, group: SETTINGS, ...(tooltip != null ? { tooltip } : {}) };
 }
 
-export function boolInput(key: string, title: string, defval: boolean, group = SETTINGS, tooltip?: string): InputSchema {
+export function boolInput(key: string, title: MessageLike, defval: boolean, group = SETTINGS, tooltip?: MessageLike): ClassicInput {
     return { key, title, type: 'bool', defval, group, ...(tooltip != null ? { tooltip } : {}) };
 }
 
-export function optionInput(key: string, title: string, defval: string, options: readonly string[], tooltip?: string): InputSchema {
+export function optionInput(key: string, title: MessageLike, defval: string, options: readonly string[], tooltip?: MessageLike): ClassicInput {
     return { key, title, type: 'string', defval, options, group: SETTINGS, ...(tooltip != null ? { tooltip } : {}) };
 }
 
-export function sourceInput(defval: string = 'Close', key = 'source', title = 'Source', tooltip?: string): InputSchema {
+export function sourceInput(defval: string = 'Close', key = 'source', title: MessageLike = msg('indicator.common.source', 'Source'), tooltip?: MessageLike): ClassicInput {
     return { key, title, type: 'string', defval, options: SOURCES, group: SETTINGS, ...(tooltip != null ? { tooltip } : {}) };
 }
 
-export function colorInput(defval: string = INFO, title = 'Color', key = 'color', tooltip?: string): InputSchema {
+export function colorInput(defval: string = INFO, title: MessageLike = msg('indicator.common.color', 'Color'), key = 'color', tooltip?: MessageLike): ClassicInput {
     return { key, title, type: 'color', defval, group: STYLE, ...(tooltip != null ? { tooltip } : {}) };
 }
 
-export function widthInput(defval = 2, key = 'lineWidth', title = 'Line Width'): InputSchema {
-    return { key, title, type: 'int', defval, min: 1, max: 5, step: 1, group: STYLE, tooltip: 'Width of the plotted line, in pixels.' };
+export function widthInput(defval = 2, key = 'lineWidth', title: MessageLike = msg('indicator.common.lineWidth', 'Line Width')): ClassicInput {
+    return { key, title, type: 'int', defval, min: 1, max: 5, step: 1, group: STYLE, tooltip: msg('indicator.common.lineWidth.tooltip', 'Width of the plotted line, in pixels.') };
 }
 
 /**
@@ -64,11 +65,11 @@ export function withAlpha(hex: string, alpha = 0.08): string {
 }
 
 /** The Bullish / Bearish / Basis trio a directional channel is styled with. */
-export function channelStyleInputs(basisTitle = 'Basis'): InputSchema[] {
+export function channelStyleInputs(basisTitle: MessageLike = msg('indicator.common.basisColor', 'Basis')): ClassicInput[] {
     return [
-        colorInput(BULLISH, 'Bullish', 'bullColor', 'Color of the lower band and of the basis while price holds above it.'),
-        colorInput(BEARISH, 'Bearish', 'bearColor', 'Color of the upper band and of the basis while price sits below it.'),
-        colorInput(NEUTRAL, basisTitle, 'basisColor', 'Color of the basis line while price sits exactly on it.'),
+        colorInput(BULLISH, msg('indicator.common.bullColor', 'Bullish'), 'bullColor', msg('indicator.channel.bullColor.tooltip', 'Color of the lower band and of the basis while price holds above it.')),
+        colorInput(BEARISH, msg('indicator.common.bearColor', 'Bearish'), 'bearColor', msg('indicator.channel.bearColor.tooltip', 'Color of the upper band and of the basis while price sits below it.')),
+        colorInput(NEUTRAL, basisTitle, 'basisColor', msg('indicator.channel.basisColor.tooltip', 'Color of the basis line while price sits exactly on it.')),
     ];
 }
 
@@ -97,15 +98,16 @@ export function directionalChannel(
     });
     return {
         plots: [
-            { key: 'basis', title: 'Basis', values: [...basis], color: ink.neutral, colors: basisColors },
-            { key: 'upper', title: 'Upper', values: [...upper], color: transp(ink.bear, 30) },
-            { key: 'lower', title: 'Lower', values: [...lower], color: transp(ink.bull, 30) },
+            { key: 'basis', title: msg('indicator.channel.plot.basis', 'Basis'), values: [...basis], color: ink.neutral, colors: basisColors },
+            { key: 'upper', title: msg('indicator.channel.plot.upper', 'Upper'), values: [...upper], color: transp(ink.bear, 30) },
+            { key: 'lower', title: msg('indicator.channel.plot.lower', 'Lower'), values: [...lower], color: transp(ink.bull, 30) },
         ],
         bands: [{ key, from: 'upper', to: 'lower', color: transp(NEUTRAL, 90), gradient: wash }],
     };
 }
 
-/** A constant-valued series shown nowhere — the anchor a band is filled against. */
+/** A constant-valued series shown nowhere — the anchor a band is filled against. Its
+ *  title is an identity only (it never shows), so it stays plain text. */
 export function anchorPlot(key: string, title: string, length: number, level: number): ClassicPlot {
     return {
         key,
@@ -196,7 +198,7 @@ export function momentumColumnColors(values: readonly number[], ink: { growAbove
 
 export interface BoundedOptions {
     key: string;
-    title: string;
+    title: MessageLike;
     values: number[];
     overbought: number;
     oversold: number;
@@ -212,7 +214,7 @@ export interface BoundedOptions {
     bandFill?: string;
     /** Vertical wash from the line back to the midpoint of the band. */
     midpointWash?: boolean;
-    levelTitles?: { overbought: string; oversold: string };
+    levelTitles?: { overbought: MessageLike; oversold: MessageLike };
 }
 
 /**
@@ -237,16 +239,16 @@ export function boundedOscillator(opts: BoundedOptions): { plots: ClassicPlot[];
         bands.push({ key: 'wash', from: opts.key, to: 'midAnchor', color: transp(NEUTRAL, 100), gradient: baselineGradient(opts.values, mid, (_x, i) => ramp[i] ?? opts.ink.mid) });
     }
     const levels: ClassicLevel[] = [
-        { key: 'overbought', price: opts.overbought, color: opts.levelInk, lineStyle: 'dashed', title: opts.levelTitles?.overbought ?? 'Overbought' },
-        { key: 'oversold', price: opts.oversold, color: opts.levelInk, lineStyle: 'dashed', title: opts.levelTitles?.oversold ?? 'Oversold' },
+        { key: 'overbought', price: opts.overbought, color: opts.levelInk, lineStyle: 'dashed', title: opts.levelTitles?.overbought ?? msg('indicator.common.level.overbought', 'Overbought') },
+        { key: 'oversold', price: opts.oversold, color: opts.levelInk, lineStyle: 'dashed', title: opts.levelTitles?.oversold ?? msg('indicator.common.level.oversold', 'Oversold') },
     ];
-    if (opts.midline != null) levels.splice(1, 0, { key: 'midline', price: opts.midline, color: opts.levelInk, lineStyle: 'dotted', title: 'Midline' });
+    if (opts.midline != null) levels.splice(1, 0, { key: 'midline', price: opts.midline, color: opts.levelInk, lineStyle: 'dotted', title: msg('indicator.common.level.midline', 'Midline') });
     return { plots, bands, levels };
 }
 
 export interface CenteredOptions {
     key: string;
-    title: string;
+    title: MessageLike;
     values: number[];
     /** Ink at the value while above / below the baseline, and exactly on it. */
     ink: { bull: string; bear: string; neutral: string };
@@ -256,7 +258,7 @@ export interface CenteredOptions {
     fill?: boolean;
     valueTransparency?: number;
     zeroLineStyle?: LineStyle;
-    zeroTitle?: string;
+    zeroTitle?: MessageLike;
     extraPlots?: ClassicPlot[];
     extraLevels?: ClassicLevel[];
 }
@@ -280,7 +282,7 @@ export function centeredOscillator(opts: CenteredOptions): { plots: ClassicPlot[
     return {
         plots,
         bands,
-        levels: [{ key: 'zero', price: baseline, color: opts.zeroInk, lineStyle: opts.zeroLineStyle ?? 'dashed', title: opts.zeroTitle ?? 'Zero Line' }, ...(opts.extraLevels ?? [])],
+        levels: [{ key: 'zero', price: baseline, color: opts.zeroInk, lineStyle: opts.zeroLineStyle ?? 'dashed', title: opts.zeroTitle ?? msg('indicator.common.level.zero', 'Zero Line') }, ...(opts.extraLevels ?? [])],
     };
 }
 
@@ -293,12 +295,12 @@ function channels(hex: string): [number, number, number] | null {
 
 /**
  * Blend `from`→`to` by where `value` falls in `[low, high]`, clamped at both ends
- * (a non-finite value or an unparseable ink yields `from`).
+ * (a non-finite value or bound, or an unparseable ink, yields `from`).
  */
 export function gradient(value: number, low: number, high: number, from: string, to: string): string {
     const a = channels(from);
     const b = channels(to);
-    if (!a || !b || !Number.isFinite(value)) return from;
+    if (!a || !b || !Number.isFinite(value) || !Number.isFinite(low) || !Number.isFinite(high)) return from;
     const span = high - low;
     const t = span === 0 ? 0 : Math.max(0, Math.min(1, (value - low) / span));
     const mix = (i: number): string =>

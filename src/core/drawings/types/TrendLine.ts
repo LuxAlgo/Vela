@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/message';
 import { Drawing, type AnchorSlot } from '../Drawing';
 import type { Projector } from '../geometry';
 import type { SettingsSchema } from '../schema';
@@ -64,9 +65,9 @@ export class TrendLine extends Drawing {
         return {
             fields: [
                 ...LINE_FIELDS,
-                { path: 'style.arrowRight', label: 'Arrow', kind: 'boolean', group: 'line' },
-                { path: 'style.extendLeft', label: 'Extend left', kind: 'boolean', group: 'line' },
-                { path: 'style.extendRight', label: 'Extend right', kind: 'boolean', group: 'line' },
+                { path: 'style.arrowRight', label: msg('drawing.trendline.arrowRight', 'Arrow'), kind: 'boolean', group: 'line' },
+                { path: 'style.extendLeft', label: msg('drawing.trendline.extendLeft', 'Extend left'), kind: 'boolean', group: 'line' },
+                { path: 'style.extendRight', label: msg('drawing.trendline.extendRight', 'Extend right'), kind: 'boolean', group: 'line' },
                 ...TEXT_FIELDS,
             ],
         };

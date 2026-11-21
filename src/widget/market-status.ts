@@ -17,7 +17,9 @@ export interface MarketWindows {
     extended: ReadonlyArray<CalendarWindow>;
 }
 
-/** The civil date (`YYYY-MM-DD`) of `ms` in `tz`; empty string when the tz is bogus. */
+/** The civil date (`YYYY-MM-DD`) of `ms` in `tz`; empty string when the tz is bogus.
+ *  Pinned to en-CA whatever the chart's locale: its ISO-shaped output is compared as a
+ *  key, never shown. */
 function civilDate(ms: number, tz: string): string {
     try {
         return new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(ms);
@@ -26,7 +28,9 @@ function civilDate(ms: number, tz: string): string {
     }
 }
 
-/** Mon–Fri in `tz`? A bogus tz answers false (never claim a holiday on bad data). */
+/** Mon–Fri in `tz`? A bogus tz answers false (never claim a holiday on bad data).
+ *  Pinned to en-US whatever the chart's locale: the weekday is compared to `'Sat'` and
+ *  `'Sun'`, never shown. */
 function isWeekday(ms: number, tz: string): boolean {
     try {
         const wd = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' }).format(ms);

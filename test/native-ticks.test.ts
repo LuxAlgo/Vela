@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { logPriceTicks, valueDecimals, priceTicks, tickDecimals, axisDecimals, formatPriceLabel, formatAxisValue, formatTimeStamp } from '../src/renderers/native/chrome/ticks';
+import { logPriceTicks, valueDecimals, priceTicks, axisDecimals, formatPriceLabel, formatAxisValue, formatTimeStamp } from '../src/renderers/native/chrome/ticks';
+import { tickDecimals } from '../src/core/format/numbers';
 
 describe('native ticks · logPriceTicks', () => {
     it('places 1/2/5 per decade over a wide (multi-decade) range', () => {

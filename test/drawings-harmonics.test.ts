@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { createDrawing, deserializeDrawing, type DrawingTypeKey, type HarmonicPattern, type PatternDrawing } from '../src/core/drawings';
+import { createTranslator, type MessageLike } from '../src/plugin';
+
+/** Toolbar and drawing text as an English chart shows it. */
+const english = createTranslator({ locale: 'en' });
+const en = (m: MessageLike | null | undefined): string | null | undefined => (m == null ? m : english.t(m));
+
 
 const HARM = (type: DrawingTypeKey, prices: number[]) =>
     createDrawing(type, { paneId: 'price', anchors: prices.map((p, i) => ({ time: i * 10, price: p })) })! as HarmonicPattern;
@@ -8,7 +14,7 @@ describe('drawings/harmonic patterns', () => {
     it('validates a Gartley when all four ratios are in band', () => {
         // X0 A100 B40 C70 D22 → AB/XA 0.6, BC/AB 0.5, CD/BC 1.6, AD/XA 0.78 (all in band)
         const g = HARM('gartley', [0, 100, 40, 70, 22]);
-        expect(g.patternName()).toBe('Gartley');
+        expect(en(g.patternName())).toBe('Gartley');
         expect(g.valid()).toBe(true);
         expect(g.ratioOk(2)).toBe(true); // AB/XA
         expect(g.ratioOk(3)).toBe(true); // BC/AB
@@ -38,7 +44,7 @@ describe('drawings/harmonic patterns', () => {
     it('Cypher uses its non-adjacent rules (XC/XA, CD/XC), not the consecutive legs', () => {
         // X0 A100 B50 C130 D28 → AB/XA .5, XC/XA 1.3, CD/XC 102/130=0.785
         const cy = HARM('cypher', [0, 100, 50, 130, 28]);
-        expect(cy.patternName()).toBe('Cypher');
+        expect(en(cy.patternName())).toBe('Cypher');
         expect(cy.valid()).toBe(true);
         expect(cy.ratioOk(2)).toBe(true); // AB/XA is a Cypher constraint
         expect(cy.ratioOk(3)).toBeNull(); // BC/AB is NOT a Cypher constraint

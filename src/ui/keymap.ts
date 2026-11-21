@@ -10,16 +10,21 @@
 // Scopes: a stack (`pushScope`/`popScope`). A binding fires when its scope is the TOP of
 // the stack, or always when its scope is `'global'`. Opening a dialog pushes `'dialog'`
 // and thereby mutes `'chart'` bindings without unregistering anything.
+// Keyboard layouts: a chord names Latin keys. A layout that types another script there
+// (Cyrillic `я` on the Z key) still fires `mod+z`: the match falls back to the physical key.
+import { msg } from '../core/i18n/message';
+import { textOf } from '../core/i18n/text';
+import type { MessageDescriptor, MessageLike, Translator } from '../core/i18n/types';
 
 export interface KeyBindingDescriptor {
     /** Stable id, e.g. `'chart.toggle-log-scale'`. Re-registering an id replaces it. */
     id: string;
     /** Default chord(s). Users can `rebind()` without touching the descriptor. */
     keys: string | string[];
-    /** Human label for the shortcuts help panel. */
-    label: string;
-    /** Help-panel grouping, e.g. `'Chart'`, `'Drawings'`. */
-    category?: string;
+    /** Human label for the shortcuts help panel. A message follows the shell's language. */
+    label: MessageLike;
+    /** Help-panel grouping, e.g. `'Chart'`, `'Drawings'`. A message follows the shell's language. */
+    category?: MessageLike;
     /** `'global'` fires in ANY scope; anything else only while it is the top scope. Default `'chart'`. */
     scope?: string;
     /** Extra runtime gate evaluated at match time. */
@@ -65,6 +70,16 @@ const KEY_ALIASES: Record<string, string> = {
 
 const MAC_GLYPHS = { meta: '⌘', ctrl: '⌃', alt: '⌥', shift: '⇧' } as const;
 
+/** Key names a chord displays outside macOS (macOS shows glyphs). */
+const KEY_TEXT = {
+    ctrl: msg('ui.keys.ctrl', 'Ctrl'),
+    alt: msg('ui.keys.alt', 'Alt'),
+    shift: msg('ui.keys.shift', 'Shift'),
+    meta: msg('ui.keys.meta', 'Win'),
+    space: msg('ui.keys.space', 'Space'),
+    general: msg('ui.keys.general', 'General'),
+};
+
 function parseChord(spec: string, mac: boolean): Chord {
     const parts = spec
         .toLowerCase()
@@ -84,6 +99,19 @@ function parseChord(spec: string, mac: boolean): Chord {
     return chord;
 }
 
+/**
+ * The key a keystroke names, as chords spell it: `ev.key` lowercased, unless the layout
+ * typed a letter of another script there — then the physical key's Latin letter or digit
+ * (`KeyZ` → `z`), so shortcuts keep working on Cyrillic, Greek, Arabic or Hebrew layouts.
+ * A Latin layout keeps its own letters (AZERTY's Z stays `z` wherever it sits).
+ */
+export function chordKeyOf(ev: Pick<KeyboardEvent, 'key' | 'code'>): string {
+    const key = String(ev.key ?? '').toLowerCase();
+    if (key.length !== 1 || /^[a-z0-9]$/.test(key) || !/\p{L}/u.test(key)) return key;
+    const m = /^Key([A-Z])$|^Digit([0-9])$/.exec(ev.code ?? '');
+    return m ? (m[1] ?? m[2]!).toLowerCase() : key;
+}
+
 function eventMatches(ev: KeyboardEvent, c: Chord): boolean {
     return (
         ev.ctrlKey === c.ctrl &&
@@ -92,7 +120,7 @@ function eventMatches(ev: KeyboardEvent, c: Chord): boolean {
         // Shift is part of producing many printable keys ('?', '+') — only enforce it
         // when the chord names a non-printable/letter key where shift is a real modifier.
         (c.key.length > 1 || /^[a-z0-9 ]$/.test(c.key) ? ev.shiftKey === c.shift : true) &&
-        ev.key.toLowerCase() === c.key
+        chordKeyOf(ev) === c.key
     );
 }
 
@@ -114,10 +142,11 @@ export function isEditableTarget(ev: KeyboardEvent): boolean {
     return (typeof t.getAttribute === 'function' ? t.getAttribute('role') : null) === 'textbox';
 }
 
-function displayChord(spec: string, mac: boolean): string {
+function displayChord(spec: string, mac: boolean, i18n?: Translator | null): string {
     const c = parseChord(spec, mac);
+    const name = (m: MessageDescriptor): string => textOf(i18n, m);
     const keyLabel =
-        c.key === ' ' ? 'Space' : c.key.length === 1 ? c.key.toUpperCase() : c.key.charAt(0).toUpperCase() + c.key.slice(1);
+        c.key === ' ' ? name(KEY_TEXT.space) : c.key.length === 1 ? c.key.toUpperCase() : c.key.charAt(0).toUpperCase() + c.key.slice(1);
     if (mac) {
         return (
             (c.ctrl ? MAC_GLYPHS.ctrl : '') +
@@ -127,7 +156,7 @@ function displayChord(spec: string, mac: boolean): string {
             keyLabel
         );
     }
-    const mods = [c.ctrl && 'Ctrl', c.alt && 'Alt', c.shift && 'Shift', c.meta && 'Win'].filter(Boolean);
+    const mods = [c.ctrl && name(KEY_TEXT.ctrl), c.alt && name(KEY_TEXT.alt), c.shift && name(KEY_TEXT.shift), c.meta && name(KEY_TEXT.meta)].filter(Boolean);
     return [...mods, keyLabel].join('+');
 }
 
@@ -176,17 +205,18 @@ export class KeymapManager {
         else this.rebinds.set(id, Array.isArray(keys) ? [...keys] : [keys]);
     }
 
-    /** Snapshot for a shortcuts help panel / rebinding UI. */
-    bindings(): ResolvedBinding[] {
+    /** Snapshot for a shortcuts help panel / rebinding UI: labels, categories and key
+     *  names in `i18n`'s language (English when absent). */
+    bindings(i18n?: Translator | null): ResolvedBinding[] {
         return [...this.descriptors.values()].map((d) => {
             const keys = this.activeKeys(d);
             return {
                 id: d.id,
-                label: d.label,
-                category: d.category ?? 'General',
+                label: textOf(i18n, d.label),
+                category: textOf(i18n, d.category ?? KEY_TEXT.general),
                 scope: d.scope ?? this.baseScope,
                 keys,
-                display: keys.map((k) => displayChord(k, this.mac)),
+                display: keys.map((k) => displayChord(k, this.mac, i18n)),
             };
         });
     }

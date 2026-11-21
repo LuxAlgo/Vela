@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/message';
 import { Drawing, type AnchorSlot, type SerializedDrawing } from '../Drawing';
 import type { Projector } from '../geometry';
 import type { SettingsSchema } from '../schema';
@@ -78,9 +79,9 @@ export abstract class GlyphStamp extends Drawing {
     schema(): SettingsSchema {
         return {
             fields: [
-                { path: 'glyph', label: 'Icon', kind: 'select', options: GLYPH_OPTIONS.map((g) => ({ value: g, label: g })), group: 'line' },
-                { path: 'size', label: 'Size', kind: 'select', options: STAMP_SIZE_OPTIONS.map((s) => ({ value: s, label: s })), group: 'line' },
-                { path: 'style.lineColor', label: 'Color', kind: 'color', group: 'line' },
+                { path: 'glyph', label: msg('drawing.flagmark.glyph', 'Icon'), kind: 'select', options: GLYPH_OPTIONS.map((g) => ({ value: g, label: g })), group: 'line' },
+                { path: 'size', label: msg('drawing.flagmark.size', 'Size'), kind: 'select', options: STAMP_SIZE_OPTIONS.map((s) => ({ value: s, label: s })), group: 'line' },
+                { path: 'style.lineColor', label: msg('drawing.flagmark.lineColor', 'Color'), kind: 'color', group: 'line' },
                 ...TEXT_FIELDS,
             ],
         };

@@ -4,6 +4,8 @@ import type { VisibleRange } from './ports/IChartRenderer';
 import type { InputValue } from './model/inputs';
 import type { IChartRenderer } from './ports/IChartRenderer';
 import type { DrawingsOption } from './drawings/toolbar';
+import type { LocalizationOptions } from './i18n/types';
+import type { ThemeSettings, UiTheme } from '@luxalgo/vela-ui/theme';
 
 /** A registered data-provider name (any string; matched case-insensitively). */
 export type ProviderName = string;
@@ -87,19 +89,30 @@ export interface VelaTheme {
     upColor: string;
     downColor: string;
     fontFamily: string;
+    /** The UI's settings beyond these colors: brand color, radius scale, font, any token,
+     *  component settings. The chrome builds its tokens from the colors and these. */
+    ui?: ThemeSettings;
 }
 
 export type ThemeName = 'dark' | 'light';
+
+/** A built-in theme's name, or the id of one added with `registerTheme`. */
+export type ThemeId = ThemeName | (string & {});
 
 /** A renderer **class** — Vela instantiates it with the resolved display options.
  *  Built-in default: `NativeRenderer`.
  *  from `'vela/renderers/lwc'` and pass it as `options.renderer`. */
 export type RendererConstructor = new (opts?: RendererDisplayOptions) => IChartRenderer;
 
-export interface VelaOptions extends MarketConfig {
+/** The chart's options. Its {@link LocalizationOptions} (`locale`, `direction`, `messages`,
+ *  `numberingSystem`, `hourCycle`, `weekStart`, `formatters`) change at runtime through
+ *  `chart.setLocale`. */
+export interface VelaOptions extends MarketConfig, LocalizationOptions {
     /** false = static history; true = history + live forming candle. */
     live?: boolean;
-    theme?: ThemeName | VelaTheme;
+    /** A built-in or registered theme by id, the chart's seven colors and font (with `ui`
+     *  settings), or a whole theme from `createTheme`. */
+    theme?: ThemeId | VelaTheme | UiTheme;
     height?: number | string;
     /** Rendering backend as a renderer **class** that Vela instantiates (with the
      *  resolved display options). Omit for the built-in native renderer (default); for
@@ -126,9 +139,11 @@ export interface VelaOptions extends MarketConfig {
     /** Neon glow/bloom intensity for line series (0 = off, ~0.6 = strong). WebGL2 only
      *  — the canvas2d backend ignores it. Default 0. */
     glow?: number;
-    /** Bullish candle body/wick color (native renderer). Defaults to the palette's bullish green. */
+    /** Bullish candle body/wick color (native renderer). Defaults to the theme's up color (the
+     *  palette's bullish green in the built-in themes), which a theme switch then follows. */
     upColor?: string;
-    /** Bearish candle body/wick color (native renderer). Defaults to the palette's bearish red. */
+    /** Bearish candle body/wick color (native renderer). Defaults to the theme's down color
+     *  (the palette's bearish red in the built-in themes), which a theme switch then follows. */
     downColor?: string;
     /** How the base price series is drawn (native renderer): candlestick / OHLC bars /
      *  line / area / baseline. Default `'candles'`. */
@@ -153,7 +168,27 @@ export interface VelaOptions extends MarketConfig {
     /** Price-axis customization (native renderer): `ticks` replaces the built-in tick
      *  ladder of every pane's price axis — labels and horizontal gridlines together. */
     priceAxis?: PriceAxisOptions;
+    /** Free panning (native renderer): unlock manual scaling on drag so one gesture pans
+     *  time and price together (`true` / `'drag'`, `'alt'`, `'shift'`, `'mod'`, or a custom
+     *  predicate; `false` by default). Seeds the runtime `freePan` feature and `priceScale.freePan`. */
+    freePan?: FreePanTrigger;
 }
+
+/** Pointer press state handed to a custom {@link FreePanTrigger} predicate. */
+export interface FreePanEvent {
+    readonly button: number;
+    readonly altKey: boolean;
+    readonly shiftKey: boolean;
+    readonly ctrlKey: boolean;
+    readonly metaKey: boolean;
+    readonly pointerType: string;
+}
+
+/** Which pointer gesture unlocks manual scaling to pan time and price together on an
+ *  auto-scaled pane: `true` / `'drag'` = plain primary drag, `'alt'` / `'shift'` /
+ *  `'mod'` = modifier + primary drag, or a predicate `(e: FreePanEvent) => boolean`
+ *  for any custom button or modifier chord. `false` = off. */
+export type FreePanTrigger = boolean | 'drag' | 'alt' | 'shift' | 'mod' | ((e: FreePanEvent) => boolean);
 
 /** Price-axis customization (see `VelaOptions.priceAxis`). */
 export interface PriceAxisOptions {
@@ -348,11 +383,16 @@ export type NativeBackend = 'auto' | 'canvas2d' | 'webgl2';
  *  A plugin chart type (registered via `vela/plugin`) adds its own id to this union
  *  volume-at-price (plus a right-edge visible-range profile); it needs the
  *  provider+symbol to expose trade data — without it, plain candles render.
+ *  `'linemarkers'` is the close line with a dot on each bar (when bars are spaced
+ *  enough to tell the dots apart), `'stepline'` holds each close flat until the next
+ *  bar, and `'columns'` draws a column per bar from the bottom of the pane up to its
+ *  close, up-colored when the close is at or above the previous close — the styles
+ *  that read best on series with one value per bar.
  *  `'heikinashi'` draws Heikin Ashi candles: a 1:1 display transform of the raw
  *  bars applied at the core's bar seam, so indicators compute on the same
  *  smoothed values the chart shows (raw data stays untouched underneath). */
 /** Built-in styles plus any id registered through the chart-type SDK (`registerChartType`). */
-export type PriceStyle = 'candles' | 'bars' | 'line' | 'area' | 'baseline' | 'heikinashi' | (string & {});
+export type PriceStyle = 'candles' | 'bars' | 'line' | 'linemarkers' | 'stepline' | 'area' | 'baseline' | 'columns' | 'heikinashi' | (string & {});
 
 /** Display options passed to a renderer at construction. */
 export interface RendererDisplayOptions {
@@ -372,6 +412,8 @@ export interface RendererDisplayOptions {
     priceStyle: PriceStyle;
     /** Host price-axis ticks (`VelaOptions.priceAxis.ticks`); absent/null = built-in ticks. */
     priceAxisTicks?: PriceAxisTicksFn | null;
+    /** Free panning (`VelaOptions.freePan`); absent = off. */
+    freePan?: FreePanTrigger;
 }
 
 /**

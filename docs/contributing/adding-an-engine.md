@@ -43,16 +43,41 @@ It resolves to:
 
 Because `prepare` is cheap and data-free, the core can call it eagerly to build settings UI before any execution happens.
 
+#### Multi-selects and section help
+
+Two optional `InputSchema` fields cover settings that a plain dropdown and a plain heading cannot express. Both work in inputs and in declaration props alike.
+
+- **`multiple: { separator, locked? }`** — on a `string` input with `options`, the dialog shows the options as checkboxes in one dropdown, and the user can check several. The stored value stays **one string**: the checked options joined by `separator`, in `options` order. Layouts, `setInputs`/`setProps`, saved state and your engine see that string, so split it by the separator to read it. Options listed in `locked` are always checked: their checkboxes are disabled and the value always holds them. When the dialog reads a value, it keeps only the fragments that name an option and adds the locked ones; the closed field shows the checked options' labels (`display.options` applies to each one) joined by the separator.
+- **`groupHelp: { text?, url? }`** — a small question-mark mark beside the input's `group` heading. `text` (a string or a message) is its tooltip and accessible name; `url` opens in a new tab when the mark is clicked. Only `http:` and `https:` URLs are linked: any other URL leaves the mark a tooltip only, and a mark with neither shows nothing. The first input of a group that carries `groupHelp` sets the group's mark, so declare it once, on any member; an input without a `group` has no heading to carry it.
+
+A strategy's execution modes, published as a declaration prop:
+
+```json
+{
+    "key": "script_execution",
+    "title": "Script execution",
+    "type": "string",
+    "defval": "On bar close",
+    "options": ["On bar close", "On order fill", "On realtime bar tick"],
+    "multiple": { "separator": ", ", "locked": ["On bar close"] },
+    "group": "Detalization and execution",
+    "groupHelp": { "text": "When the strategy runs.", "url": "https://example.com/docs/execution" }
+}
+```
+
+The closed field reads "On bar close"; after the user checks "On order fill", the value your engine receives is `"On bar close, On order fill"`.
+
 ### execute — synchronous handle, async run
 
 Where `prepare` is async, `execute(request, handlers)` is the opposite: it returns an **execution session synchronously**, even though the actual run is asynchronous. The session is a handle the core holds immediately; results arrive later through the handlers. This split is the single biggest source of confusion for new authors, so keep it crisp: the call returns a control surface right away, and the work happens behind it.
 
-The request carries everything the run needs: the prepared script, market context (symbol, timeframe, optional symbol info), the bar snapshot, resolved input values, an optional visible range, the `fetchSeries` gateway, a `mode`, and where the chart's history load stands (`historyState` — see [*History backfill*](#history-backfill-partial-bars-engine-owned-run-policy)).
+The request carries everything the run needs: the prepared script, market context (symbol, timeframe, optional symbol info, price style and trading session), the bar snapshot, resolved input values, an optional visible range, the `fetchSeries` gateway, a `mode`, and where the chart's history load stands (`historyState` — see [*History backfill*](#history-backfill-partial-bars-engine-owned-run-policy)).
 
-Two request fields deserve care:
+Three request fields deserve care:
 
 - **`market.symbolInfo` arrives asynchronously.** The feed fetches it in the background, so the first run may see it absent — or a synthesized fallback — and a later run the real values. Tolerate both; never treat its absence as an error.
 - **`market.chartStyle` is metadata, not a request to transform.** On a bar-transforming price style (e.g. Heikin Ashi) the bars you receive are *already* the transformed view. What the engine does with the flag: encode it into the chart's ticker identity (the extended ticker, `"SYM;heikinashi"`), so a security-style secondary fetch can distinguish "the chart's derived series" from raw data — the standard ticker opts back into raw. Engines with no such feature may ignore it.
+- **`market.session` is metadata, too.** It names the chart's trading session (`'regular'` or `'extended'`; absent means regular, or a market without sessions), and the bars you receive already belong to it. Use it where the language exposes the chart's session, or to keep data the engine obtains elsewhere on the same session as the chart. It follows the chart's setting, not the symbol, so a market without sessions may still carry one: ignore it there. A session switch stops every execution and starts new ones, so the value never changes within one execution.
 
 ## The data inversion (the heart of it)
 
@@ -63,6 +88,8 @@ The core owns the canonical bar array and is the sole loader and streamer of pri
 Secondary series are different but still inverted. When a script needs another series — a higher or lower timeframe, or a different symbol (Pine's `request.security`) — it does not open its own connection. It calls the **`fetchSeries` gateway** the core supplies, keyed by `(symbol, timeframe)`. That gateway is cache-backed by the chart's data feed, so secondary series get real, correctly-resolved data. There is **no aggregation**: timeframes are kept separate, never derived from the primary bars by rolling them up. If a script asks for an hourly series, the gateway fetches hourly data.
 
 If no gateway is supplied, secondary fetches degrade to empty rather than failing — the primary series still runs.
+
+A source can refuse a secondary series for good — a monthly series asked for hourly bars. The gateway's promise then rejects with a `DataUnavailableError` whose message names the series and its finest timeframe (`CPI is not served at 60; its finest timeframe is 1D`). Detect it with `isDataUnavailableError(e)` (from `@luxalgo/vela/plugin`) — never `instanceof`, since the provider may bundle another copy of Vela — and report it to the script's author instead of retrying. Other transient failures still arrive as an empty series.
 
 Why it matters: causality. Scripts are stateful and run over **all** bars, never just the visible window. Centralizing data ownership in the core keeps one consistent, correctly-ordered, deduped bar history feeding every engine and renderer. The viewport changes *what* a viewport-aware script computes — it never scopes *which* bars execute.
 
@@ -109,7 +136,7 @@ The execution session is how the core drives a running script. It exposes four l
   Two obligations govern what you put in it, because both surface directly to host code:
 
   - **`variables` is keyed by the names WRITTEN in the source.** If your transpiler mangles or scopes names internally (`glb1_posSize` for a source `posSize`), un-mangle them here and drop the buckets. A host must never learn your scoping scheme, and values are the ones at the last computed bar — not per-bar series buffers.
-  - **`strategy` and `trades` are neutral.** A language with simulated order execution translates its own vocabulary into `StrategyState` (`position`, `equity`, `openPnl`, `netPnl`, `wins`/`losses`, drawdown/runup) and `StrategyTrade` (round trips: `entry`, optional `exit`, `side`, `qty`, and — when the engine keeps a per-trade ledger — the optional `pnl`, `commission`, `maxDrawdown`, `maxRunup`). That translation is what lets one dashboard read strategies written in any language. Fill `strategy` only for scripts that actually declare a strategy — its presence is how the core tags a run `kind: 'strategy'`. Keep `trades` behind `select`: a deep backtest's ledger is large, and the core never pulls it for an ordinary run.
+  - **`strategy` and `trades` are neutral.** A language with simulated order execution translates its own vocabulary into `StrategyState` (`position`, `equity`, `openPnl`, `netPnl`, `wins`/`losses`, drawdown/runup, and — when the engine computes them — the optional `cagr`, `sharpe`/`sortino` and the buy-and-hold benchmark `buyHoldPnl`/`buyHoldPct`/`outperformance`) and `StrategyTrade` (round trips: `entry`, optional `exit`, `side`, `qty`, and — when the engine keeps a per-trade ledger — the optional `pnl`, `commission`, `maxDrawdown`, `maxRunup`). That translation is what lets one dashboard read strategies written in any language. Fill `strategy` only for scripts that actually declare a strategy — its presence is how the core tags a run `kind: 'strategy'`. Keep `trades` behind `select`: a deep backtest's ledger is large, and the core never pulls it for an ordinary run.
 
 Results flow back the other way, through the **handlers** event sink:
 

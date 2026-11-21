@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/message';
 import { Drawing, type AnchorSlot } from '../Drawing';
 import type { Projector } from '../geometry';
 import type { SettingsSchema } from '../schema';
@@ -90,7 +91,7 @@ export abstract class ArrowMark extends Drawing {
     }
 
     schema(): SettingsSchema {
-        return { fields: [{ path: 'style.lineColor', label: 'Color', kind: 'color', group: 'line' }, ...TEXT_FIELDS] };
+        return { fields: [{ path: 'style.lineColor', label: msg('drawing.arrowmarkup.lineColor', 'Color'), kind: 'color', group: 'line' }, ...TEXT_FIELDS] };
     }
 }
 

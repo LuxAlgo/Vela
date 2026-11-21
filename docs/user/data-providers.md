@@ -72,6 +72,7 @@ Because registration is explicit and the symbol index builds asynchronously, the
 - `await chart.ready()` resolves after that first load. `chart.addIndicator(...)` already awaits readiness internally, so you can call it before — or after — registering the provider; it queues until data lands.
 - An explicit `PROVIDER:SYMBOL` resolves the moment that provider registers (it doesn't wait for the full symbol index to build).
 - **Deep history loads in chunks.** A `bars` count beyond one ~10k-bar chunk paints the recent window first (that's what `ready()` awaits), then backfills older bars **backward in bounded ranged requests** — each a quick `getBars({ to, limit })` the provider answers from its own pagination. Watch `history:progress`, or `await chart.historyComplete()` for the full depth; indicators compute once, over the complete history, when it lands. A chunk that returns nothing older ends the backfill (`history:complete` with `reason: 'genesis'`) — exactly right for sources with bounded history.
+- **A series the source never serves.** A provider can refuse a timeframe for good — a monthly economic series asked for hourly bars — by throwing a `DataUnavailableError` (see [Adding a data provider](../contributing/adding-a-data-provider.md#failures-transient-or-permanent)). The chart then ends its load (`ready()` still resolves), starts no live updates for that market, and fires `data:unavailable` with `{ symbol, timeframe, reason, finest?, default? }`. It keeps the timeframe you set: switching to `default` or `finest` is your call, and [the workspace](./workspace.md#a-timeframe-the-source-never-serves) makes it for you. A script's `request.security` on such a series gets the error instead of bars. Any other provider error still reads as an empty answer.
 - **Multi-chart retention.** The closed-bar cache keeps ONE symbol by default (each load purges the rest — right for a single chart). Multi-chart hosts declare the set of live symbols with `BarStore.retain(symbols)` so one chart's load never evicts another's history; [the workspace](./workspace.md) does this automatically for its cells (duplicates share the same cached series and live stream).
 
 ## `chart.data` reference
@@ -85,7 +86,7 @@ Because registration is explicit and the symbol index builds asynchronously, the
 | `displayPrefix(symbol)` | `string \| null` | The venue label to display: the descriptor's **listing prefix** when declared (`NASDAQ` for AAPL), else the resolved provider name. Null while unresolvable. |
 | `canonicalSymbol(symbol)` | `string \| null` | The canonical `PREFIX:TICKER` form (`edgx:aapl` → `NASDAQ:AAPL`). Null while unresolvable. |
 | `symbols(provider?)` | `SymbolDescriptor[]` | Indexed symbols (for autocomplete) — for one provider, or all. |
-| `symbolInfo(symbol)` | `Promise<SymbolInfo \| undefined>` | Per-symbol metadata (Pine `syminfo.*`), via the owning provider. Callers asking for the same symbol at once share **one** call to `getSymbolInfo`, and the answer is reused for 10 minutes — a provider needs no cache of its own here. A rejected call is not remembered. |
+| `symbolInfo(symbol)` | `Promise<SymbolInfo \| undefined>` | The symbol's facts (time zone, sessions, timeframes, volume, one value per bar — see [Adding a data provider](../contributing/adding-a-data-provider.md)) and engine metadata (Pine `syminfo.*`), via the owning provider. Callers asking for the same symbol at once share **one** call to `getSymbolInfo`, and the answer is reused for 10 minutes — a provider needs no cache of its own here. A rejected call is not remembered. |
 | `capabilities(symbol)` | `ProviderCapabilities \| null` | The full resolved per-symbol capability record (behavior flags). Null while nothing resolves the symbol yet. |
 | `ready()` | `Promise<void>` | Resolves when every provider's symbol index has settled. |
 
@@ -113,14 +114,16 @@ chart.data.registerProvider('coinbase', new CoinbaseProvider());
 
 ## The bundled Hyperliquid provider
 
-`@luxalgo/vela/providers/hyperliquid` is a from-scratch [Hyperliquid](https://hyperliquid.xyz) provider (no third-party SDK, no API key). It serves USD-margined perpetuals — **bare coins** like `BTC`, `ETH` (not `BTCUSDT`) — and spot pairs (`PURR/USDC`), and aggregates timeframes Hyperliquid doesn't serve natively (e.g. `45`, `180`, `360`). **Live ticks come from a real WebSocket candle stream**, with the same automatic poll fallback as Binance if a stream can't deliver.
+`@luxalgo/vela/providers/hyperliquid` is a from-scratch [Hyperliquid](https://hyperliquid.xyz) provider (no third-party SDK, no API key). It serves USD-margined perpetuals — **bare coins** like `BTC`, `ETH` (not `BTCUSDT`) — spot pairs (`PURR/USDC`) and the perpetuals of every builder-deployed (HIP-3) perp dex, and aggregates timeframes Hyperliquid doesn't serve natively (e.g. `45`, `180`, `360`). **Live ticks come from a real WebSocket candle stream**, with the same automatic poll fallback as Binance if a stream can't deliver.
 
 ```js
 import { HyperliquidProvider } from '@luxalgo/vela/providers/hyperliquid';
 chart.data.registerProvider('hyperliquid', new HyperliquidProvider());
 // new Vela('#chart', { symbol: 'BTC', timeframe: '1h' })  → perps
-// or 'HYPERLIQUID:ETH', 'PURR/USDC', …
+// or 'HYPERLIQUID:ETH', 'PURR/USDC', 'hyperliquid:xyz:TSLA', …
 ```
+
+**Builder-deployed (HIP-3) markets** — the perpetuals each dex deploys on Hyperliquid (stocks, commodities, indices and more, trading around the clock) — are named the way Hyperliquid names them: the dex, a colon, the coin (`xyz:TSLA`, `xyz:GOLD`). Put the provider in front to chart one, `hyperliquid:xyz:TSLA`: the first colon separates the provider, so a HIP-3 ticker never collides with a main perp or a spot pair. Without the provider in front, `xyz:` would read as a provider name. Symbol search lists every live market of every dex, with the dex's name in the description (`TSLA / USD Perpetual (XYZ)`); a dex's delisted markets, and dexes whose markets are all delisted, are left out. Prices follow the same precision rule as the main perps, and a dex margined in another stablecoin is quoted in it.
 
 > **History is recent-only.** Hyperliquid serves just the most recent ~5000 candles per interval — roughly 3.5 days of `1m`, ~17 days of `5m`, ~7 months of `1h`, and daily back to listing. There is no deeper backfill, so it's a live / recent-history venue rather than a deep-history source. Requesting more bars than exist simply returns what's available.
 

@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/message';
 import { Drawing, type AnchorSlot, type SerializedDrawing } from '../Drawing';
 import type { Projector } from '../geometry';
 import type { SettingsSchema } from '../schema';
@@ -175,7 +176,7 @@ export class DedekindTessellation extends Drawing {
                 ...LINE_FIELDS,
                 {
                     path: 'maxCurvature',
-                    label: 'Max curvature',
+                    label: msg('drawing.dedekind.maxCurvature', 'Max curvature'),
                     kind: 'number',
                     min: 4,
                     max: 64,

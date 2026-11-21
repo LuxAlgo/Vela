@@ -1,0 +1,61 @@
+// The controller ↔ view bridge for Zag-machine components. HEADLESS-FIRST: a component's
+// controller is a running Zag machine (framework-agnostic state/behavior/ARIA); the vanilla
+// view subscribes and projects api props onto its own DOM via `spreadProps`. A future
+// `vela/react` reuses the SAME machines through Zag's React adapter and swaps only the view.
+import { VanillaMachine, normalizeProps, spreadProps as zagSpreadProps } from '@zag-js/vanilla';
+import type { Machine, MachineSchema, Service } from '@zag-js/core';
+import { pageUid } from './page';
+
+export { normalizeProps };
+
+/**
+ * Zag's `spreadProps`, without the style keys a part leaves unset. Zag's own spread removes
+ * those from the element, which wipes what Zag writes there itself: from 1.47 a positioner's
+ * style carries `zIndex: undefined` while the popper sets its z-index inline, so every
+ * re-render dropped an open menu under the page. A key the part set and then clears is still
+ * removed: that runs off the previous style.
+ */
+export function spreadProps(...[node, attrs, machineId]: Parameters<typeof zagSpreadProps>): ReturnType<typeof zagSpreadProps> {
+    const style: unknown = attrs['style'];
+    if (style === null || typeof style !== 'object') return zagSpreadProps(node, attrs, machineId);
+    const set: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(style)) if (value != null) set[key] = value;
+    return zagSpreadProps(node, { ...attrs, style: set }, machineId);
+}
+
+/** The MachineHandle for a given machine definition (package schemas aren't exported —
+ *  infer them from the machine value: `HandleOf<typeof tooltip.machine>`). */
+export type HandleOf<M> = M extends Machine<infer T extends MachineSchema> ? MachineHandle<T> : never;
+
+export interface MachineHandle<T extends MachineSchema> {
+    service: Service<T>;
+    /** Re-run the view projection now (e.g. after external DOM swaps). */
+    flush(): void;
+    stop(): void;
+}
+
+/** Start a machine and keep `render(service)` in sync with every transition.
+ *  `render` runs once immediately (initial projection) and on each machine notification. */
+export function runMachine<T extends MachineSchema>(
+    machine: Machine<T>,
+    props: Partial<T['props']> | (() => Partial<T['props']>),
+    render: (service: Service<T>) => void,
+): MachineHandle<T> {
+    const m = new VanillaMachine(machine, props);
+    const unsub = m.subscribe(render);
+    m.start();
+    render(m.service);
+    return {
+        service: m.service,
+        flush: () => render(m.service),
+        stop: () => {
+            unsub();
+            m.stop();
+        },
+    };
+}
+
+/** Unique ids for machine instances (Zag keys its DOM lookups on them). */
+export function nextUid(prefix: string): string {
+    return pageUid(prefix);
+}

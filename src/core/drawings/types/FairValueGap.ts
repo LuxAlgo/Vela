@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/message';
 import type { SerializedDrawing } from '../Drawing';
 import type { SettingsSchema } from '../schema';
 import { gapState, type PriceActionBar } from '../priceAction';
@@ -12,10 +13,10 @@ export interface GapSettings extends ZoneSettings {
 }
 
 const EXTEND_OPTIONS = [
-    { value: 'tested', label: 'Until tested' },
-    { value: 'half', label: 'Until 50%' },
-    { value: 'filled', label: 'Until filled' },
-    { value: 'always', label: 'Always' },
+    { value: 'tested', label: msg('drawing.fairvaluegap.option.tested', 'Until tested') },
+    { value: 'half', label: msg('drawing.fairvaluegap.option.half', 'Until 50%') },
+    { value: 'filled', label: msg('drawing.fairvaluegap.option.filled', 'Until filled') },
+    { value: 'always', label: msg('drawing.fairvaluegap.option.always', 'Always') },
 ];
 
 function defaults(): GapSettings {
@@ -52,13 +53,13 @@ export class FairValueGap extends PriceActionZone {
     schema(): SettingsSchema {
         return {
             fields: [
-                { path: 'gap.extend', label: 'Extend right', kind: 'select', options: EXTEND_OPTIONS, group: 'behavior' },
-                { path: 'gap.upColor', label: 'Bullish', kind: 'color', group: 'fill' },
-                { path: 'gap.downColor', label: 'Bearish', kind: 'color', group: 'fill' },
-                { path: 'gap.midline', label: 'Midline', kind: 'boolean', group: 'line' },
-                { path: 'gap.border', label: 'Border', kind: 'boolean', group: 'line' },
-                { path: 'gap.fade', label: 'Fade at end', kind: 'boolean', group: 'behavior', when: { path: 'gap.extend', in: ['tested', 'half', 'filled'] } },
-                { path: 'gap.inverse', label: 'Flip on close', kind: 'boolean', group: 'behavior', when: { path: 'gap.extend', in: ['filled'] } },
+                { path: 'gap.extend', label: msg('drawing.fairvaluegap.gapExtend', 'Extend right'), kind: 'select', options: EXTEND_OPTIONS, group: 'behavior' },
+                { path: 'gap.upColor', label: msg('drawing.fairvaluegap.gapUpColor', 'Bullish'), kind: 'color', group: 'fill' },
+                { path: 'gap.downColor', label: msg('drawing.fairvaluegap.gapDownColor', 'Bearish'), kind: 'color', group: 'fill' },
+                { path: 'gap.midline', label: msg('drawing.fairvaluegap.gapMidline', 'Midline'), kind: 'boolean', group: 'line' },
+                { path: 'gap.border', label: msg('drawing.fairvaluegap.gapBorder', 'Border'), kind: 'boolean', group: 'line' },
+                { path: 'gap.fade', label: msg('drawing.fairvaluegap.gapFade', 'Fade at end'), kind: 'boolean', group: 'behavior', when: { path: 'gap.extend', in: ['tested', 'half', 'filled'] } },
+                { path: 'gap.inverse', label: msg('drawing.fairvaluegap.gapInverse', 'Flip on close'), kind: 'boolean', group: 'behavior', when: { path: 'gap.extend', in: ['filled'] } },
             ],
         };
     }

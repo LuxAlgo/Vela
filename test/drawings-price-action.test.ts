@@ -4,6 +4,12 @@
 import { describe, it, expect } from 'vitest';
 import { buildToolbar, createDrawing, type FairValueGap, type Liquidity, type OrderBlock, type Projector } from '../src/core/drawings';
 import { blockState, gapAt, gapState, liquidityState, nearestBarIndex, nearestGap, type PriceActionBar } from '../src/core/drawings/priceAction';
+import { createTranslator, type MessageLike } from '../src/plugin';
+
+/** Toolbar and drawing text as an English chart shows it. */
+const english = createTranslator({ locale: 'en' });
+const en = (m: MessageLike | null | undefined): string | null | undefined => (m == null ? m : english.t(m));
+
 
 const MIN5 = 300_000;
 /** Candles from [open, high, low, close] rows, five minutes apart. */
@@ -195,9 +201,9 @@ describe('a liquidity level', () => {
 describe('the price action tools in the toolbar and their settings', () => {
     it('they sit in their own Price Action section of the Fibonacci flyout, just above Gann', () => {
         const fib = buildToolbar(true).definition.groups.find((g) => g.id === 'fibonacci-gann')!;
-        const labels = fib.sections!.map((s) => s.label);
+        const labels = fib.sections!.map((s) => en(s.label));
         expect(labels.indexOf('Price Action')).toBe(labels.indexOf('Gann') - 1);
-        expect(fib.sections!.find((s) => s.label === 'Price Action')!.tools.map((t) => t.label)).toEqual(['Fair Value Gap', 'Order Block', 'Liquidity']);
+        expect(fib.sections!.find((s) => en(s.label) === 'Price Action')!.tools.map((t) => en(t.label))).toEqual(['Fair Value Gap', 'Order Block', 'Liquidity']);
     });
 
     it('their settings survive a save and a restore', () => {

@@ -1,7 +1,7 @@
 import { type AnchorSlot } from '../Drawing';
 import type { Projector, SegmentGeometry } from '../geometry';
 import type { SettingsSchema } from '../schema';
-import { LINE_FIELDS, FILL_FIELDS, TEXT_FIELDS } from '../schema';
+import { FILL_FIELDS, TEXT_FIELDS, BORDER_FIELDS } from '../schema';
 import { SegmentDrawing } from './SegmentDrawing';
 
 /**
@@ -62,6 +62,6 @@ export class RotatedRect extends SegmentDrawing {
     }
 
     schema(): SettingsSchema {
-        return { fields: [...LINE_FIELDS.map((f) => ({ ...f, label: f.label.replace('Line', 'Border') })), ...FILL_FIELDS, ...TEXT_FIELDS] };
+        return { fields: [...BORDER_FIELDS, ...FILL_FIELDS, ...TEXT_FIELDS] };
     }
 }

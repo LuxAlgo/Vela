@@ -1,6 +1,6 @@
 // The DatePicker controller (vela/ui) — panel navigation and picking, no DOM.
 import { describe, it, expect } from 'vitest';
-import { datePickerController } from '../src/ui/components/date-picker';
+import { datePickerController } from '@luxalgo/vela-ui/date-picker';
 
 const TODAY = new Date(2026, 8, 24);
 

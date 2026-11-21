@@ -6,6 +6,12 @@ import { DrawingsControl } from '../src/core/DrawingsControl';
 import { buildToolbar } from '../src/core/drawings';
 import type { IDrawingsRendererPort, DrawingIntent, SerializedDrawing } from '../src/core/drawings';
 import type { IChartRenderer } from '../src/core/ports/IChartRenderer';
+import { createTranslator, type MessageLike } from '../src/plugin';
+
+/** Toolbar and drawing text as an English chart shows it. */
+const english = createTranslator({ locale: 'en' });
+const en = (m: MessageLike | null | undefined): string | null | undefined => (m == null ? m : english.t(m));
+
 
 class FakePort implements IDrawingsRendererPort {
     toolbar: unknown = null;
@@ -498,9 +504,9 @@ describe('buildToolbar grouping', () => {
         ]);
 
         const linesGroup = definition.groups.find((g) => g.id === 'lines-channels-pitchforks');
-        expect(linesGroup?.label).toBe('Lines');
-        expect(linesGroup?.sections?.map((s) => s.label)).toEqual(['Lines', 'Channels', 'Pitchforks']);
-        expect(linesGroup?.sections?.find((s) => s.label === 'Lines')?.tools.map((t) => t.type).sort()).toEqual([
+        expect(en(linesGroup?.label)).toBe('Lines');
+        expect(linesGroup?.sections?.map((s) => en(s.label))).toEqual(['Lines', 'Channels', 'Pitchforks']);
+        expect(linesGroup?.sections?.find((s) => en(s.label) === 'Lines')?.tools.map((t) => t.type).sort()).toEqual([
             'crossline',
             'extendedline',
             'hline',
@@ -511,13 +517,13 @@ describe('buildToolbar grouping', () => {
             'trendline',
             'vline',
         ]);
-        expect(linesGroup?.sections?.find((s) => s.label === 'Channels')?.tools.map((t) => t.type)).toEqual([
+        expect(linesGroup?.sections?.find((s) => en(s.label) === 'Channels')?.tools.map((t) => t.type)).toEqual([
             'parallelchannel',
             'disjointchannel',
             'flattopbottom',
             'regressionchannel',
         ]);
-        expect(linesGroup?.sections?.find((s) => s.label === 'Pitchforks')?.tools.map((t) => t.type)).toEqual([
+        expect(linesGroup?.sections?.find((s) => en(s.label) === 'Pitchforks')?.tools.map((t) => t.type)).toEqual([
             'pitchfork',
             'schiffpitchfork',
             'modifiedschiffpitchfork',
@@ -525,10 +531,10 @@ describe('buildToolbar grouping', () => {
         ]);
 
         const fibGroup = definition.groups.find((g) => g.id === 'fibonacci-gann');
-        expect(fibGroup?.sections?.map((s) => s.label)).toEqual(['Fibonacci', 'Price Action', 'Gann', 'Geometry']);
-        expect(fibGroup?.sections?.find((s) => s.label === 'Price Action')?.tools.map((t) => t.type)).toEqual(['fairvaluegap', 'orderblock', 'liquidity']);
-        expect(fibGroup?.sections?.find((s) => s.label === 'Gann')?.tools.map((t) => t.type)).toEqual(['gannfan', 'gannbox', 'gannsquare']);
-        expect(fibGroup?.sections?.find((s) => s.label === 'Geometry')?.tools.map((t) => t.type)).toEqual([
+        expect(fibGroup?.sections?.map((s) => en(s.label))).toEqual(['Fibonacci', 'Price Action', 'Gann', 'Geometry']);
+        expect(fibGroup?.sections?.find((s) => en(s.label) === 'Price Action')?.tools.map((t) => t.type)).toEqual(['fairvaluegap', 'orderblock', 'liquidity']);
+        expect(fibGroup?.sections?.find((s) => en(s.label) === 'Gann')?.tools.map((t) => t.type)).toEqual(['gannfan', 'gannbox', 'gannsquare']);
+        expect(fibGroup?.sections?.find((s) => en(s.label) === 'Geometry')?.tools.map((t) => t.type)).toEqual([
             'dedekind',
             'sonic',
             'supersonic',
@@ -537,8 +543,8 @@ describe('buildToolbar grouping', () => {
         ]);
 
         const patternsGroup = definition.groups.find((g) => g.id === 'patterns-waves-harmonics');
-        expect(patternsGroup?.sections?.map((s) => s.label)).toEqual(['Patterns', 'Elliott Waves', 'Harmonics']);
-        expect(patternsGroup?.sections?.find((s) => s.label === 'Harmonics')?.tools.map((t) => t.type)).toEqual([
+        expect(patternsGroup?.sections?.map((s) => en(s.label))).toEqual(['Patterns', 'Elliott Waves', 'Harmonics']);
+        expect(patternsGroup?.sections?.find((s) => en(s.label) === 'Harmonics')?.tools.map((t) => t.type)).toEqual([
             'gartley',
             'bat',
             'butterfly',
@@ -548,9 +554,9 @@ describe('buildToolbar grouping', () => {
         ]);
 
         const shapesGroup = definition.groups.find((g) => g.id === 'brushes-arrows-shapes');
-        expect(shapesGroup?.sections?.map((s) => s.label)).toEqual(['Brushes', 'Arrows', 'Shapes']);
-        expect(shapesGroup?.sections?.find((s) => s.label === 'Brushes')?.tools.map((t) => t.type)).toEqual(['freehand', 'highlighter']);
-        expect(shapesGroup?.sections?.find((s) => s.label === 'Arrows')?.tools.map((t) => t.type)).toEqual([
+        expect(shapesGroup?.sections?.map((s) => en(s.label))).toEqual(['Brushes', 'Arrows', 'Shapes']);
+        expect(shapesGroup?.sections?.find((s) => en(s.label) === 'Brushes')?.tools.map((t) => t.type)).toEqual(['freehand', 'highlighter']);
+        expect(shapesGroup?.sections?.find((s) => en(s.label) === 'Arrows')?.tools.map((t) => t.type)).toEqual([
             'arrow',
             'arrowmarkup',
             'arrowmarkdown',
@@ -571,11 +577,11 @@ describe('buildToolbar grouping', () => {
         expect(iconsGroup?.sections?.[0]?.tools.map((t) => t.type)).toEqual(['flagmark', 'iconstamp']);
 
         const measureGroup = definition.groups.find((g) => g.id === 'measurements');
-        expect(measureGroup?.label).toBe('Measurements');
+        expect(en(measureGroup?.label)).toBe('Measurements');
         expect(measureGroup?.tools.map((t) => t.type)).toEqual(expect.arrayContaining(['datepricerange', 'position']));
         // Long/Short Position is the group's default (tools[0] arms when the button is clicked directly).
         expect(measureGroup?.tools[0]?.type).toBe('position');
-        expect(measureGroup?.sections?.find((s) => s.label === 'Measurements')?.tools.map((t) => t.type)).toEqual(['position', 'datepricerange', 'magnifier']);
+        expect(measureGroup?.sections?.find((s) => en(s.label) === 'Measurements')?.tools.map((t) => t.type)).toEqual(['position', 'datepricerange', 'magnifier']);
     });
     it('explicit groups resolve type keys + drop unknown ones', () => {
         const { definition } = buildToolbar({
@@ -585,7 +591,7 @@ describe('buildToolbar grouping', () => {
             ],
         });
         expect(definition.groups.map((g) => g.id)).toEqual(['lines']);
-        expect(definition.groups[0]!.tools[0]!.label).toBe('Trend Line');
+        expect(en(definition.groups[0]!.tools[0]!.label)).toBe('Trend Line');
     });
     it('a tools subset auto-groups by declared group', () => {
         const { definition } = buildToolbar({ tools: ['hline'] });

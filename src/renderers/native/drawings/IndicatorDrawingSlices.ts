@@ -10,6 +10,7 @@ import {
     type LabelTipRegion,
 } from '../../shared/DrawingSceneRenderer';
 import { paintTable } from '../../shared/TableCanvasRenderer';
+import { beginPlotFrame } from '../core/plotDirection';
 
 /**
  * The slice key for an indicator's drawings: the first series boundary STRICTLY above
@@ -118,7 +119,7 @@ export class IndicatorDrawingSlices {
             }
             const ctx = canvas.getContext('2d');
             if (!ctx) continue;
-            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            beginPlotFrame(ctx, dpr);
             ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
             for (const e of entries) this.paintEntry(ctx, e, coords, dataW, theme);
             const slices = out.get(paneId) ?? [];

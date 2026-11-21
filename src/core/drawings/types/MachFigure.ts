@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/message';
 import { Drawing, type AnchorSlot, type SerializedDrawing } from '../Drawing';
 import type { Projector } from '../geometry';
 import type { SettingsSchema } from '../schema';
@@ -71,7 +72,7 @@ export interface MachGeom {
 /** Shared schema field: toggle on-chart ratio labels beside each circle. */
 export const SHOW_RATIOS_FIELD = {
     path: 'showRatios',
-    label: 'Show ratios',
+    label: msg('drawing.sonic.showRatios', 'Show ratios'),
     kind: 'boolean' as const,
     group: 'behavior' as const,
 };
@@ -260,7 +261,7 @@ export abstract class MachFigure extends Drawing {
                 ...LINE_FIELDS,
                 {
                     path: 'waveCount',
-                    label: 'Waves',
+                    label: msg('drawing.sonic.waveCount', 'Waves'),
                     kind: 'number',
                     min: 3,
                     max: 12,
@@ -334,7 +335,7 @@ export class Supersonic extends MachFigure {
                 ...LINE_FIELDS,
                 {
                     path: 'mach',
-                    label: 'Mach number',
+                    label: msg('drawing.supersonic.mach', 'Mach number'),
                     kind: 'number',
                     min: 1.5,
                     max: 5,
@@ -343,7 +344,7 @@ export class Supersonic extends MachFigure {
                 },
                 {
                     path: 'waveCount',
-                    label: 'Waves',
+                    label: msg('drawing.supersonic.waveCount', 'Waves'),
                     kind: 'number',
                     min: 3,
                     max: 12,

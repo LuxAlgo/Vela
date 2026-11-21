@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/message';
 import { Drawing, type AnchorSlot, type SerializedDrawing } from '../Drawing';
 import type { LineStyle } from '../../model/series';
 import type { Projector } from '../geometry';
@@ -222,12 +223,12 @@ export class AnchoredVwap extends Drawing {
         // style, the band multiplier, the two band-line colors, and the fill).
         return {
             fields: [
-                { path: 'vwap.midColor', label: 'VWAP color', kind: 'color', group: 'line' },
-                { path: 'vwap.midStyle', label: 'VWAP style', kind: 'lineStyle', group: 'line' },
-                { path: 'vwap.multiplier', label: 'Band multiplier', kind: 'number', min: 0.5, max: 5, step: 0.5, group: 'behavior' },
-                { path: 'vwap.upperColor', label: 'Upper band color', kind: 'color', group: 'line' },
-                { path: 'vwap.lowerColor', label: 'Lower band color', kind: 'color', group: 'line' },
-                { path: 'vwap.bandFill', label: 'Band fill', kind: 'color', group: 'fill' },
+                { path: 'vwap.midColor', label: msg('drawing.anchoredvwap.vwapMidColor', 'VWAP color'), kind: 'color', group: 'line' },
+                { path: 'vwap.midStyle', label: msg('drawing.anchoredvwap.vwapMidStyle', 'VWAP style'), kind: 'lineStyle', group: 'line' },
+                { path: 'vwap.multiplier', label: msg('drawing.anchoredvwap.vwapMultiplier', 'Band multiplier'), kind: 'number', min: 0.5, max: 5, step: 0.5, group: 'behavior' },
+                { path: 'vwap.upperColor', label: msg('drawing.anchoredvwap.vwapUpperColor', 'Upper band color'), kind: 'color', group: 'line' },
+                { path: 'vwap.lowerColor', label: msg('drawing.anchoredvwap.vwapLowerColor', 'Lower band color'), kind: 'color', group: 'line' },
+                { path: 'vwap.bandFill', label: msg('drawing.anchoredvwap.vwapBandFill', 'Band fill'), kind: 'color', group: 'fill' },
             ],
         };
     }

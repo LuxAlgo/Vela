@@ -18,7 +18,11 @@
     "forceConsistentCasingInFileNames": true,
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
-    "noEmit": true
+    "noEmit": true,
+    "paths": {
+      "@luxalgo/vela-ui": ["./packages/vela-ui/src/index.ts"],
+      "@luxalgo/vela-ui/*": ["./packages/vela-ui/src/components/*", "./packages/vela-ui/src/lib/*"]
+    }
   },
   "include": ["src", "test"],
   "exclude": ["node_modules", "dist"]

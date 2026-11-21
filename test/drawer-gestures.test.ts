@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { classifyGesture, dragDismisses, swipeDirection } from '../src/ui/components/drawer/view';
+import { classifyGesture, dragDismisses, swipeDirection } from '@luxalgo/vela-ui/drawer';
 import { attachChromeTooltip } from '../src/renderers/shared/chrome-tooltip';
 import type { VelaTheme } from '../src/core/options';
 

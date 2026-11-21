@@ -52,7 +52,7 @@ describe('framing across series replacements', () => {
         r.setBars(mkBars(500));
         setViewport(2, 6); // zoomed far out: ~400 bars in view
         r.setBars(mkBars(100)); // a progressive first paint, held to the threshold
-        expect(viewport().barSpacing).toBe(2); // the fit-all floor would have doubled it
+        expect(viewport().barSpacing).toBe(2); // fitting the 100 bars would have quadrupled it
     });
 
     it('a view-preserving replacement leaves zoom AND placement untouched', () => {

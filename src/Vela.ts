@@ -1,8 +1,8 @@
 import type { IChartRenderer, VisibleRange } from './core/ports/IChartRenderer';
 import type { ScriptingEngine } from './core/ports/ScriptingEngine';
-import type { MarketDataFeed } from './core/ports/MarketDataFeed';
+import type { MarketDataFeed, SymbolFacts } from './core/ports/MarketDataFeed';
 import type { VisibleRangePreset } from './core/visible-range';
-import type { VelaOptions, VelaTheme, ThemeName, MarketSwitch, MarketSnapshot, AddIndicatorOptions } from './core/options';
+import type { VelaOptions, VelaTheme, MarketSwitch, MarketSnapshot, AddIndicatorOptions } from './core/options';
 import { resolveAnimations } from './core/options';
 import type { InputValue } from './core/model/inputs';
 import type { IndicatorHandle } from './core/IndicatorHandle';
@@ -13,7 +13,6 @@ import type { ScriptRun, ScriptRunResult } from './core/script-run';
 import { EngineOrchestrator, type ResolvedConfig } from './core/engine/EngineOrchestrator';
 import type { SceneInspection } from './core/engine/inspect';
 import { resolveTheme } from './core/theme';
-import { BEARISH, BULLISH } from './core/palette';
 import { RendererControl } from './core/RendererControl';
 import { rendererDefaults } from './core/renderer-defaults';
 import { PanesControl } from './core/PanesControl';
@@ -27,6 +26,8 @@ import { registerBuiltinChartTypes } from './chart-types/builtins';
 import { registerVolume } from './core/native-indicators/volume';
 import { registerVpvr } from './core/native-indicators/vpvr';
 import { registerClassicIndicators } from './core/native-indicators/classics';
+import { LocaleState, pickLocalization } from './core/i18n/translator';
+import type { LocalizationOptions, Translator } from './core/i18n/types';
 
 const asError = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)));
 
@@ -67,6 +68,8 @@ export class Vela {
     private readonly drawingsControl: DrawingsControl;
     private readonly marksControl: MarksControl;
     private readonly replayControl: ReplayControl;
+    private readonly localeState: LocaleState;
+    private readonly rendererPort: IChartRenderer;
 
     constructor(container: HTMLElement | string, options: VelaOptions = {}, deps: VelaDeps = {}) {
         registerBuiltinChartTypes(); // built-in chart types through the public SDK registry (idempotent)
@@ -81,10 +84,11 @@ export class Vela {
             nativeBackend: options.nativeBackend ?? 'auto',
             ...resolveAnimations(options.animations),
             glow: options.glow ?? 0,
-            upColor: options.upColor ?? BULLISH,
-            downColor: options.downColor ?? BEARISH,
+            upColor: options.upColor ?? theme.upColor,
+            downColor: options.downColor ?? theme.downColor,
             priceStyle: options.priceStyle ?? 'candles',
             priceAxisTicks: options.priceAxis?.ticks ?? null,
+            freePan: options.freePan ?? false,
         };
         const RendererClass = options.renderer ?? NativeRenderer;
         if (typeof RendererClass !== 'function') {
@@ -94,6 +98,8 @@ export class Vela {
             );
         }
         const renderer = deps.renderer ?? new RendererClass(display);
+        this.rendererPort = renderer;
+        this.localeState = new LocaleState(pickLocalization(options));
         const engines = deps.engines ?? [];
         // Default: a multi-provider registry feed (caches closed bars internally). No
         // provider is bundled — register one with `chart.data.registerProvider(...)`;
@@ -130,6 +136,40 @@ export class Vela {
         this.drawingsControl = new DrawingsControl(this.orchestrator.drawings);
         this.marksControl = new MarksControl(this.orchestrator.marks);
         this.replayControl = new ReplayControl(this.orchestrator);
+        this.orchestrator.setTranslator(this.localeState);
+        this.pushLocalization();
+    }
+
+    /**
+     * The chart's translator: its resolved locale and direction, `t()` for messages, and
+     * `format` for numbers and dates in the chart's locale. The same object for the
+     * chart's lifetime; it reads the new settings after {@link setLocale}.
+     */
+    get i18n(): Translator {
+        return this.localeState;
+    }
+
+    /**
+     * Change the chart's language, direction or formatting at runtime — a locale tag
+     * (`chart.setLocale('de')`) or any {@link LocalizationOptions} fields. Fields you pass
+     * replace their current value (an explicit `undefined` restores the default); the
+     * others are kept. The chart re-renders its text, axes and readouts in place (no
+     * indicator re-run) and emits `locale:changed`. Register the locale's pack
+     * (`registerLocale`) first for translated text.
+     */
+    setLocale(next: string | LocalizationOptions): this {
+        this.localeState.update(typeof next === 'string' ? { locale: next } : pickLocalization(next));
+        this.orchestrator.relocalize();
+        this.pushLocalization();
+        this.orchestrator.events.emit('locale:changed', { locale: this.localeState.locale, direction: this.localeState.direction });
+        return this;
+    }
+
+    /** Hand the renderer the translator and the root attributes the host asked for: `lang`
+     *  once a locale is set, `dir` once a direction is (unset, the host page decides). */
+    private pushLocalization(): void {
+        const s = this.localeState;
+        this.rendererPort.setLocalization?.(s, { lang: s.localeExplicit ? s.locale : null, dir: s.directionExplicit ? s.direction : null });
     }
 
     /**
@@ -182,6 +222,27 @@ export class Vela {
      */
     presentNativeIndicators(): string[] {
         return this.orchestrator.presentNativeIndicators();
+    }
+
+    /**
+     * The native-indicator types the chart is about to add on its own and has not yet: the
+     * volume indicator while the first market's symbol facts, which decide it, are still in
+     * flight after the first candles (a source can state that a symbol has no volume). Empty
+     * otherwise. Persistence snapshots report these beside {@link presentNativeIndicators},
+     * so a save in that moment is not read back as the user removing the indicator.
+     */
+    pendingNativeIndicators(): string[] {
+        return this.orchestrator.pendingNativeIndicators();
+    }
+
+    /**
+     * The facts the chart applies about its symbol, from its data source's `SymbolInfo`:
+     * `ohlc: false` for one value per bar, `volume: false` for no volume, and `mintick`
+     * for price precision. Returns `null` while info is unknown, or `{}` when the info
+     * has no display facts. Changes fire `symbol:facts`.
+     */
+    symbolFacts(): SymbolFacts | null {
+        return this.orchestrator.symbolFacts();
     }
 
     /** Live handles of every indicator currently on the chart (script + native) — drive
@@ -452,14 +513,14 @@ export class Vela {
     }
 
     /**
-     * Swap the app theme at runtime — `'dark'`, `'light'`, or a full custom
-     * {@link VelaTheme}. Re-skins the chart surface, axes, legends and in-chart chrome
+     * Swap the app theme at runtime — `'dark'`, `'light'`, a full custom
+     * {@link VelaTheme}, or a `createTheme` result. Re-skins the chart surface, axes, legends and in-chart chrome
      * live (no indicator re-run, no rebuild) and emits `theme:changed` with the resolved
      * theme so host chrome around the chart can follow. Explicitly customized plot
      * cosmetics (a config-set background or series color) are re-based only when they
      * were inherited from the previous theme.
      */
-    setTheme(theme: ThemeName | VelaTheme): this {
+    setTheme(theme: NonNullable<VelaOptions['theme']>): this {
         this.orchestrator.setTheme(resolveTheme(theme));
         return this;
     }

@@ -1,3 +1,4 @@
+import type { MessageLike } from '../../i18n/types';
 import { PatternDrawing } from './PatternDrawing';
 
 /** A closed [min, max] Fibonacci-ratio band (tolerance is baked into the width). */
@@ -37,7 +38,7 @@ export abstract class HarmonicPattern extends PatternDrawing {
         ];
     }
 
-    abstract override patternName(): string;
+    abstract override patternName(): MessageLike;
     /** The pattern's ideal ratio bands. */
     protected abstract ranges(): HarmonicRanges;
 

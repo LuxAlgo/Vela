@@ -9,6 +9,7 @@ import { barTransformFor, parseExtendedTicker } from '../src/core/price-styles/B
 import { priceStyleIds } from '../src/renderers/native/core/chartConfig';
 import { heikinAshiFull } from '../src/core/price-styles/heikin-ashi';
 import type { OHLCV } from '../src/core/model/ohlcv';
+import { createTranslator } from '../src/plugin';
 
 registerBuiltinChartTypes(); // normally done by the Vela constructor
 
@@ -21,7 +22,7 @@ afterEach(() => {
 
 describe('chart-type registry', () => {
     it('heikinashi is registered through the public registry and resolves its transform', () => {
-        expect(chartType('heikinashi')?.label).toBe('Heikin Ashi');
+        expect(createTranslator({ locale: 'en' }).t(chartType('heikinashi')?.label ?? '')).toBe('Heikin Ashi');
         const t = barTransformFor('heikinashi')!;
         const raw: OHLCV[] = [
             { time: 0, open: 10, high: 12, low: 9, close: 11 },
@@ -57,7 +58,7 @@ describe('chart-type registry', () => {
 
     it('priceStyleIds() = built-ins + registered types; the settings/validation layers read it live', () => {
         const base = priceStyleIds();
-        expect(base).toEqual(['candles', 'bars', 'line', 'area', 'baseline', 'heikinashi']);
+        expect(base).toEqual(['candles', 'bars', 'line', 'linemarkers', 'stepline', 'area', 'baseline', 'columns', 'heikinashi']);
         registerChartType({ id: 'renko-like', barTransform: identity });
         expect(priceStyleIds()).toContain('renko-like');
         unregisterChartType('renko-like');

@@ -1,3 +1,5 @@
+import { msg } from '../../i18n/message';
+import { localizeInput } from '../localize';
 import type { InputSchema, InputValue } from '../../model/inputs';
 import type { VolumeLayerData } from '../../model/volume-layers';
 import type { NativeIndicator, NativeIndicatorContext, NativeIndicatorDescriptor } from '../NativeIndicator';
@@ -73,13 +75,22 @@ class VolumeIndicator implements NativeIndicator {
 /** Descriptor for the built-in volume indicator. Bar volume needs no capability probe. */
 export const volumeDescriptor: NativeIndicatorDescriptor = {
     type: 'volume',
-    title: 'Volume',
+    title: msg('indicator.volume.title', 'Volume'),
     paneHint: 'price',
     overlay: true,
     inputsSchema: (): InputSchema[] => [
-        { key: 'upColor', title: 'Up color', type: 'color', defval: DEFAULT_UP },
-        { key: 'downColor', title: 'Down color', type: 'color', defval: DEFAULT_DOWN },
-        { key: 'heightPct', title: 'Height %', type: 'int', defval: DEFAULT_HEIGHT_PCT, min: 5, max: 50, step: 1, tooltip: 'Pane height the tallest visible bar occupies' },
+        localizeInput({ key: 'upColor', title: msg('indicator.volume.upColor', 'Up color'), type: 'color', defval: DEFAULT_UP }),
+        localizeInput({ key: 'downColor', title: msg('indicator.volume.downColor', 'Down color'), type: 'color', defval: DEFAULT_DOWN }),
+        localizeInput({
+            key: 'heightPct',
+            title: msg('indicator.volume.heightPct', 'Height %'),
+            type: 'int',
+            defval: DEFAULT_HEIGHT_PCT,
+            min: 5,
+            max: 50,
+            step: 1,
+            tooltip: msg('indicator.volume.heightPct.tooltip', 'Panel height the tallest visible bar occupies.'),
+        }),
     ],
     defaultInputs: (): Record<string, InputValue> => ({ upColor: DEFAULT_UP, downColor: DEFAULT_DOWN, heightPct: DEFAULT_HEIGHT_PCT }),
     create: () => new VolumeIndicator(),

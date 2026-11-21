@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { createDrawing, deserializeDrawing, getDrawingType, buildToolbar, computeVwap, AnchoredVwap, type Projector } from '../src/core/drawings';
+import { createTranslator, type MessageLike } from '../src/plugin';
+
+/** Toolbar and drawing text as an English chart shows it. */
+const english = createTranslator({ locale: 'en' });
+const en = (m: MessageLike | null | undefined): string | null | undefined => (m == null ? m : english.t(m));
+
 
 const HR = 3600_000;
 
@@ -79,8 +85,8 @@ describe('drawings/AnchoredVwap', () => {
     it('appears under a Volume section in the Measurements toolbar group', () => {
         const { definition } = buildToolbar(true);
         const measure = definition.groups.find((g) => g.id === 'measurements');
-        expect(measure?.sections?.map((s) => s.label)).toEqual(['Measurements', 'Volume']);
-        expect(measure?.sections?.find((s) => s.label === 'Volume')?.tools.map((t) => t.type)).toEqual([
+        expect(measure?.sections?.map((s) => en(s.label))).toEqual(['Measurements', 'Volume']);
+        expect(measure?.sections?.find((s) => en(s.label) === 'Volume')?.tools.map((t) => t.type)).toEqual([
             'anchoredvwap',
             'fixedrangevp',
         ]);

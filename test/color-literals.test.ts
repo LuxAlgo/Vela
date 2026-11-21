@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 // The color sources of truth. Everything else must import from them rather than restate a hex.
 const SANCTIONED = [
-    'src/core/palette.ts', // the semantic palette
-    'src/core/theme.ts', // the swappable chart themes
-    'src/core/tokens.ts', // the --vela-* token derivation
+    'packages/vela-ui/src/lib/palette.ts', // the semantic palette
+    'packages/vela-ui/src/lib/theme.ts', // the built-in themes
+    'packages/vela-ui/src/lib/tokens.ts', // the --vela-* token derivation
     'src/core/drawings/levelPalette.ts', // the fib/gann level convention
 ];
 
@@ -24,9 +24,10 @@ function isGrayscale(hex: string): boolean {
 
 type RawGlob = (pattern: string, options: { query: string; import: string; eager: true }) => Record<string, string>;
 
-const sources = Object.entries(
-    (import.meta as unknown as { glob: RawGlob }).glob('../src/**/*.ts', { query: '?raw', import: 'default', eager: true }),
-).map(([path, text]) => [path.replace(/^\.\.\//, ''), text] as const);
+const sources = Object.entries({
+    ...(import.meta as unknown as { glob: RawGlob }).glob('../src/**/*.ts', { query: '?raw', import: 'default', eager: true }),
+    ...(import.meta as unknown as { glob: RawGlob }).glob('../packages/vela-ui/src/**/*.ts', { query: '?raw', import: 'default', eager: true }),
+}).map(([path, text]) => [path.replace(/^\.\.\//, ''), text] as const);
 
 describe('color literals', () => {
     it('stay in the sanctioned palette modules', () => {
@@ -46,7 +47,7 @@ describe('color literals', () => {
 
     it('scans the real source (so a green result means something)', () => {
         expect(sources.length).toBeGreaterThan(100);
-        expect(sources.find(([f]) => f === 'src/core/palette.ts')?.[1]).toMatch(HEX);
+        expect(sources.find(([f]) => f === 'packages/vela-ui/src/lib/palette.ts')?.[1]).toMatch(HEX);
         expect(isGrayscale('#2962ff')).toBe(false);
         expect(isGrayscale('#fff')).toBe(true);
         expect(isGrayscale('#1e293b')).toBe(false);

@@ -1,3 +1,4 @@
+import type { MessageLike } from '../../i18n/types';
 import { Drawing, type AnchorSlot } from '../Drawing';
 import type { Projector } from '../geometry';
 import type { SettingsSchema } from '../schema';
@@ -12,7 +13,7 @@ import { distToPolyline, handleAt } from '../hittest';
  */
 export abstract class PatternDrawing extends Drawing {
     /** The label drawn at each anchor (empty string ⇒ no label). Its length is the vertex count. */
-    abstract vertexLabels(): readonly string[];
+    abstract vertexLabels(): readonly MessageLike[];
     /** Show consecutive-leg retracement ratios (harmonic patterns). */
     legRatios(): boolean {
         return false;
@@ -70,7 +71,7 @@ export abstract class PatternDrawing extends Drawing {
 
     // ── harmonic validation hooks (overridden by HarmonicPattern; null = not a validated pattern) ──
     /** The harmonic pattern's name (drawn as a badge), or null for a plain pattern. */
-    patternName(): string | null {
+    patternName(): MessageLike | null {
         return null;
     }
     /** Whether the leg ratio shown at vertex `i` is within the pattern's ideal band (null = no rule). */

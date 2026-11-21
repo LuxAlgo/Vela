@@ -11,10 +11,10 @@ import { describe, it, expect, beforeAll, afterEach } from 'vitest';
     disconnect() {}
 };
 
-import { Menu } from '../src/ui/components/menu/view';
-import { Popover, eventDismissedPopover } from '../src/ui/components/popover/view';
-import { Dialog } from '../src/ui/components/dialog/view';
-import { Drawer } from '../src/ui/components/drawer/view';
+import { DropdownMenu } from '@luxalgo/vela-ui/dropdown-menu';
+import { Popover, eventDismissedPopover } from '@luxalgo/vela-ui/popover';
+import { Dialog } from '@luxalgo/vela-ui/dialog';
+import { Drawer } from '@luxalgo/vela-ui/drawer';
 import { SidePanel } from '../src/widget/side-panel';
 import { LayoutPicker } from '../src/widget/layout-picker';
 import { SURFACE_OPEN_EVENT, SURFACE_CLOSE_EVENT, type SurfaceEventDetail } from '../src/ui';
@@ -78,7 +78,7 @@ describe('surface open/close events', () => {
     it('menu: opens and closes on its list, with its trigger', async () => {
         const { host, heard } = hostWithEar();
         const trigger = button(host);
-        const menu = new Menu({ host, trigger, items: [{ id: 'a', label: 'A' }] });
+        const menu = new DropdownMenu({ host, trigger, items: [{ id: 'a', label: 'A' }] });
         menu.open();
         await settled();
         menu.close();
@@ -92,7 +92,7 @@ describe('surface open/close events', () => {
 
     it('menu: a teardown while open still announces the close', async () => {
         const { host, heard } = hostWithEar();
-        const menu = new Menu({ host, items: [{ id: 'a', label: 'A' }] });
+        const menu = new DropdownMenu({ host, items: [{ id: 'a', label: 'A' }] });
         menu.openAt(10, 10);
         await settled();
         menu.destroy();
@@ -184,7 +184,7 @@ describe('surface open/close events', () => {
     });
 
     it.each([
-        ['menu', (host: HTMLElement, told: (open: boolean) => void) => new Menu({ host, items: [{ id: 'a', label: 'A' }], onOpenChange: told })],
+        ['menu', (host: HTMLElement, told: (open: boolean) => void) => new DropdownMenu({ host, items: [{ id: 'a', label: 'A' }], onOpenChange: told })],
         ['dialog', (host: HTMLElement, told: (open: boolean) => void) => new Dialog({ host, onOpenChange: told })],
         ['drawer', (host: HTMLElement, told: (open: boolean) => void) => new Drawer({ host, onOpenChange: told })],
     ] as const)('%s: a listener that closes it on open leaves the host told it is closed', async (_, make) => {

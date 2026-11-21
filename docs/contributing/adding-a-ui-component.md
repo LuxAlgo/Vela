@@ -1,150 +1,57 @@
 # Adding a UI-kit component
 
-`@luxalgo/vela/ui` is a **headless-first** component kit: every component splits into a
-framework-agnostic **controller** (behavior, no DOM) and a thin vanilla **view**
-(DOM projection over the design tokens). Overlay chrome — menu, dialog, drawer,
-tooltip — wraps a [Zag.js](https://zagjs.com) state machine. Form primitives
-(switch, select, number-input, text-field, text-area, color-picker, popover,
-field, glyph-select) use vanilla controllers so they can match existing settings
-chrome without a behavior drift;
-a later Zag adoption per component stays a controller-only swap.
+The component kit behind the widget's chrome and the renderer's dialogs is its own package,
+`@luxalgo/vela-ui` (`packages/vela-ui` in this repo), which `@luxalgo/vela/ui` re-exports.
+Each component is **one file**, `packages/vela-ui/src/components/<name>.ts`, published at
+`@luxalgo/vela-ui/<name>`, holding its declaration, its variants, its CSS and its
+`create<Name>` function.
 
-A future React build reuses the controllers unchanged and swaps only the views —
-so keep logic out of the view.
+How to write one (the file's shape, the helpers, the CSS rules, Zag machines, and the rules
+learned the hard way) is the package's own guide:
+[packages/vela-ui/docs/writing-a-component.md](../../packages/vela-ui/docs/writing-a-component.md).
+How a theme reaches a component is [packages/vela-ui/docs/theming.md](../../packages/vela-ui/docs/theming.md).
+This page covers what is Vela's: where each component is used, and how Vela exports it.
 
-## The uniform skeleton
+## Using the kit inside Vela
 
-Every component lives in `src/ui/components/<name>/` with the same four files:
-
-```
-components/<name>/
-├── controller.ts   # Zag machine mapping, or vanilla behavior (NO DOM)
-├── view.ts         # vanilla DOM projection
-├── styles.ts       # the component's CSS (a template-literal string over the tokens)
-└── index.ts        # public re-exports
-```
-
-## 1 — controller.ts (Zag overlay)
-
-Wrap the machine and map Vela™-level options to machine props. Export an explicit
-interface for the return type (TypeScript can't name Zag's inferred types portably):
-
-```ts
-import * as tooltip from '@zag-js/tooltip';
-import { nextUid, normalizeProps } from '../../zag';
-
-export interface TooltipControllerOptions { /* your option surface */ }
-
-export interface TooltipController {
-    machine: typeof tooltip.machine;
-    props: Partial<tooltip.Props>;
-    connect(service: tooltip.Service): tooltip.Api;
-}
-
-export function tooltipController(opts: TooltipControllerOptions = {}): TooltipController {
-    return {
-        machine: tooltip.machine,
-        props: { id: nextUid('vela-tooltip'), /* map opts */ },
-        connect: (service) => tooltip.connect(service, normalizeProps),
-    };
-}
-```
-
-Vanilla form primitives skip Zag: export a small state object (getters + `set*` /
-`sync` that do not emit, plus the mutating method that does) so a `vela-sync`
-refresh can rewrite the displayed value without firing `onChange`.
-
-## 2 — view.ts
-
-For overlay chrome, build your DOM, start the machine with `runMachine`, and
-re-project the api's props on every notification with `spreadProps`:
-
-```ts
-import { runMachine, spreadProps, type HandleOf } from '../../zag';
-import { injectStyles } from '../../styles';
-
-export class Tooltip {
-    private readonly handle: HandleOf<typeof zagTooltip.machine>;
-
-    constructor(trigger: HTMLElement, opts: TooltipOptions) {
-        injectStyles(STYLE_ID, CSS, trigger.ownerDocument);
-        const ctrl = tooltipController(opts);
-        const mid = String(ctrl.props.id);
-        this.handle = runMachine(ctrl.machine, ctrl.props, (service) => {
-            const api = ctrl.connect(service);
-            spreadProps(trigger, api.getTriggerProps(), mid);
-            // …spread the other parts onto your elements
-        });
-    }
-
-    destroy(): void {
-        this.handle.stop();
-    }
-}
-```
-
-Form-primitive views construct DOM once, subscribe to clicks/input themselves, and
-expose `setChecked` / `setValue` that call the controller's non-emitting `sync`.
-
-## Rules (learned the hard way)
-
-- **Always pass a `machineId` to `spreadProps`** (the `mid` above). Two machines sharing
-  one element under the default scope wipe each other's listeners.
-- **Zag trigger props overwrite the element's DOM `id`.** To compose several machines on
-  one trigger, share the id through the machines' `ids` prop (see the kit's `triggerId`
-  option on Tooltip/Menu).
-- **Dialog-like machines expect conditional rendering** — their props carry no `hidden`;
-  toggle visibility from `api.open` in your render (tooltip/menu props DO carry it).
-- **Style through the tokens** (`--vela-*` custom properties) and inject the sheet with
-  `injectStyles` (id-guarded, Shadow-DOM-friendly). Never hard-code colors: the tokens are
-  derived from the theme in `src/core/tokens.ts`, and the fixed brand/meaning colors live in
-  `src/core/palette.ts`. A test scans `src/` and fails on a stray hex literal.
-- **Take icons from the registry** (`src/core/icons.ts`) rather than inlining SVG: 16×16 at
-  stroke 1.2 for UI chrome, 24×24 at stroke 1.8 for drawing tools, always `currentColor`.
-- Floating layers mount into the nearest `.vela-ui` host (token inheritance); use the
-  `vela-ui-layer` class on portal-ed positioners. Kit popovers call `ensureUIHost` on show
-  so a body-portaled list still has theme tokens.
-- Keyboard-facing components integrate with `KeymapManager` scopes: report open/close via
-  an `onOpenChange` option so hosts can push/pop the `'dialog'` scope.
-- A component that opens and closes a surface **announces it** with `announceSurface`
-  (`src/ui/surface-events.ts`): open once the surface shows, close while it still shows —
-  before a fade-out, `hidden`, or removal — so the event bubbles to the host. Hosts follow
-  the chrome through these events instead of watching the DOM.
-- After announcing the close, run the hide or removal through `holdForExit`
-  (`src/ui/surface-exit.ts`) so hosts can animate it out by styling `data-closing` (see
-  [Animating closes](../user/workspace.md#animating-closes)). It completes synchronously
-  when no exit animation starts; keep the returned handle to `cancel()` it on a reopen and
-  `finish()` it on teardown.
-- Renderer chrome that consumes the kit **imports the component folder**, not the
-  `src/ui` barrel — otherwise Zag overlay machines get pulled into the native-renderer
-  bundle. Hosts and plugins import from `@luxalgo/vela/ui`.
+- Renderer chrome that consumes the kit **imports the component's subpath**
+  (`@luxalgo/vela-ui/<name>`), not the `src/ui` barrel, otherwise Zag overlay machines get
+  pulled into the native-renderer bundle. Hosts and plugins import from `@luxalgo/vela/ui`.
+- Keyboard-facing components report open and close through `onOpenChange`; Vela's chrome
+  pushes and pops the `KeymapManager`'s `'dialog'` scope from it.
+- Hosts animate a closing surface by styling `data-closing` (see
+  [Animating closes](../user/workspace.md#animating-closes)).
 
 ## Form primitives
 
-`Switch`, `Select`, `NumberInput`, `TextField`, `TextArea`, `ColorField` /
+`Checkbox`, `Select`, `NumberInput`, `Input`, `TextArea`, `ColorField` /
 `buildColorPicker`, `Popover`, `DatePicker`, the field layer (`fieldRow` / `fieldSection` /
 `buildFieldControl`), and `GlyphSelect` / `widthField` are public
 (`@luxalgo/vela/ui`). They are the shared controls behind the indicator dialog,
 chart settings, and the drawing settings dialog. The drawing toolbar's compact
-icon chrome (glyph dropdowns, color underline) stays purpose-built. Overlay
-chrome (`Dialog`, `Menu`) is Zag-driven; form primitives stay vanilla.
+icon chrome (glyph dropdowns, color underline) stays purpose-built. Overlays
+(`Dialog`, `DropdownMenu`, `Tooltip`) and the behavior of the checkbox, the number field, the
+select's list and the color picker's opacity run on Zag machines.
 
-- **`Popover`** — portal + placement (below, flip above, `align` start/end, optional
-  `matchWidth`) + clamp boundary (viewport, an element, or a rect getter) + capture-phase
+- **`Popover`** — portal + placement (any `side` of the trigger, flipping to the opposite
+  one near the edge; `align`, `sideOffset`, `alignOffset`; optional `matchWidth`) + a
+  `collisionBoundary` (viewport, an element, or a rect getter) + capture-phase
   outside-dismiss + a process-wide single-open registry (`closeOpenPopovers`).
-- **`Switch`** — square check-toggle. `size: 'md'` is 20px with `--vela-fg-bright` on-fill
-  (settings dialogs); `size: 'sm'` is 18px with `--vela-selected-bg` (compact chrome).
-  `role="switch"`. `setChecked` does not emit.
+- **`Checkbox`** (formerly `Switch`, kept as a deprecated alias) — square check box.
+  `size: 'md'` is 20px with `--vela-fg-bright` on-fill (settings dialogs); `size: 'sm'` is
+  18px with `--vela-selected-bg` (compact chrome). A native checkbox underneath, so forms
+  and assistive tech see a checkbox. `setChecked` does not emit.
 - **`Select`** — trigger + portaled themed list (not the OS popup) with a hand-rolled
   overlay scrollbar. `md` is 34px/14px and fills its parent unless `fill: false`
   (the shared 100px settings column: a long current label ellipsizes, the open list
   still sizes to its longest item). `sm` is 28px/13px and hugs the widest option
-  (max-width 200px). `setValue` does not emit.
+  (max-width 200px). `setValue` does not emit. The indicator dialog wraps its selects so each
+  is as wide as its longest option: at least the 100px column, at most what the row leaves.
 - **`NumberInput`** — `commit: 'blur'` clamps and shows hover steppers (press-repeat
   400ms then 60ms); `commit: 'live'` emits per keystroke. Chart settings uses live
   commit with steppers on, at the same 34×100px field as the indicator dialog.
   `sync` / `setValue` do not emit.
-- **`TextField`** — blur/Enter commit; `fill: false` is the same 100px column with
+- **`Input`** (formerly `TextField`, kept as a deprecated alias) — blur/Enter commit; `fill: false` is the same 100px column with
   ellipsized overflow. `setValue` does not emit.
 - **`TextArea`** — blur commit, optional `autoGrow` / `maxLines`. Used by indicator
   `text_area` inputs and the drawing bar's label editor.
@@ -160,6 +67,8 @@ chrome (`Dialog`, `Menu`) is Zag-driven; form primitives stay vanilla.
   turn a label + a control descriptor into the shared settings row. Chart settings,
   indicator inputs, and the drawing settings dialog all map their schemas through it.
   Rows use `display:contents` so a pane shares one label column (`max-content 1fr`).
+  `fieldSection` takes an `info` element (the indicator dialog's section help mark) after
+  its heading text.
 - **`GlyphSelect`** / **`widthField`** — icon-rendered options in a popover. Chart
   settings' line-width field is the width preset.
 - **`DatePicker`** — a month calendar whose header month and year open a twelve-month
@@ -174,9 +83,79 @@ chrome (`Dialog`, `Menu`) is Zag-driven; form primitives stay vanilla.
 The primitive's **root is one element**. Chart-settings rows use `display:contents`, so a
 fragment of sibling nodes would fall onto the pane grid as extra tracks.
 
+## Primitives
+
+`createButton`, `createTabs`, `createToggleGroup` and `createBadge` are the kit's layout
+primitives. `@luxalgo/vela/ui` also keeps the classes they had in 0.9 (`new Button(…)`,
+`new Tabs({ items: [{ id, label }] })`, `ToggleGroup`, `Badge`, and the `buttonController`
+and `badgeController` helpers) as deprecated wrappers over them for one release.
+
+Behavior:
+
+- **`Tabs` and `ToggleGroup` run Zag machines** (`@zag-js/tabs`, `@zag-js/toggle-group`),
+  which own roving focus, the keyboard and the ARIA; a React view runs the same machines
+  through Zag's React adapter. Zag applies events on a microtask, so the components mirror
+  the value for synchronous reads and keep `setValue` silent by swallowing the machine's
+  report of a host write.
+- **`Button` and `Badge` have no behavior to run**: their files build the element and
+  write its attributes.
+
+Every part carries a `data-slot` naming it (`button`, `button-icon`, `tabs-list`,
+`tabs-trigger`, `tabs-content`, `toggle-group`, `toggle-group-item`, `badge`, `checkbox`,
+`input-control`, `tooltip-content`, …), next to Zag's own `data-scope` / `data-part`
+and state attributes (`data-selected`, `data-state`).
+
+Variant, size, part and prop names follow shadcn's (`data-slot="tabs-trigger"`,
+`variant: 'outline'`, `size: 'icon-sm'`, `defaultValue`, `onValueChange`), so a host built
+on shadcn reads them without a glossary. Released components keep their option names
+(`value`, `onChange`).
+
+- **`createButton`** — `variant`: `default` (filled with the selection color: OK, Apply),
+  `outline` (bordered: the dialogs' Cancel), `secondary` (a sunken fill), `ghost` (no
+  border or fill until hovered), `destructive` (tinted with `--vela-danger`), `link`,
+  `favorite` (a bare star, `--vela-highlight` while pressed).
+  `size`: `xs` 26px, `sm` 30px (panels), `default` 34px (dialog footers), `lg` 40px
+  (touch); `icon-xs`, `icon-sm`, `icon`, `icon-lg` are the same heights, square, showing
+  only `icon` (`label` names them). `icon` sits before the text and `iconEnd` after it
+  (`data-icon="inline-start"` / `"inline-end"`), `keys` and `keysEnd` put key caps there
+  (`↵ Open`). `pressed` makes a controlled toggle (`aria-pressed`): a press only calls
+  `onPressedChange`; `defaultPressed` an uncontrolled one that flips itself; `iconPressed`
+  is the icon while pressed. A button that opens a menu keeps its hover look while
+  `aria-expanded="true"`.
+- **`createTabs`** — WAI-ARIA tabs over `items: { value, label }[]`: one tab stop on the
+  selected tab, arrow keys along the `orientation` (mirrored for `dir: 'rtl'`), Home and
+  End, disabled and hidden tabs skipped. `activationMode: 'automatic'` selects as focus
+  moves; `'manual'` waits for Enter or Space. `panel(value, el)` makes `el` a tab's panel
+  (linked, and hidden while another tab is selected); a strip that filters one view
+  attaches none. `setHidden(value, true)` takes a tab out of the strip, and hiding the
+  selected one selects the first available (notified); `trigger(value)` returns a tab's
+  element. Variants: `default` (a tinted track, the island), `line` (the indicator
+  dialog's underlined strip), `filled` (the symbol picker's strip), `soft` (the drawings
+  drawer's strip), `nav` (a vertical settings rail). Only an inactive tab reacts to hover.
+  An item's `description` is a second line under its label (a day strip: the weekday over
+  the date). `className` adds the host's layout of the strip.
+- **`createToggleGroup`** — a few options (`items: { value, label, icon? }[]`) side by side
+  on a tinted track. `type: 'single'` (default) is a radio group where one option is
+  always chosen (a segmented control); `type: 'multiple'` toggles each option on its own
+  (`aria-pressed`). The arrow keys move focus; Space and Enter press. `size` `default`
+  32px or `sm` 28px, `fill` to share the parent's width, `iconOnly` with each label as its
+  option's accessible name.
+- **`createBadge`** — a short status label or a round `count`: `default`, `secondary`,
+  `outline`, `destructive`, and the market colors `up` and `down`.
+
+`setValue` / `setPressed` / `setItems` never notify; a user's click or key does, once, and
+only when the value changed.
+
+**Still candidates.** These surfaces style their own controls and could move onto the
+primitives next: the settings dialog's rail (`nav` tabs) and its action buttons
+(`secondary` buttons); the icon buttons of the pane controls, the cell controls, the object
+tree and the legend rows (`ghost`, `icon-xs`); the bottom bar's session button and range
+chips, and the timeframe drawer's chips (a single `ToggleGroup`); the drawing settings
+panel's chips; the callout bubble's buttons.
+
 ## Menu rows
 
-`Menu` projects `MenuItemDescriptor` rows. Two opt-in options change how a row reads:
+`DropdownMenu` (formerly `Menu`, kept as a deprecated alias) projects `MenuItemDescriptor` rows. Two opt-in options change how a row reads:
 
 - **`checkmarks`** — a checked row shows a leading ✓ instead of the selected-row
   background wash. Pointer-anchored action menus (the chart's right-click menu) use it.
@@ -187,10 +166,25 @@ fragment of sibling nodes would fall onto the pane grid as extra tracks.
   column on all its rows so labels align; a level without icons keeps its natural left
   edge. With both options, the ✓ column leads and the badge follows.
 
-Submenus inherit both options.
+Submenus inherit both options, and open beside their row, past the edge of the list they
+came from (on whichever side has room), never over it.
 
-## 3 — export it
+A menu opens from its `trigger`, or where `openAt` puts it: at a viewport point
+(`openAt(x, y)`), or against a rectangle (`openAt(button.getBoundingClientRect())`) for a
+button the menu does not own as its trigger. Against a rectangle, the list takes the menu's
+`side`, `align` and offsets, and opens on the rectangle's other side when that one lacks
+room. However it opened, an open list keeps its place in its host: a page that scrolls the
+host carries the list along, and a trigger that then moves inside the host leaves it where
+it opened.
 
-Re-export from `src/ui/index.ts`. If plugins should drive it with data descriptors
-(menu items, actions), keep the descriptor type in the controller file — descriptors are
-the currency the widget's contribution system projects.
+`ContextMenu` opens the same rows where the user asks for them: a right-click on its target,
+a long press on a touch screen (`longPress: false` where a long press already means
+something, as on the chart, whose long press is the crosshair), or the keyboard's
+context-menu key. `items` may be a function of the opening event. The chart, status line,
+legend and object tree menus use it. In the chart's menus, rows plugins add take the menu's
+look: icons in the body menu, none in the axis menus (see the
+[plugin SDK](plugin-sdk.md#right-click-menu-actions)).
+
+## Export it
+
+The package publishes every file of `packages/vela-ui/src/components/` at its own subpath (one build entry each), which is where hosts and plugins import a new component from (`@luxalgo/vela-ui/<name>`). `src/ui/index.ts` re-exports, name by name, only the components Vela had before the kit became a package, so `@luxalgo/vela/ui` keeps working for code written against it; a new component is not added there. If plugins should drive it with data descriptors (menu items, actions), keep the descriptor type in the component file — descriptors are the currency the widget's contribution system projects.

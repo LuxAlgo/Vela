@@ -1,7 +1,9 @@
+import { msg } from '../../i18n/message';
+import type { MessageLike } from '../../i18n/types';
 import { Drawing, type AnchorSlot, type SerializedDrawing } from '../Drawing';
 import type { Projector } from '../geometry';
 import type { SettingsSchema } from '../schema';
-import { LINE_FIELDS } from '../schema';
+import { BORDER_FIELDS } from '../schema';
 import { distToSegment, handleAt, pointInBox } from '../hittest';
 
 /** Behavior + candle cosmetics of the magnifier (round-trips through `props`). */
@@ -17,27 +19,27 @@ export interface MagnifierStyle {
 /** The timeframe choices the magnifier offers. `ms` is each option's bar duration so pickers
  *  can drop the choices not strictly below the chart's timeframe (`auto` carries 0 — it always
  *  resolves lower, or the gateway reports that nothing lower exists). */
-export const MAGNIFIER_TIMEFRAME_OPTIONS: ReadonlyArray<{ value: string; label: string; ms: number }> = [
-    { value: 'auto', label: 'Auto', ms: 0 },
-    { value: '1', label: '1m', ms: 60_000 },
-    { value: '5', label: '5m', ms: 300_000 },
-    { value: '15', label: '15m', ms: 900_000 },
-    { value: '30', label: '30m', ms: 1_800_000 },
-    { value: '60', label: '1h', ms: 3_600_000 },
-    { value: '240', label: '4h', ms: 14_400_000 },
-    { value: 'D', label: '1D', ms: 86_400_000 },
+export const MAGNIFIER_TIMEFRAME_OPTIONS: ReadonlyArray<{ value: string; label: MessageLike; ms: number }> = [
+    { value: 'auto', label: msg('drawing.magnifier.option.auto', 'Auto'), ms: 0 },
+    { value: '1', label: msg('drawing.magnifier.option.n1', '1m'), ms: 60_000 },
+    { value: '5', label: msg('drawing.magnifier.option.n5', '5m'), ms: 300_000 },
+    { value: '15', label: msg('drawing.magnifier.option.n15', '15m'), ms: 900_000 },
+    { value: '30', label: msg('drawing.magnifier.option.n30', '30m'), ms: 1_800_000 },
+    { value: '60', label: msg('drawing.magnifier.option.n60', '1h'), ms: 3_600_000 },
+    { value: '240', label: msg('drawing.magnifier.option.n240', '4h'), ms: 14_400_000 },
+    { value: 'D', label: msg('drawing.magnifier.option.d', '1D'), ms: 86_400_000 },
 ];
 
 /** The choices strictly below a chart bar of `chartMs` (all of them when it is unknown);
  *  `auto` rides along while at least one concrete lower step exists. */
-export function magnifierTimeframesBelow(chartMs: number): Array<{ value: string; label: string; ms: number }> {
+export function magnifierTimeframesBelow(chartMs: number): Array<{ value: string; label: MessageLike; ms: number }> {
     if (!(chartMs > 0)) return [...MAGNIFIER_TIMEFRAME_OPTIONS];
     const lower = MAGNIFIER_TIMEFRAME_OPTIONS.filter((o) => o.ms > 0 && o.ms < chartMs);
     return lower.length > 0 ? [MAGNIFIER_TIMEFRAME_OPTIONS[0]!, ...lower] : [];
 }
 
 /** Display label for a magnifier timeframe value (`'60'` → `'1h'`, `'auto'` → `'Auto'`). */
-export function magnifierTimeframeLabel(value: string): string {
+export function magnifierTimeframeLabel(value: string): MessageLike {
     const opt = MAGNIFIER_TIMEFRAME_OPTIONS.find((o) => o.value === value);
     if (opt) return opt.label;
     const n = Number(value);
@@ -139,14 +141,14 @@ export class Magnifier extends Drawing {
             fields: [
                 {
                     path: 'magnifier.timeframe',
-                    label: 'Timeframe',
+                    label: msg('drawing.magnifier.magnifierTimeframe', 'Timeframe'),
                     kind: 'select',
                     options: MAGNIFIER_TIMEFRAME_OPTIONS,
                     group: 'behavior',
                 },
-                ...LINE_FIELDS.map((f) => ({ ...f, label: f.label.replace('Line', 'Border') })),
-                { path: 'magnifier.upColor', label: 'Up candles', kind: 'color' as const, group: 'fill' as const },
-                { path: 'magnifier.downColor', label: 'Down candles', kind: 'color' as const, group: 'fill' as const },
+                ...BORDER_FIELDS,
+                { path: 'magnifier.upColor', label: msg('drawing.magnifier.magnifierUpColor', 'Up candles'), kind: 'color' as const, group: 'fill' as const },
+                { path: 'magnifier.downColor', label: msg('drawing.magnifier.magnifierDownColor', 'Down candles'), kind: 'color' as const, group: 'fill' as const },
             ],
         };
     }

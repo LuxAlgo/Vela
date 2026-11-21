@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/message';
 import { Drawing, type AnchorSlot, type SerializedDrawing } from '../Drawing';
 import type { LineStyle } from '../../model/series';
 import type { Projector } from '../geometry';
@@ -469,38 +470,38 @@ export class FixedRangeVolumeProfile extends Drawing {
         // All FRVP controls live in the gear panel — the schema paths gate that UI branch.
         return {
             fields: [
-                { path: 'frvp.rows', label: 'Rows', kind: 'number', min: 1, max: 500, step: 1, group: 'behavior' },
-                { path: 'frvp.valueAreaPct', label: 'Value Area', kind: 'number', min: 0, max: 100, step: 1, group: 'behavior' },
-                { path: 'frvp.widthPct', label: 'Width %', kind: 'number', min: 0, max: 100, step: 1, group: 'behavior' },
+                { path: 'frvp.rows', label: msg('drawing.fixedrangevp.frvpRows', 'Rows'), kind: 'number', min: 1, max: 500, step: 1, group: 'behavior' },
+                { path: 'frvp.valueAreaPct', label: msg('drawing.fixedrangevp.frvpValueAreaPct', 'Value Area'), kind: 'number', min: 0, max: 100, step: 1, group: 'behavior' },
+                { path: 'frvp.widthPct', label: msg('drawing.fixedrangevp.frvpWidthPct', 'Width %'), kind: 'number', min: 0, max: 100, step: 1, group: 'behavior' },
                 {
                     path: 'frvp.anchor',
-                    label: 'Anchor',
+                    label: msg('drawing.fixedrangevp.frvpAnchor', 'Anchor'),
                     kind: 'select',
                     options: [
-                        { value: 'right', label: 'Right' },
-                        { value: 'left', label: 'Left' },
+                        { value: 'right', label: msg('drawing.fixedrangevp.option.right', 'Right') },
+                        { value: 'left', label: msg('drawing.fixedrangevp.option.left', 'Left') },
                     ],
                     group: 'behavior',
                 },
-                { path: 'frvp.upColor', label: 'Up Volume', kind: 'color', group: 'fill' },
-                { path: 'frvp.downColor', label: 'Down Volume', kind: 'color', group: 'fill' },
-                { path: 'frvp.vaUpColor', label: 'Value Area Up', kind: 'color', group: 'fill' },
-                { path: 'frvp.vaDownColor', label: 'Value Area Down', kind: 'color', group: 'fill' },
-                { path: 'frvp.showVah', label: 'VAH', kind: 'boolean', group: 'line' },
-                { path: 'frvp.vahColor', label: 'VAH color', kind: 'color', group: 'line' },
-                { path: 'frvp.vahStyle', label: 'VAH style', kind: 'lineStyle', options: LINE_STYLE_OPTIONS, group: 'line' },
-                { path: 'frvp.showVal', label: 'VAL', kind: 'boolean', group: 'line' },
-                { path: 'frvp.valColor', label: 'VAL color', kind: 'color', group: 'line' },
-                { path: 'frvp.valStyle', label: 'VAL style', kind: 'lineStyle', options: LINE_STYLE_OPTIONS, group: 'line' },
-                { path: 'frvp.showPoc', label: 'POC', kind: 'boolean', group: 'line' },
-                { path: 'frvp.pocColor', label: 'POC color', kind: 'color', group: 'line' },
-                { path: 'frvp.pocStyle', label: 'POC style', kind: 'lineStyle', options: LINE_STYLE_OPTIONS, group: 'line' },
-                { path: 'frvp.showDevelopingPoc', label: 'Developing POC', kind: 'boolean', group: 'line' },
-                { path: 'frvp.developingPocColor', label: 'Developing POC color', kind: 'color', group: 'line' },
-                { path: 'frvp.developingPocStyle', label: 'Developing POC style', kind: 'lineStyle', options: LINE_STYLE_OPTIONS, group: 'line' },
-                { path: 'frvp.showDevelopingVa', label: 'Developing VA', kind: 'boolean', group: 'line' },
-                { path: 'frvp.developingVaColor', label: 'Developing VA color', kind: 'color', group: 'line' },
-                { path: 'frvp.developingVaStyle', label: 'Developing VA style', kind: 'lineStyle', options: LINE_STYLE_OPTIONS, group: 'line' },
+                { path: 'frvp.upColor', label: msg('drawing.fixedrangevp.frvpUpColor', 'Up Volume'), kind: 'color', group: 'fill' },
+                { path: 'frvp.downColor', label: msg('drawing.fixedrangevp.frvpDownColor', 'Down Volume'), kind: 'color', group: 'fill' },
+                { path: 'frvp.vaUpColor', label: msg('drawing.fixedrangevp.frvpVaUpColor', 'Value Area Up'), kind: 'color', group: 'fill' },
+                { path: 'frvp.vaDownColor', label: msg('drawing.fixedrangevp.frvpVaDownColor', 'Value Area Down'), kind: 'color', group: 'fill' },
+                { path: 'frvp.showVah', label: msg('drawing.fixedrangevp.frvpShowVah', 'VAH'), kind: 'boolean', group: 'line' },
+                { path: 'frvp.vahColor', label: msg('drawing.fixedrangevp.frvpVahColor', 'VAH color'), kind: 'color', group: 'line' },
+                { path: 'frvp.vahStyle', label: msg('drawing.fixedrangevp.frvpVahStyle', 'VAH style'), kind: 'lineStyle', options: LINE_STYLE_OPTIONS, group: 'line' },
+                { path: 'frvp.showVal', label: msg('drawing.fixedrangevp.frvpShowVal', 'VAL'), kind: 'boolean', group: 'line' },
+                { path: 'frvp.valColor', label: msg('drawing.fixedrangevp.frvpValColor', 'VAL color'), kind: 'color', group: 'line' },
+                { path: 'frvp.valStyle', label: msg('drawing.fixedrangevp.frvpValStyle', 'VAL style'), kind: 'lineStyle', options: LINE_STYLE_OPTIONS, group: 'line' },
+                { path: 'frvp.showPoc', label: msg('drawing.fixedrangevp.frvpShowPoc', 'POC'), kind: 'boolean', group: 'line' },
+                { path: 'frvp.pocColor', label: msg('drawing.fixedrangevp.frvpPocColor', 'POC color'), kind: 'color', group: 'line' },
+                { path: 'frvp.pocStyle', label: msg('drawing.fixedrangevp.frvpPocStyle', 'POC style'), kind: 'lineStyle', options: LINE_STYLE_OPTIONS, group: 'line' },
+                { path: 'frvp.showDevelopingPoc', label: msg('drawing.fixedrangevp.frvpShowDevelopingPoc', 'Developing POC'), kind: 'boolean', group: 'line' },
+                { path: 'frvp.developingPocColor', label: msg('drawing.fixedrangevp.frvpDevelopingPocColor', 'Developing POC color'), kind: 'color', group: 'line' },
+                { path: 'frvp.developingPocStyle', label: msg('drawing.fixedrangevp.frvpDevelopingPocStyle', 'Developing POC style'), kind: 'lineStyle', options: LINE_STYLE_OPTIONS, group: 'line' },
+                { path: 'frvp.showDevelopingVa', label: msg('drawing.fixedrangevp.frvpShowDevelopingVa', 'Developing VA'), kind: 'boolean', group: 'line' },
+                { path: 'frvp.developingVaColor', label: msg('drawing.fixedrangevp.frvpDevelopingVaColor', 'Developing VA color'), kind: 'color', group: 'line' },
+                { path: 'frvp.developingVaStyle', label: msg('drawing.fixedrangevp.frvpDevelopingVaStyle', 'Developing VA style'), kind: 'lineStyle', options: LINE_STYLE_OPTIONS, group: 'line' },
             ],
         };
     }

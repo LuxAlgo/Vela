@@ -1,3 +1,5 @@
+import { msg } from '../../i18n/message';
+import type { MessageLike } from '../../i18n/types';
 import { HarmonicPattern, type HarmonicRanges, type RatioBand } from './HarmonicPattern';
 
 const XC_OVER_XA: RatioBand = { min: 1.272, max: 1.414 }; // C extends the XA leg
@@ -11,8 +13,8 @@ const CD_OVER_XC: RatioBand = { min: 0.74, max: 0.83 }; // D retraces the XC lin
 export class Cypher extends HarmonicPattern {
     readonly type = 'cypher' as const;
 
-    patternName(): string {
-        return 'Cypher';
+    patternName(): MessageLike {
+        return msg('drawing.cypher.patternName', 'Cypher');
     }
 
     protected ranges(): HarmonicRanges {

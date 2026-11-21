@@ -11,6 +11,12 @@ import {
     type FrvpBar,
 } from '../src/core/drawings';
 import { ACCENT, BEARISH, BULLISH, NEUTRAL } from '../src/core/palette';
+import { createTranslator, type MessageLike } from '../src/plugin';
+
+/** Toolbar and drawing text as an English chart shows it. */
+const english = createTranslator({ locale: 'en' });
+const en = (m: MessageLike | null | undefined): string | null | undefined => (m == null ? m : english.t(m));
+
 
 const HR = 3600_000;
 
@@ -143,7 +149,7 @@ describe('drawings/FixedRangeVolumeProfile', () => {
     it('appears under the Volume section next to Anchored VWAP', () => {
         const { definition } = buildToolbar(true);
         const measure = definition.groups.find((g) => g.id === 'measurements');
-        expect(measure?.sections?.find((s) => s.label === 'Volume')?.tools.map((t) => t.type)).toEqual([
+        expect(measure?.sections?.find((s) => en(s.label) === 'Volume')?.tools.map((t) => t.type)).toEqual([
             'anchoredvwap',
             'fixedrangevp',
         ]);

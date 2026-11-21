@@ -8,7 +8,9 @@ import type {
     AxisLongPressEvent,
     InputChangeEvent,
     VisibleRange,
+    VisibleRangeOptions,
     IndicatorStatus,
+    DrawingActionView,
     LegendActionView,
     LegendCalloutView,
     PaneAction,
@@ -16,8 +18,16 @@ import type {
     DataWindowOHLC,
     DataWindowGroup,
     DataWindowReadout,
+    RendererRootAttributes,
 } from '../../core/ports/IChartRenderer';
 import type { VelaTheme } from '../../core/options';
+import type { Translator } from '../../core/i18n/types';
+import { englishTranslator } from '../../core/i18n/translator';
+import { msg } from '../../core/i18n/message';
+import { textOf } from '../../core/i18n/text';
+import type { MessageLike } from '../../core/i18n/types';
+import { ENGLISH_FORMAT } from '../../core/format/formatters';
+import type { FormatSurface } from '../../core/format/types';
 import type { OHLCV } from '../../core/model/ohlcv';
 import type { Millis } from '../../core/model/time';
 import type { VolumeLayerData, VpvrLayerData } from '../../core/model/volume-layers';
@@ -25,7 +35,9 @@ import type { Pane } from '../../core/model/scene';
 import type { IndicatorModel, PaneAxisBand } from '../../core/model/indicator';
 import type { ScenePatch } from '../../core/model/patch';
 import type { InputValue, SymbolPickerFn } from '../../core/model/inputs';
-import type { RendererDisplayOptions, NativeBackend, PriceStyle, MoveTarget, ThemeName, IntroAnimation, IntroStyle, PriceAxisTicksFn } from '../../core/options';
+import type { RendererDisplayOptions, NativeBackend, PriceStyle, MoveTarget, ThemeId, IntroAnimation, IntroStyle, PriceAxisTicksFn, FreePanTrigger } from '../../core/options';
+import type { SymbolFacts } from '../../core/ports/MarketDataFeed';
+import { priceStyleApplies, shownPriceStyle } from '../../chart-types/applicability';
 import {
     resolveEaseMs,
     resolveLiveBarEaseMs,
@@ -38,14 +50,15 @@ import {
     INTRO_DURATION_DEFAULT_MS,
 } from '../../core/options';
 import type { Unsubscribe } from '../../core/util/types';
-import { SecondClock, type WallClock } from '../../core/util/wall-clock';
-import { isLineLikeSeries, seriesShownOn, type SeriesSurface } from '../../core/model/series';
+import { SecondClock, clockCorrection, type WallClock } from '../../core/util/wall-clock';
+import { isLineLikeSeries, seriesShownOn, type SeriesSpec, type SeriesSurface } from '../../core/model/series';
 import { InputsUI, type LegendPlotValue } from '../shared/InputsUI';
 import { PaneControls } from './chrome/PaneControls';
 import { AxisScaleButtons, type AxisScaleView } from './chrome/AxisScaleButtons';
 import { NATIVE_CAPABILITIES, supportsWebGL2 } from './capabilities';
 import { WebGL2Backend } from './backend/WebGL2Backend';
 import { CoordinateSystem, type PaneBounds, type PriceScale } from './core/CoordinateSystem';
+import { pinPlotCanvas } from './core/plotDirection';
 import { Scheduler, InvalidateLevel, repaintsData, repaintsChrome } from './core/Scheduler';
 import { Animator, EaseSetting, easeToward } from './core/Animator';
 import { InputController } from './core/InputController';
@@ -65,8 +78,9 @@ import { IndicatorDrawingSlices, mergeSlices } from './drawings/IndicatorDrawing
 import { createProjector } from './drawings/Projector';
 import type { Projector, SnapMode } from '../../core/drawings';
 import type { IDrawingsRendererPort } from '../../core/drawings';
-import { formatPriceLabel, tickDecimals } from './chrome/ticks';
-import { zonedDate } from './chrome/tz';
+import { formatPriceLabel } from './chrome/ticks';
+import { tickDecimals } from '../../core/format/numbers';
+import { displayZone, zonedDate } from './chrome/tz';
 import { computePaneScale, expandScaleByPixels, overlaySeriesRange } from './core/autoscale';
 import { mergeTradeMarkersState, tradesPriceHints, type TradeMarkerHints } from '../shared/trade-markers';
 import { markGroupOwnVisible, markGroupVisible, mergeMarksState } from '../shared/marks-state';
@@ -76,7 +90,7 @@ import { MARK_PULSE_MS } from './chrome/marks/paint';
 import type { MarkClickEvent, MarkGroup, TimelineMark } from '../../core/marks/types';
 import { rescaleAround, shiftScale } from './core/manualScale';
 import { resizeSplit, type PaneSplit } from './core/paneResize';
-import { type ChartConfig, CHART_CONFIG_VERSION, factoryResetConfig, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, priceStyleIds, basePaintingOf, candleOverrideFor, effectiveCandlePaint, sanitizeCrosshairOverride } from './core/chartConfig';
+import { type ChartConfig, CHART_CONFIG_VERSION, factoryResetConfig, followThemeColors, themeColorFollower, columnsColorFollower, columnsDefaultColors, mergeConfig, BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, priceStyleIds, basePaintingOf, candleOverrideFor, effectiveCandlePaint, sanitizeCrosshairOverride } from './core/chartConfig';
 import { BackdropRenderer } from './backdrop/BackdropRenderer';
 import { VolumeRenderer, VOLUME_PANE_FILL_FRAC } from './volume/VolumeRenderer';
 import { rendererLayers, foldBaseModulation, type RendererLayerArgs, type RendererLayerDefinition, type RendererLayerInstance, type BasePaintingModulation } from './layers';
@@ -87,7 +101,7 @@ import { rasterizeOverlay } from '../shared/dom-raster';
 import type { HostSettingsSection } from './chrome/SettingsDialog';
 import { settingsIdCatalog } from './chrome/settings-visibility';
 import { VpvrRenderer } from './vpvr/VpvrRenderer';
-import { DARK_THEME, LIGHT_THEME } from '../../core/theme';
+import { DARK_THEME, LIGHT_THEME, registeredThemeIdOf } from '../../core/theme';
 import { isDarkColor } from '../../core/color';
 import { iconAt } from '../../core/icons';
 import { BEARISH, BULLISH } from '../../core/palette';
@@ -127,7 +141,6 @@ const SCROLL_BTN_RIGHT = RIGHT_AXIS_W + SCROLL_BTN_RIGHT_INSET; // initial offse
 const SCROLL_BTN_BOTTOM = TIME_AXIS_H + 14; // px from the plot's bottom edge — the corner slot also used by the opt-in `settings` gear (off by default)
 const SCROLL_BTN_PROXIMITY_PX = 120; // the button reveals only while the cursor is within this radius of its center
 const MIN_VISIBLE_BARS = 2; // never zoom/pan so far that fewer than this many candles stay on screen (the only pan limit)
-const ZOOM_OUT_MARGIN_BARS = 6; // breathing room at max zoom-out: all bars + this margin fill the width (no thin strip)
 // (The animation time-constants — zoom, fling, scroll, autoscale, live-bar glides — are
 // host-configurable through `VelaOptions.animations`; their defaults live in core/options.)
 // After the candle reveal the indicator models fade in over this long (capped at the reveal's own duration).
@@ -159,6 +172,20 @@ const SEPARATOR_HIT_PX = 4;
  * pointer/wheel pan-zoom over a placeholder grid. Series/fills/drawings/axes/
  * crosshair/inputs land in P1–P2.
  */
+const TEXT = {
+    chartSettings: msg('chart.settingsButton', 'Chart settings'),
+    scrollToLatest: msg('chart.scrollToLatest.label', 'Scroll to most recent bar'),
+    scrollToLatestTitle: msg('chart.scrollToLatest.title', 'Scroll to most recent bar (Alt+Shift+→)'),
+    mainChart: msg('chart.pane.mainChart', 'Main chart'),
+    pane: msg('chart.pane.numbered', 'Panel {n}'),
+    keyboardHelp: msg(
+        'chart.a11y.keyboardHelp',
+        'Interactive price chart. Use Left/Right arrows to move between bars, Shift+Arrow to pan, plus/minus to zoom, Home/End to jump, 0 to reset.',
+    ),
+    barSummary: msg('chart.a11y.barSummary', 'Open {open}, High {high}, Low {low}, Close {close}'),
+    valueSummary: msg('chart.a11y.valueSummary', '{name} {value}'),
+};
+
 export class NativeRenderer implements IChartRenderer {
     readonly capabilities: RendererCapabilities = NATIVE_CAPABILITIES;
 
@@ -167,9 +194,16 @@ export class NativeRenderer implements IChartRenderer {
     // Owned by the app theme alone (mount/setTheme) — config-level background/text edits
     // (settings dialog, persisted configs) recolor the plot AND the axis scales (see
     // axisSurface), but never the toolbar/dialog chrome.
+    /** The app theme as given, before the config's candle colors: what the settings
+     *  dialog's theme choice identifies. */
+    private appTheme: VelaTheme = DARK_THEME;
     private surfaceBackground = DARK_THEME.background;
     private surfaceTextColor = DARK_THEME.textColor;
     private wrapper!: HTMLDivElement; // outer root: holds the left toolbar gutter + the plot sub-container
+    /** The chart's translator (null until the chart hands it over: English then). */
+    private i18n: Translator | null = null;
+    /** `lang`/`dir` the wrapper carries — null leaves the attribute to the host page. */
+    private rootAttrs: RendererRootAttributes = { lang: null, dir: null };
     private plot!: HTMLDivElement; // the plot area (canvases + DOM overlays), inset to the right of the toolbar gutter
     private toolbarGutter = 0; // px reserved on the left for the docked drawings toolbar (0 when hidden)
     private mountContainer: HTMLElement | null = null; // the host-owned element mount() renders into
@@ -253,6 +287,7 @@ export class NativeRenderer implements IChartRenderer {
     private indicatorValuesOn = true;
     /** Host-contributed legend actions — held here so a rebuild of the legend re-wires them. */
     private legendActionsProvider: ((indicatorId: string) => LegendActionView[]) | null = null;
+    private drawingActionsProvider: ((drawingId: string) => DrawingActionView[]) | null = null;
     /** Host-contributed legend callouts — held here so a rebuild of the legend re-wires them. */
     private legendCalloutsProvider: ((indicatorId: string) => LegendCalloutView[]) | null = null;
     /** Host override of the legend's fold toggle — held here so a remount re-applies it. */
@@ -315,6 +350,8 @@ export class NativeRenderer implements IChartRenderer {
 
     // ── axis-drag / manual-scale (price-axis rescale + vertical price pan) ──
     private axisDragEnabled = true;
+    private freePanOn = false;
+    private freePanTrigger: Exclude<FreePanTrigger, boolean> = 'drag';
     private scaleDragHolder: ScaleHolder | null = null; // pane master OR merged-indicator scale being dragged
     private scaleDragHeight = 0; // the grabbed pane's pixel height (for vertical-pan math)
     private scaleDragStart: PriceScale | null = null; // its price window when the gesture began
@@ -369,9 +406,11 @@ export class NativeRenderer implements IChartRenderer {
     private readonly chartTypeSettingsCbs = new Set<(typeId: string, values: Record<string, unknown>) => void>();
     private readonly configChangedCbs = new Set<() => void>();
     /** The settings dialog's Canvas → Theme row raises the pick here; the host applies it. */
-    private readonly themeSelectCbs = new Set<(theme: ThemeName) => void>();
+    private readonly themeSelectCbs = new Set<(theme: ThemeId) => void>();
     /** First-run config snapshot — what "Reset defaults" restores. */
     private factoryConfig: ChartConfig | null = null;
+    /** The app theme {@link factoryConfig} was taken under: its candle colors are the snapshot's defaults. */
+    private factoryTheme: VelaTheme = DARK_THEME;
     private hostSettingsSections: HostSettingsSection[] = [];
     private readonly clickCbs = new Set<(e: ClickEvent) => void>();
     private readonly axisLongPressCbs = new Set<(e: AxisLongPressEvent) => void>();
@@ -381,6 +420,12 @@ export class NativeRenderer implements IChartRenderer {
     private readonly moveIndicatorCbs = new Set<(id: string, target: MoveTarget) => void>();
     private readonly priceStyleCbs = new Set<(style: PriceStyle) => void>();
     private readonly priceStyleWillChangeCbs = new Set<(from: PriceStyle, to: PriceStyle) => void>();
+    /** The CHOSEN price style — the `priceStyle` feature, the config's `series.style`, what a
+     *  save keeps. `scene.priceStyle` is the one DRAWN: this, or its fallback while the
+     *  symbol's facts rule it out (see {@link setSymbolFacts}). */
+    private chosenStyle: PriceStyle = 'candles';
+    /** The active symbol's style-deciding facts; null while unknown (every style applies). */
+    private symbolFacts: SymbolFacts | null = null;
 
     constructor(opts?: RendererDisplayOptions) {
         if (opts) {
@@ -396,10 +441,12 @@ export class NativeRenderer implements IChartRenderer {
             this.glowAmount = opts.glow;
             this.candleUp = opts.upColor;
             this.candleDown = opts.downColor;
+            this.chosenStyle = opts.priceStyle;
             this.scene.priceStyle = opts.priceStyle;
             this.scene.basePainting = basePaintingOf(opts.priceStyle);
             this.scene.candleOverride = candleOverrideFor(opts.priceStyle, this.scene.style.chartTypes);
             if (typeof opts.priceAxisTicks === 'function') this.priceAxisTicks.setHook(opts.priceAxisTicks);
+            if (opts.freePan !== undefined) this.applyFreePan(opts.freePan);
         }
         // Seed a theme so getConfig()/applyConfig() work before mount (mount overwrites
         // it with the real, Vela-resolved theme). Candle colors follow opts.
@@ -407,7 +454,7 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     readonly name = 'native';
-    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'animScroll', 'animAutoscale', 'animLiveBar', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'sessionZones', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'priceBaseline', 'baselinePrice', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'marks', 'indicatorTitles', 'indicatorValues', 'crosshairOverride', 'drawingsInteractive', 'priceAxisTicks'];
+    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'animScroll', 'animAutoscale', 'animLiveBar', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'freePan', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'sessionZones', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'scalePriceOnly', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'shownPriceStyle', 'priceBaseline', 'baselinePrice', 'previousClose', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'marks', 'indicatorTitles', 'indicatorValues', 'crosshairOverride', 'drawingsInteractive', 'priceAxisTicks'];
 
     /** Apply a render feature live — mutate the field + invalidate, no engine re-run. */
     applyFeature(key: string, value: unknown): void {
@@ -480,6 +527,9 @@ export class NativeRenderer implements IChartRenderer {
                 this.paneResizeEnabled = Boolean(value);
                 if (this.input) this.input.paneResize = this.paneResizeEnabled;
                 return; // affects the next gesture only — nothing to repaint
+            case 'freePan':
+                this.applyFreePan(value);
+                return; // affects the next gesture only — nothing to repaint
             case 'candleZOrder':
                 this.scene.candleZ = Number(value) || 0;
                 break;
@@ -521,6 +571,9 @@ export class NativeRenderer implements IChartRenderer {
                     return; // setPaneInvert invalidates
                 }
                 this.scene.invertScale = Boolean(value);
+                break;
+            case 'scalePriceOnly':
+                this.scene.scalePriceOnly = Boolean(value);
                 break;
             case 'autoScale':
                 // Auto on ⇒ drop every pane's frozen window so autoscale resumes (same as
@@ -630,6 +683,7 @@ export class NativeRenderer implements IChartRenderer {
             case 'zoomAnchor': return this.zoomAnchorMode;
             case 'axisDrag': return this.input ? this.input.axisDrag : this.axisDragEnabled;
             case 'paneResize': return this.input ? this.input.paneResize : this.paneResizeEnabled;
+            case 'freePan': return this.freePanOn ? (this.freePanTrigger === 'drag' ? true : this.freePanTrigger) : false;
             case 'candleZOrder': return this.scene.candleZ;
             case 'candleVisible': return !this.scene.candlesHidden;
             case 'seriesOrder': return this.scene.indicatorZOrder();
@@ -639,6 +693,7 @@ export class NativeRenderer implements IChartRenderer {
             case 'axisLabels': return this.scene.showAxisLabels;
             case 'scaleMode': return this.scene.scaleMode;
             case 'invertScale': return this.scene.invertScale;
+            case 'scalePriceOnly': return this.scene.scalePriceOnly;
             case 'paneScales': return this.paneScaleInfos();
             case 'autoScale': {
                 // Auto when the price pane isn't holding a frozen (manual) window.
@@ -646,7 +701,10 @@ export class NativeRenderer implements IChartRenderer {
                 return price ? price.manualScale == null : true;
             }
             case 'timezone': return this.scene.timezone;
-            case 'priceStyle': return this.scene.priceStyle;
+            case 'priceStyle': return this.chosenStyle;
+            // READ-ONLY: the style the chart DRAWS — `priceStyle`, or the close-based
+            // fallback while the symbol's facts rule it out. Writes are ignored.
+            case 'shownPriceStyle': return this.scene.priceStyle;
             case 'priceBaseline': return this.scene.baselineValue;
             case 'baselinePrice': {
                 // READ-ONLY: the RESOLVED baseline reference price the paint splits on —
@@ -655,6 +713,14 @@ export class NativeRenderer implements IChartRenderer {
                 // (a status line's value ink) compares against this.
                 const price = this.scene.panes.get(PRICE_PANE_ID);
                 return price ? this.scene.baselinePriceFor(price.scale) : this.scene.baselineValue;
+            }
+            case 'previousClose': {
+                // READ-ONLY: the close of the bar before the one the readouts show — the bar
+                // under the crosshair, else the latest; null on the first bar. Host chrome
+                // coloring by change (the columns style's status line ink) compares against it.
+                const idx = this.hoverLogical ?? this.bars.length - 1;
+                const prev = this.bars[idx - 1];
+                return prev && Number.isFinite(prev.close) ? prev.close : null;
             }
             case 'tradeMarkers': return { ...this.scene.tradeMarkers, colors: { ...this.scene.tradeMarkers.colors } };
             case 'marks': return { visible: this.scene.marks.visible, groups: { ...this.scene.marks.groups } };
@@ -749,6 +815,21 @@ export class NativeRenderer implements IChartRenderer {
         this.scheduler?.invalidate(InvalidateLevel.Full);
     }
 
+    /** Port surface: the active symbol's style-deciding facts. A chosen style they rule out
+     *  draws as its fallback, and an open settings dialog re-greys its style list. */
+    setSymbolFacts(facts: SymbolFacts | null): void {
+        this.symbolFacts = facts ? { ...facts } : null;
+        const before = this.scene.priceStyle;
+        this.showPriceStyle();
+        if (this.scene.priceStyle !== before) this.scheduler?.invalidate(InvalidateLevel.Full);
+        if (this.settingsDialog?.isOpen()) this.settingsDialog.refresh(this.getConfig());
+    }
+
+    /** The registered style ids the active symbol's facts rule out (none while unknown). */
+    private unavailablePriceStyles(): string[] {
+        return priceStyleIds().filter((id) => !priceStyleApplies(id, this.symbolFacts));
+    }
+
     // ── rich serializable config (templates / persisted user settings — item 15) ──
     /**
      * Snapshot the full chart cosmetics as one serializable, versioned document.
@@ -783,6 +864,8 @@ export class NativeRenderer implements IChartRenderer {
                 mode: this.scene.scaleMode,
                 log: this.scene.logScale,
                 invert: this.scene.invertScale,
+                priceOnly: this.scene.scalePriceOnly,
+                freePan: this.freePanOn,
                 borderColor: s.borderColor ?? t.borderColor,
                 labelsVisible: this.scene.showAxisLabels,
                 currentPriceLine: this.scene.showPriceLine,
@@ -854,7 +937,11 @@ export class NativeRenderer implements IChartRenderer {
                     baselineLevel: s.baseline.baselineLevel,
                 };
             })(),
-            series: { style: this.scene.priceStyle, baseline: this.scene.baselineValue, spacing: this.coords.spacingScale },
+            columns: (() => {
+                const wash = columnsDefaultColors({ upColor: this.candleUp, downColor: this.candleDown });
+                return { upColor: s.columns.upColor ?? wash.upColor, downColor: s.columns.downColor ?? wash.downColor };
+            })(),
+            series: { style: this.chosenStyle, baseline: this.scene.baselineValue, spacing: this.coords.spacingScale },
             sessions: { premarketColor: s.sessions.premarketColor, postmarketColor: s.sessions.postmarketColor, extendedColor: s.sessions.extendedColor },
         };
     }
@@ -921,6 +1008,9 @@ export class NativeRenderer implements IChartRenderer {
         this.scene.scaleMode = next.priceScale.mode;
         this.scene.logScale = next.priceScale.log;
         this.scene.invertScale = next.priceScale.invert;
+        this.scene.scalePriceOnly = next.priceScale.priceOnly;
+        this.freePanOn = next.priceScale.freePan;
+        if (this.input) this.input.freePan = this.freePanOn ? this.freePanTrigger : false;
         s.borderColor = keepInherit(s.borderColor, next.priceScale.borderColor, prevTheme.borderColor);
         this.scene.showAxisLabels = next.priceScale.labelsVisible;
         this.scene.showPriceLine = next.priceScale.currentPriceLine;
@@ -986,6 +1076,7 @@ export class NativeRenderer implements IChartRenderer {
             width: next.baseline.width,
             baselineLevel: next.baseline.baselineLevel,
         };
+        s.columns = { upColor: next.columns.upColor, downColor: next.columns.downColor };
         // session shading
         s.sessions = { premarketColor: next.sessions.premarketColor, postmarketColor: next.sessions.postmarketColor, extendedColor: next.sessions.extendedColor };
         // series
@@ -1047,7 +1138,7 @@ export class NativeRenderer implements IChartRenderer {
                 this.plot.appendChild(this.settingsButton);
             }
             if (this.settingsButton) this.settingsButton.style.display = 'flex';
-            if (this.plot && !this.settingsDialog) this.settingsDialog = new SettingsDialog(this.dialogHost ?? this.plot, this.theme);
+            if (this.plot && !this.settingsDialog) this.settingsDialog = new SettingsDialog(this.dialogHost ?? this.plot, this.theme, () => this.i18n ?? englishTranslator());
         } else {
             this.settingsButton?.style.setProperty('display', 'none');
             this.settingsDialog?.close();
@@ -1057,7 +1148,7 @@ export class NativeRenderer implements IChartRenderer {
     private makeSettingsButton(): HTMLButtonElement {
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.title = 'Chart settings';
+        btn.title = this.t(TEXT.chartSettings);
         btn.innerHTML = iconAt('gear', 14);
         Object.assign(btn.style, {
             position: 'absolute',
@@ -1090,7 +1181,7 @@ export class NativeRenderer implements IChartRenderer {
      *  in-chart gear — created on demand, independent of the gear feature being enabled. */
     openSettingsDialog(section?: string): void {
         if (!this.settingsDialog && this.plot) {
-            this.settingsDialog = new SettingsDialog(this.dialogHost ?? this.plot, this.theme);
+            this.settingsDialog = new SettingsDialog(this.dialogHost ?? this.plot, this.theme, () => this.i18n ?? englishTranslator());
             this.settingsDialog.setLayoutMode(this.layoutMode);
         }
         this.toggleSettingsDialog(section);
@@ -1101,7 +1192,8 @@ export class NativeRenderer implements IChartRenderer {
      *  independently); a pick is raised to the host (`onThemeSelect`), which owns the
      *  canonical theme. */
     private syncThemeControl(): void {
-        this.settingsDialog?.setThemeControl(isDarkColor(this.surfaceBackground) ? 'dark' : 'light', (name) => {
+        const current = registeredThemeIdOf(this.appTheme) ?? (isDarkColor(this.surfaceBackground) ? 'dark' : 'light');
+        this.settingsDialog?.setThemeControl(current, (name) => {
             for (const cb of this.themeSelectCbs) cb(name);
         });
     }
@@ -1122,6 +1214,7 @@ export class NativeRenderer implements IChartRenderer {
             (id) => markGroupOwnVisible(this.scene.marks.groups, id, this.scene.markGroups),
         );
         this.settingsDialog.setHiddenSettings(this.hiddenSettings);
+        this.settingsDialog.setPriceStyleState(() => ({ shown: this.scene.priceStyle, unavailable: this.unavailablePriceStyles() }));
         this.syncThemeControl();
         this.settingsDialog.toggle(
             this.getConfig(),
@@ -1144,7 +1237,8 @@ export class NativeRenderer implements IChartRenderer {
      * merge, like the type bags) are named back to their host-declared visibility.
      */
     private factoryResetDocument(factory: ChartConfig): ChartConfig {
-        const doc = factoryResetConfig(factory, this.scene.priceStyle);
+        // The snapshot's candle colors were its theme's; the reset gives the current theme's.
+        const doc = followThemeColors(factoryResetConfig(factory, this.chosenStyle), this.factoryTheme, this.appTheme);
         const groups = { ...doc.marks.groups };
         for (const g of this.markGroupsInUse()) groups[g.id] = g.visible !== false;
         return { ...doc, marks: { ...doc.marks, groups } };
@@ -1160,8 +1254,8 @@ export class NativeRenderer implements IChartRenderer {
     private makeScrollToRealtimeButton(): HTMLButtonElement {
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.title = 'Scroll to most recent bar (Alt+Shift+→)';
-        btn.setAttribute('aria-label', 'Scroll to most recent bar');
+        btn.title = this.t(TEXT.scrollToLatestTitle);
+        btn.setAttribute('aria-label', this.t(TEXT.scrollToLatest));
         btn.innerHTML = this.scrollButtonIcon();
         Object.assign(btn.style, {
             position: 'absolute',
@@ -1389,6 +1483,29 @@ export class NativeRenderer implements IChartRenderer {
         return { ...b, high: o + (b.high - o) * t, low: o + (b.low - o) * t, close: o + (b.close - o) * t };
     }
 
+    /** A theme's up and down colors are the series' defaults: on a theme switch, every series
+     *  color still on the previous theme's moves to the next theme's, and a color a host or
+     *  user chose stays. Colors left to inherit (`null`) keep inheriting. */
+    private followThemeCandles(prev: VelaTheme, next: VelaTheme): void {
+        if (prev.upColor === next.upColor && prev.downColor === next.downColor) return;
+        const follow = themeColorFollower(prev, next);
+        const s = this.scene.style;
+        this.candleUp = follow(this.candleUp);
+        this.candleDown = follow(this.candleDown);
+        s.candle = {
+            ...s.candle,
+            borderUpColor: follow(s.candle.borderUpColor),
+            borderDownColor: follow(s.candle.borderDownColor),
+            wickUpColor: follow(s.candle.wickUpColor),
+            wickDownColor: follow(s.candle.wickDownColor),
+        };
+        s.bars = { upColor: follow(s.bars.upColor), downColor: follow(s.bars.downColor) };
+        s.line = { ...s.line, color: follow(s.line.color) };
+        s.area = { ...s.area, lineColor: follow(s.area.lineColor), topColor: follow(s.area.topColor) };
+        const followColumns = columnsColorFollower(prev, next);
+        s.columns = { upColor: followColumns(s.columns.upColor), downColor: followColumns(s.columns.downColor) };
+    }
+
     /** Theme with the configured candle up/down colors applied (candles, wicks,
      *  plotcandle defaults, and the current-price line direction all follow them). */
     private deriveTheme(theme: VelaTheme): VelaTheme {
@@ -1421,6 +1538,7 @@ export class NativeRenderer implements IChartRenderer {
         this.mountContainer = container;
         this.publishGutters();
         this.theme = this.deriveTheme(theme);
+        this.appTheme = theme;
         // provisional chrome surface (refined by the first applyConfig)
         this.surfaceBackground = theme.background;
         this.surfaceTextColor = theme.textColor;
@@ -1434,13 +1552,11 @@ export class NativeRenderer implements IChartRenderer {
 
         // L-2 backdrop: session highlights + gridlines, the very BOTTOM of the pile — even
         // an SDK layer canvas slotted below the data canvas stays above the grid.
-        this.backdropCanvas = document.createElement('canvas');
-        Object.assign(this.backdropCanvas.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', pointerEvents: 'none' });
+        this.backdropCanvas = this.createPlotCanvas();
 
         // L0.25 volume columns: bottom-anchored per-bar volume, ABOVE the geometry canvas so
         // grid lines and candles cannot paint over them. Transparent + pointer-transparent.
-        this.volumeCanvas = document.createElement('canvas');
-        Object.assign(this.volumeCanvas.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', pointerEvents: 'none' });
+        this.volumeCanvas = this.createPlotCanvas();
 
         // L0 geometry — the swappable backend (WebGL2 if available, else canvas2d)
         // owns the data canvas + gets its rendering context.
@@ -1448,24 +1564,20 @@ export class NativeRenderer implements IChartRenderer {
 
         // L0.6 VPVR: the visible-range volume profile against the right edge, painted ABOVE
         // the candles (it reads over them, translucent) but below the chrome/axes.
-        this.vpvrCanvas = document.createElement('canvas');
-        Object.assign(this.vpvrCanvas.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', pointerEvents: 'none' });
+        this.vpvrCanvas = this.createPlotCanvas();
 
         // L1 chrome (canvas2d): Pine drawings + axes + current-price line. Transparent,
         // above the geometry layer (so the GL backend never has to rasterize text).
-        this.chromeCanvas = document.createElement('canvas');
-        Object.assign(this.chromeCanvas.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', pointerEvents: 'none' });
+        this.chromeCanvas = this.createPlotCanvas();
 
         // L1.5 user drawings: trend lines/boxes/labels + selection handles + the live
         // placing ghost. Above Pine drawings (chrome), below the crosshair. Transparent +
         // pointer-transparent — pointer events reach the data canvas (InputController),
         // which hands gestures to the drawings layer via the region-claim seam.
-        this.drawingsCanvas = document.createElement('canvas');
-        Object.assign(this.drawingsCanvas.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', pointerEvents: 'none' });
+        this.drawingsCanvas = this.createPlotCanvas();
 
         // L2 cursor: the crosshair, repainted alone on the cheap Cursor tier.
-        this.cursorCanvas = document.createElement('canvas');
-        Object.assign(this.cursorCanvas.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', pointerEvents: 'none' });
+        this.cursorCanvas = this.createPlotCanvas();
 
         // The `shadeRight` veil's styleable twin, just under the cursor canvas: host CSS on
         // `.vela-shade-right` (a `backdrop-filter`) reaches the candles beneath it but never the
@@ -1488,18 +1600,20 @@ export class NativeRenderer implements IChartRenderer {
         Object.assign(this.plot.style, { position: 'absolute', top: '0', right: '0', bottom: '0', left: '0' });
         // SDK renderer layers: one transparent canvas each, stacked by placement —
         // 'below-data' behind the candles, 'above-data' over them (under the chrome/axes).
-        this.extLayers = rendererLayers().map((def) => ({ def, instance: def.create(), canvas: this.createLayerCanvas(), channel: def.id, owner: null }));
+        this.extLayers = rendererLayers().map((def) => ({ def, instance: def.create(), canvas: this.createPlotCanvas(), channel: def.id, owner: null }));
         const below = this.extLayers.filter((l) => l.def.placement === 'below-data').map((l) => l.canvas);
         const above = this.extLayers.filter((l) => l.def.placement !== 'below-data').map((l) => l.canvas);
         this.plot.append(this.backdropCanvas, ...below, this.dataCanvas, this.volumeCanvas, this.vpvrCanvas, ...above, this.chromeCanvas, this.drawingsCanvas, this.shadeRightEl, this.cursorCanvas, this.overlayRoot);
         this.layerOrderSig = ''; // recomputed on the first data frame (owned layers follow their indicator's z)
         this.wrapper.appendChild(this.plot);
         this.factoryConfig = this.getConfig();
+        this.factoryTheme = theme;
         this.attributionEl = this.buildAttributionEl();
         if (!this.attributionEnabled) this.attributionEl.style.display = 'none';
         this.positionAttribution();
         this.wrapper.appendChild(this.attributionEl);
         container.appendChild(this.wrapper);
+        this.applyRootAttributes();
         this.applyBackground();
 
         this.backdropRenderer.mount(this.backdropCanvas);
@@ -1532,7 +1646,7 @@ export class NativeRenderer implements IChartRenderer {
             },
             beginPriceScale: (x, y) => this.beginPriceScale(x, y),
             priceScaleBy: (dy) => this.priceScaleBy(dy),
-            beginPricePan: (y) => this.beginPricePan(y),
+            beginPricePan: (y, unlock) => this.beginPricePan(y, unlock),
             pricePanBy: (dy) => this.pricePanBy(dy),
             resetPriceScale: (x, y) => this.resetPriceScale(x, y),
             dataDblClick: (x, y) => this.dataDblClick(x, y),
@@ -1560,6 +1674,7 @@ export class NativeRenderer implements IChartRenderer {
         this.input.axisDrag = this.axisDragEnabled;
         this.input.paneResize = this.paneResizeEnabled;
         this.input.drawings = this.drawingsInteractive;
+        this.input.freePan = this.freePanOn ? this.freePanTrigger : false;
         // Attach to the data canvas so legend/gear/dialog clicks (above it) don't pan.
         this.input.attach(this.dataCanvas);
         if (this.settingsEnabled) this.setSettingsEnabled(true); // honor a pre-mount feature set
@@ -1577,10 +1692,11 @@ export class NativeRenderer implements IChartRenderer {
         // The hit-rects are collected by the slice prepainter (drawings paint there now).
         this.labelTooltip = new LabelTooltip(this.plot, {
             theme: () => this.chromeTheme(),
-            lookup: (x, y) => this.indicatorSlices.labelTooltipAt(x, y) ?? this.chrome.markTooltipAt(x, y, this.markGroupsInUse()),
+            lookup: (x, y) => this.indicatorSlices.labelTooltipAt(x, y) ?? this.chrome.markTooltipAt(x, y, this.markGroupsInUse(), this.i18n),
         });
         // Timeline-mark popup, plus the chrome repaint a lane icon asks for once it has rasterized.
         this.markPopover = new MarkPopover({
+            i18n: () => this.i18n ?? englishTranslator(),
             plot: this.plot,
             host: () => this.dialogHost ?? this.plot,
             theme: () => this.chromeTheme(),
@@ -1595,6 +1711,7 @@ export class NativeRenderer implements IChartRenderer {
         // composites into the series stack, and owns the interaction/settings popup). It
         // implements the IDrawingsRendererPort the core DrawingController drives.
         this.userDrawings = new UserDrawingController(this.wrapper, this.plot, this.drawingsCanvas, {
+            i18n: () => this.i18n ?? englishTranslator(),
             projector: () => this.drawingProjector(),
             dpr: () => this.coords.dpr,
             theme: () => this.theme,
@@ -1615,7 +1732,12 @@ export class NativeRenderer implements IChartRenderer {
                     style,
                     upColor: style === 'bars' ? barsUp : paint.up,
                     downColor: style === 'bars' ? barsDown : paint.down,
-                    lineColor: style === 'area' ? (st.area.lineColor ?? this.theme.upColor) : (st.line.color ?? this.theme.upColor),
+                    lineColor:
+                        style === 'area'
+                            ? (st.area.lineColor ?? this.theme.upColor)
+                            : style === 'columns'
+                              ? withAlpha(st.columns.upColor ?? this.theme.upColor, 1)
+                              : (st.line.color ?? this.theme.upColor),
                 };
             },
             chartBarMs: () => this.coords.barInterval,
@@ -1626,6 +1748,7 @@ export class NativeRenderer implements IChartRenderer {
             setToolbarGutter: (px) => this.setToolbarGutter(px),
         });
         this.userDrawings.historyChords = this.historyChordsEnabled; // may be set before init()
+        this.userDrawings.setDrawingActions(this.drawingActionsProvider); // may be set before init()
         // Honor a layout mode pushed before mount (the shell may set it ahead of the chart build).
         if (this.layoutMode === 'mobile') {
             this.mountContainer?.setAttribute('data-vela-layout', this.layoutMode);
@@ -1649,6 +1772,7 @@ export class NativeRenderer implements IChartRenderer {
         this.setKeyboardEnabled(this.keyboardEnabled); // accessible by default; wires focus + ARIA
 
         this.inputsUI = new InputsUI(this.plot, theme, (paneId) => this.paneBoundsFor(paneId));
+        this.inputsUI.setI18n(this.i18n);
         this.inputsUI.setLayoutMode(this.layoutMode);
         this.inputsUI.setTitlesVisible(this.indicatorTitlesOn); // a remount keeps the toggle state
         this.inputsUI.setValuesVisible(this.indicatorValuesOn);
@@ -1673,7 +1797,7 @@ export class NativeRenderer implements IChartRenderer {
                     kind: p.kind,
                     // A study pane is named after its master indicator ("Move to RSI"), not a
                     // positional "Pane N" (which shifts as panes reorder and means little).
-                    label: p.kind === 'price' ? 'Main chart' : this.paneMasterTitle(p.id) ?? `Pane ${i}`,
+                    label: p.kind === 'price' ? this.t(TEXT.mainChart) : (this.paneMasterTitle(p.id) ?? this.t(TEXT.pane, { n: i })),
                     top: p.bounds.top,
                     height: p.bounds.height,
                 })),
@@ -1689,6 +1813,7 @@ export class NativeRenderer implements IChartRenderer {
         });
 
         this.paneControls = new PaneControls(this.plot, theme, {
+            i18n: () => this.i18n ?? englishTranslator(),
             panes: () => this.paneControlViews(),
             rightAxis: () => this.rightAxisW,
             onMove: (paneId, dir) => this.movePaneLocal(paneId, dir),
@@ -1711,6 +1836,7 @@ export class NativeRenderer implements IChartRenderer {
         this.paneControls.setSuspended(this.layoutMode === 'mobile');
 
         this.axisScaleButtons = new AxisScaleButtons(this.plot, theme, {
+            i18n: () => this.i18n ?? englishTranslator(),
             panes: () => this.axisScaleViews(),
             rightAxis: () => this.rightAxisW,
             onToggleAuto: (paneId) => this.togglePaneAuto(paneId),
@@ -1748,9 +1874,7 @@ export class NativeRenderer implements IChartRenderer {
      * and a fresh one is made for canvas2d.
      */
     private makeDataCanvas(): HTMLCanvasElement {
-        const c = document.createElement('canvas');
-        Object.assign(c.style, { position: 'absolute', inset: '0', width: '100%', height: '100%' });
-        return c;
+        return this.createPlotCanvas({ pointerEvents: true });
     }
 
     private createGeometryBackend(): HTMLCanvasElement {
@@ -1814,7 +1938,9 @@ export class NativeRenderer implements IChartRenderer {
     };
 
     setTheme(theme: VelaTheme): void {
+        this.followThemeCandles(this.appTheme, theme);
         this.theme = this.deriveTheme(theme);
+        this.appTheme = theme;
         // a full app-theme swap re-bases the chrome surface
         this.surfaceBackground = theme.background;
         this.surfaceTextColor = theme.textColor;
@@ -1837,6 +1963,71 @@ export class NativeRenderer implements IChartRenderer {
         this.userDrawings?.setTheme(this.chromeTheme());
         this.refreshAttributionColor();
         this.scheduler.invalidate(InvalidateLevel.Full);
+    }
+
+    /** Adopt the chart's localization (see `IChartRenderer.setLocalization`): the formatters
+     *  feed the axes, chips and readouts, the root carries `lang`/`dir`, and everything
+     *  repaints. */
+    setLocalization(i18n: Translator, root: RendererRootAttributes): void {
+        this.i18n = i18n;
+        this.rootAttrs = { lang: root.lang, dir: root.dir };
+        this.scene.format = i18n.format;
+        this.inputsUI?.setI18n(i18n);
+        this.applyRootAttributes();
+        this.relabel();
+        this.userDrawings?.relocalize();
+        this.settingsDialog?.relocalize();
+        if (this.scheduler) this.scheduler.invalidate(InvalidateLevel.Full);
+    }
+
+    /** Display text through the chart's translator (English until the chart hands one over). */
+    private t(m: MessageLike, values?: Record<string, string | number>): string {
+        return textOf(this.i18n, m, values);
+    }
+
+    /** An indicator's full name as the chart shows it. */
+    private modelTitle(model: IndicatorModel): string {
+        return this.t(model.displayTitle ?? model.title);
+    }
+
+    /** The compact name the legend chip, the settings dialog and the object tree show. */
+    private legendTitle(model: IndicatorModel): string {
+        const short = model.displayShorttitle ?? model.shorttitle;
+        return short !== undefined ? this.t(short) : this.modelTitle(model);
+    }
+
+    /** A series' name as the legend and the data window show it. */
+    private seriesTitle(s: SeriesSpec, model: IndicatorModel): string {
+        if (s.displayTitle) return this.t(s.displayTitle);
+        return s.title || this.modelTitle(model);
+    }
+
+    /** Re-read the chrome text the renderer owns in the current language. */
+    private relabel(): void {
+        if (this.settingsButton) this.settingsButton.title = this.t(TEXT.chartSettings);
+        if (this.scrollButton) {
+            this.scrollButton.title = this.t(TEXT.scrollToLatestTitle);
+            this.scrollButton.setAttribute('aria-label', this.t(TEXT.scrollToLatest));
+        }
+        if (this.keyboardEnabled && this.dataCanvas?.hasAttribute('aria-label')) this.dataCanvas.setAttribute('aria-label', this.t(TEXT.keyboardHelp));
+        this.paneControls?.refresh();
+        this.axisScaleButtons?.relabel();
+        if (this.attributionEl && this.attributionHtml === null) this.rebuildAttribution();
+        if (this.inputsUI) {
+            for (const model of this.scene.indicators.values()) {
+                if (model.legend !== false) this.inputsUI.setTitle(model.id, this.legendTitle(model));
+            }
+        }
+    }
+
+    private applyRootAttributes(): void {
+        const el = this.wrapper as HTMLDivElement | undefined;
+        if (!el) return;
+        const { lang, dir } = this.rootAttrs;
+        if (lang) el.setAttribute('lang', lang);
+        else el.removeAttribute('lang');
+        if (dir) el.setAttribute('dir', dir);
+        else el.removeAttribute('dir');
     }
 
     resize(): void {
@@ -1942,6 +2133,9 @@ export class NativeRenderer implements IChartRenderer {
         this.bars = normalizeBars(bars);
         this.scene.bars = this.bars;
         this.coords.setBars(this.bars.map((b) => b.time));
+        // The newest candle may already prove this device's clock slow (see ClockCorrection).
+        const newest = this.bars[this.bars.length - 1];
+        if (newest) clockCorrection.observeCandle(newest.time, this.coords.barInterval);
         // The bar array's head may have moved (a history-backfill prepend) — re-derive
         // every mounted model's anchor offset against the new indices.
         for (const model of this.scene.indicators.values()) this.refreshAnchorOffset(model);
@@ -2018,6 +2212,9 @@ export class NativeRenderer implements IChartRenderer {
             if (this.coords.barInterval > 0) this.coords.appendBar(bar.time);
             else this.coords.setBars(this.bars.map((b) => b.time));
             if (holdView) this.coords.setViewport({ ...vp, rightOffset: vp.rightOffset - 1 });
+            // A candle landing before the device clock reaches its open proves the clock
+            // slow — learned before this frame paints, so the countdown never reads `01:04`.
+            clockCorrection.observeCandle(bar.time, this.coords.barInterval);
         } else {
             return;
         }
@@ -2225,7 +2422,7 @@ export class NativeRenderer implements IChartRenderer {
         // shorttitle when declared; the full title stays on the picker and inspect(). A
         // `legend: false` native gets none of it — the scene model still mounts and paints.
         if (model.legend !== false) {
-            this.inputsUI.upsert(model.id, model.shorttitle ?? model.title, model.inputs, model.inputValues, model.paneId, {
+            this.inputsUI.upsert(model.id, this.legendTitle(model), model.inputs, model.inputValues, model.paneId, {
                 native: !!model.native,
                 ...(model.props ? { props: model.props, propValues: model.propValues ?? {} } : {}),
             });
@@ -2296,6 +2493,11 @@ export class NativeRenderer implements IChartRenderer {
         this.inputsUI?.setLegendActions(provider);
     }
 
+    setDrawingActions(provider: ((drawingId: string) => DrawingActionView[]) | null): void {
+        this.drawingActionsProvider = provider;
+        this.userDrawings?.setDrawingActions(provider);
+    }
+
     setLegendCallouts(provider: ((indicatorId: string) => LegendCalloutView[]) | null): void {
         this.legendCalloutsProvider = provider;
         this.inputsUI?.setLegendCallouts(provider);
@@ -2363,9 +2565,21 @@ export class NativeRenderer implements IChartRenderer {
      * the core — which owns the DATA side of styles that need one (a chart type's SeriesDataEngine).
      */
     private setPriceStyle(style: PriceStyle): void {
-        if (style === this.scene.priceStyle) return;
+        this.showPriceStyle(style);
+    }
+
+    /** Choose `chosen` and draw it, or its fallback while the symbol's facts rule it out —
+     *  announced only when what is DRAWN changes, and while both reads still give the old
+     *  style (a listener sees the chart as it was). */
+    private showPriceStyle(chosen: PriceStyle = this.chosenStyle): void {
+        const style = shownPriceStyle(chosen, this.symbolFacts, priceStyleIds());
+        if (style === this.scene.priceStyle) {
+            this.chosenStyle = chosen;
+            return;
+        }
         const from = this.scene.priceStyle;
         for (const cb of this.priceStyleWillChangeCbs) cb(from, style);
+        this.chosenStyle = chosen;
         this.scene.priceStyle = style;
         this.scene.basePainting = basePaintingOf(style);
         this.scene.candleOverride = candleOverrideFor(style, this.scene.style.chartTypes);
@@ -2424,7 +2638,7 @@ export class NativeRenderer implements IChartRenderer {
         return () => this.configChangedCbs.delete(cb);
     }
 
-    onThemeSelect(cb: (theme: ThemeName) => void): Unsubscribe {
+    onThemeSelect(cb: (theme: ThemeId) => void): Unsubscribe {
         this.themeSelectCbs.add(cb);
         return () => this.themeSelectCbs.delete(cb);
     }
@@ -2492,12 +2706,14 @@ export class NativeRenderer implements IChartRenderer {
         return { from: this.coords.logicalToTime(from), to: this.coords.logicalToTime(to) };
     }
 
-    setVisibleRange(range: VisibleRange): void {
+    setVisibleRange(range: VisibleRange, opts?: VisibleRangeOptions): void {
         const fromL = this.coords.timeToLogical(range.from);
         const toL = this.coords.timeToLogical(range.to);
         const span = Math.max(1e-6, toL - fromL);
-        const barSpacing = clampBarSpacing(this.coords.width / (span * this.coords.spacingScale));
-        const rightOffset = toL - (this.coords.barCount - 1);
+        // A preset frame leaves the right margin's whitespace past `to`, sharing the width with the range.
+        const margin = opts?.rightMargin ? this.scene.style.margins.right : 0;
+        const barSpacing = clampBarSpacing(this.coords.width / ((span + margin) * this.coords.spacingScale));
+        const rightOffset = toL - (this.coords.barCount - 1) + margin;
         this.applyViewport({ barSpacing, rightOffset });
     }
 
@@ -2564,8 +2780,8 @@ export class NativeRenderer implements IChartRenderer {
 
     /**
      * Bound the viewport so the user can't zoom/pan into a useless state:
-     *  - zoom OUT no further than "all bars + a small margin fill the width" (no thin strip
-     *    of compressed candles floating in whitespace);
+     *  - zoom OUT no further than {@link MIN_BAR_SPACING}, whatever the series length: a
+     *    short series shrinks to a narrow band with the empty past and future around it;
      *  - zoom IN no further than keeping ≥ {@link MIN_VISIBLE_BARS} candles on screen;
      *  - pan no further than a bounded right whitespace / the same minimum visible.
      * Applied at every viewport write (drag, wheel, fling, time-axis drag, keyboard).
@@ -2576,13 +2792,12 @@ export class NativeRenderer implements IChartRenderer {
         if (n <= 1 || W <= 0) return { barSpacing: clampBarSpacing(barSpacing), rightOffset };
         const minVisible = Math.min(MIN_VISIBLE_BARS, n);
         // Bars-on-screen depends on the EFFECTIVE pitch (barSpacing × spacing multiplier), so fold
-        // the multiplier into these bar-count limits — else a >1 multiplier would let the user zoom
-        // in past minVisible, or zoom out to a thin strip that no longer fills the width.
+        // the multiplier into the bar-count limit — else a >1 multiplier would let the user zoom
+        // in past minVisible.
         const scale = this.coords.spacingScale;
-        // bar spacing: max keeps ≥ minVisible bars on screen; min keeps all bars + a margin within the width.
+        // bar spacing: max keeps ≥ minVisible bars on screen; min is the fixed floor.
         const maxBs = Math.min(MAX_BAR_SPACING, W / (minVisible * scale));
-        const minBs = Math.max(MIN_BAR_SPACING, Math.min(maxBs, W / ((n + ZOOM_OUT_MARGIN_BARS) * scale)));
-        const bs = Math.max(minBs, Math.min(maxBs, barSpacing));
+        const bs = Math.max(MIN_BAR_SPACING, Math.min(maxBs, barSpacing));
         // right offset: the ONLY pan limit is keeping ≥ minVisible candles on screen. Panning left
         // can push the data far left (lots of right whitespace) until just minVisible remain; panning
         // right can scroll into the oldest bars until just minVisible remain at the right edge.
@@ -2922,11 +3137,30 @@ export class NativeRenderer implements IChartRenderer {
         this.setManualScale(holder, rescaleAround(start, Math.exp(dyTotal * PRICE_SCALE_K)));
     }
 
+    private applyFreePan(value: unknown): void {
+        if (value === true) {
+            this.freePanTrigger = 'drag';
+            this.freePanOn = true;
+        } else if (value === 'drag' || value === 'alt' || value === 'shift' || value === 'mod' || typeof value === 'function') {
+            this.freePanTrigger = value as Exclude<FreePanTrigger, boolean>;
+            this.freePanOn = true;
+        } else {
+            this.freePanOn = Boolean(value);
+        }
+        if (this.input) this.input.freePan = this.freePanOn ? this.freePanTrigger : false;
+    }
+
     /** Grab inside the data area: vertical price-pan is available only when the pane is
-     *  already manual (so a normal drag stays a pure time-pan until the user opts in). */
-    private beginPricePan(y: number): boolean {
+     *  already manual, or when `unlock` freezes its visible window into manual mode first. */
+    private beginPricePan(y: number, unlock = false): boolean {
         const pane = this.paneNodeAtY(y);
-        if (!pane || !pane.manualScale) return false;
+        if (!pane) return false;
+        if (!pane.manualScale) {
+            if (!unlock) return false;
+            pane.manualScale = { ...pane.scale };
+            this.axisScaleButtons?.reposition();
+            this.scheduler?.invalidate(InvalidateLevel.Full);
+        }
         this.scaleDragHolder = pane;
         this.scaleDragHeight = pane.bounds.height;
         this.scaleDragStart = { ...pane.scale };
@@ -3113,7 +3347,7 @@ export class NativeRenderer implements IChartRenderer {
         if (enabled) {
             this.dataCanvas.tabIndex = 0;
             this.dataCanvas.setAttribute('role', 'application');
-            this.dataCanvas.setAttribute('aria-label', 'Interactive price chart. Use Left/Right arrows to move between bars, Shift+Arrow to pan, plus/minus to zoom, Home/End to jump, 0 to reset.');
+            this.dataCanvas.setAttribute('aria-label', this.t(TEXT.keyboardHelp));
             if (!this.liveRegion && this.wrapper) {
                 this.liveRegion = document.createElement('div');
                 this.liveRegion.setAttribute('aria-live', 'polite');
@@ -3190,10 +3424,10 @@ export class NativeRenderer implements IChartRenderer {
         const pricePane = this.dataWindowPricePane();
         const ohlc = this.dataWindowOHLC(bar, pricePane);
         const parts: string[] = [];
-        if (bar) parts.push(formatStamp(bar.time, this.scene.timezone));
-        if (ohlc) parts.push(`Open ${ohlc.o}, High ${ohlc.h}, Low ${ohlc.l}, Close ${ohlc.c}`);
+        if (bar) parts.push(formatStamp(bar.time, displayZone(this.scene.timezone, this.coords.barInterval)));
+        if (ohlc) parts.push(this.t(TEXT.barSummary, { open: ohlc.o, high: ohlc.h, low: ohlc.l, close: ohlc.c }));
         for (const group of this.dataWindowGroups(idx, pricePane)) {
-            for (const row of group.rows) parts.push(`${row.label} ${row.value}`);
+            for (const row of group.rows) parts.push(this.t(TEXT.valueSummary, { name: row.label, value: row.value }));
         }
         this.liveRegion.textContent = parts.join('. ');
     }
@@ -3208,7 +3442,7 @@ export class NativeRenderer implements IChartRenderer {
         const idx = this.hoverLogical != null ? this.hoverLogical : n - 1;
         const bar = this.bars[idx];
         const pricePane = this.dataWindowPricePane();
-        const parts = bar ? formatStampParts(bar.time, this.scene.timezone) : { date: '', time: '' };
+        const parts = bar ? formatStampParts(bar.time, displayZone(this.scene.timezone, this.coords.barInterval)) : { date: '', time: '' };
         return { date: parts.date, time: parts.time, ohlc: this.dataWindowOHLC(bar, pricePane), groups: this.dataWindowGroups(idx, pricePane) };
     }
 
@@ -3216,8 +3450,13 @@ export class NativeRenderer implements IChartRenderer {
         return this.scene.orderedPanes().find((p) => p.kind === 'price') ?? null;
     }
 
-    private dataWindowFmt(v: number, pane: PaneNode | null): string {
-        return pane ? formatPriceLabel(pane.scale, pane.bounds.height, v, this.scene.priceMintick) : String(v);
+    private dataWindowFmt(v: number, pane: PaneNode | null, surface: FormatSurface = 'dataWindow'): string {
+        return pane ? formatPriceLabel(pane.scale, pane.bounds.height, v, this.scene.priceMintick, this.scene.format, surface) : String(v);
+    }
+
+    /** A volume in the data window and the volume legend row (`1.20M`: two decimals kept). */
+    private formatVolume(v: number, surface: FormatSurface): string {
+        return (this.scene.format ?? ENGLISH_FORMAT).compact(v, { decimals: 2, trimZeros: false, surface });
     }
 
     private dataWindowOHLC(bar: OHLCV | undefined, pricePane: PaneNode | null): DataWindowOHLC | null {
@@ -3227,7 +3466,7 @@ export class NativeRenderer implements IChartRenderer {
             h: this.dataWindowFmt(bar.high, pricePane),
             l: this.dataWindowFmt(bar.low, pricePane),
             c: this.dataWindowFmt(bar.close, pricePane),
-            vol: bar.volume != null ? formatVolume(bar.volume) : undefined,
+            vol: bar.volume != null ? this.formatVolume(bar.volume, 'dataWindow') : undefined,
             up: bar.close >= bar.open,
         };
     }
@@ -3237,7 +3476,7 @@ export class NativeRenderer implements IChartRenderer {
         const groups: DataWindowGroup[] = [];
         for (const model of this.scene.indicators.values()) {
             const rows = this.readoutRowsFor(model, idx, pricePane, 'dataWindow');
-            if (rows.length) groups.push({ name: model.title, rows });
+            if (rows.length) groups.push({ name: this.modelTitle(model), rows });
         }
         return groups;
     }
@@ -3248,7 +3487,7 @@ export class NativeRenderer implements IChartRenderer {
     private readoutRowsFor(model: IndicatorModel, idx: number, pricePane: PaneNode | null, surface: SeriesSurface): DataWindowRow[] {
         // The volume native draws through its bespoke layer and mounts a series-less model, so
         // its readout comes straight from the bar's volume instead of iterating `model.series`.
-        if (model.native?.type === 'volume') return this.volumeReadoutRows(model, idx);
+        if (model.native?.type === 'volume') return this.volumeReadoutRows(model, idx, surface === 'legend' ? 'legend' : 'dataWindow');
         const pane = (model.paneId ? this.scene.panes.get(model.paneId) : null) ?? pricePane;
         const off = this.scene.offsetOf(model.id);
         const rows: DataWindowRow[] = [];
@@ -3266,7 +3505,7 @@ export class NativeRenderer implements IChartRenderer {
                 continue; // markers carry no scalar readout
             }
             if (value == null || !Number.isFinite(value)) continue;
-            rows.push({ label: s.title || model.title, value: this.dataWindowFmt(value, pane), color });
+            rows.push({ label: this.seriesTitle(s, model), value: this.dataWindowFmt(value, pane, surface === 'legend' ? 'legend' : 'dataWindow'), color });
         }
         return rows;
     }
@@ -3274,14 +3513,14 @@ export class NativeRenderer implements IChartRenderer {
     /** The volume indicator's readout: the bar's volume, tinted with the layer's own direction
      *  colors. Hiding volume keeps its model in the scene (only the layer is suppressed — see
      *  `setIndicatorVisible`), so the hidden flag is checked here rather than by model absence. */
-    private volumeReadoutRows(model: IndicatorModel, idx: number): DataWindowRow[] {
+    private volumeReadoutRows(model: IndicatorModel, idx: number, surface: FormatSurface): DataWindowRow[] {
         if (this.volumeHidden) return [];
         const bar = this.bars[idx];
         const vol = bar?.volume;
         if (bar == null || vol == null || !Number.isFinite(vol)) return [];
         const cfg = this.scene.volumeLayer;
         const color = bar.close >= bar.open ? (cfg?.upColor ?? this.theme.upColor) : (cfg?.downColor ?? this.theme.downColor);
-        return [{ label: model.title, value: formatVolume(vol), color }];
+        return [{ label: this.modelTitle(model), value: this.formatVolume(vol, surface), color }];
     }
 
     /** Refresh the plot values beside every legend title — the same bar the data window reads
@@ -3392,6 +3631,7 @@ export class NativeRenderer implements IChartRenderer {
             priceStyle: this.scene.priceStyle,
             nowMs,
             cursor: this.lastPointer,
+            i18n: this.i18n ?? englishTranslator(),
         };
     }
 
@@ -3500,6 +3740,7 @@ export class NativeRenderer implements IChartRenderer {
             this.userDrawings?.seriesGateway
                 ? (tf, from, to) => this.userDrawings!.seriesGateway!.seriesInRange(tf, from, to)
                 : undefined,
+            (paneId) => paneId === PRICE_PANE_ID && this.scene.priceMintick ? tickDecimals(this.scene.priceMintick) || 2 : undefined,
         );
     }
 
@@ -3631,6 +3872,8 @@ export class NativeRenderer implements IChartRenderer {
         const i0 = Math.max(0, Math.floor(vr.from));
         const i1 = Math.min(n - 1, Math.ceil(vr.to));
         if (i1 < i0) return;
+        // Series points past the last bar paint in the right whitespace, so they scale there too.
+        const s1 = Math.max(i1, Math.ceil(vr.to));
         // Percent mode: the reference is the first visible bar's close (the common idiom).
         this.scene.percentBaseline = this.bars[i0]?.close ?? 0;
         const panes = this.scene.orderedPanes();
@@ -3656,7 +3899,7 @@ export class NativeRenderer implements IChartRenderer {
             // force_overlay series render on the price pane whatever pane their indicator
             // owns — fold their visible range in here (their own pane excludes them).
             if (pane === pricePane) {
-                const or = overlaySeriesRange(this.scene.indicators.values(), i0, i1, (id) => this.scene.offsetOf(id));
+                const or = overlaySeriesRange(this.scene.indicators.values(), i0, s1, (id) => this.scene.offsetOf(id));
                 if (or) dr = dr ? { min: Math.min(dr.min, or.min), max: Math.max(dr.max, or.max) } : or;
             }
             // Hidden candles drop out of the price pane's autoscale, so overlay indicators fill
@@ -3667,7 +3910,13 @@ export class NativeRenderer implements IChartRenderer {
                 && (!this.scene.candlesHidden || this.priceLayersAnchoredToBars(masterModels) || !this.paneHasMeasurableContent(masterModels, dr));
             // Each pane logs (or not) on its OWN flag — the price pane from the scene setting,
             // study panes from their own — so a study going log never touches the price pane.
-            pane.scaleTarget = computePaneScale(masterModels, this.bars, includeCandles, i0, i1, dr, paneLogScale(this.scene, pane), (id) => this.scene.offsetOf(id), margins);
+            // Scale price chart only: the bars alone set the price window, and indicator plots,
+            // price lines and Pine drawings paint where they fall (off the edge when outside it).
+            // With the bars out of the scale there is nothing else to fit, so it does not apply.
+            const priceOnly = pane === pricePane && this.scene.scalePriceOnly && includeCandles;
+            pane.scaleTarget = priceOnly
+                ? computePaneScale([], this.bars, true, i0, s1, null, paneLogScale(this.scene, pane), (id) => this.scene.offsetOf(id), margins)
+                : computePaneScale(masterModels, this.bars, includeCandles, i0, s1, dr, paneLogScale(this.scene, pane), (id) => this.scene.offsetOf(id), margins);
             // Percent baseline for THIS pane (the first visible value it measures change from):
             // the first visible bar close on the price pane, else the master series' first
             // visible value. 0 ⇒ no reference yet, so the axis falls back to absolute.
@@ -3732,7 +3981,7 @@ export class NativeRenderer implements IChartRenderer {
                     continue;
                 }
                 const mdr = this.chrome.paneDrawingsRange([model], this.scene, false, vr);
-                sl.scaleTarget = computePaneScale([model], this.bars, false, i0, i1, mdr, false, (id) => this.scene.offsetOf(id), margins);
+                sl.scaleTarget = computePaneScale([model], this.bars, false, i0, s1, mdr, false, (id) => this.scene.offsetOf(id), margins);
                 if (!animating || !sl.initialized) {
                     sl.scale = { ...sl.scaleTarget };
                     sl.initialized = true;
@@ -3785,9 +4034,9 @@ export class NativeRenderer implements IChartRenderer {
 
     /** Re-frame after a series replacement (a symbol/timeframe switch): keep the user's
      *  zoom (bar spacing), re-anchor the newest bars at the configured right margin.
-     *  `clampViewport`'s fit-all-bars floor deliberately does NOT apply — a progressive
-     *  head may still be backfilling toward the previous depth, and raising the spacing
-     *  to its temporary bar count would lose the zoom this exists to keep. */
+     *  The spacing is kept as it is, never re-derived from the new series' bar count — a
+     *  progressive head may still be backfilling toward the previous depth, and fitting
+     *  its temporary bar count would lose the zoom this exists to keep. */
     private reframeKeepZoom(): void {
         this.animator?.stop(); // a hard re-frame cancels any in-flight gesture
         this.panVelocity = 0;
@@ -3808,7 +4057,7 @@ export class NativeRenderer implements IChartRenderer {
     private paneMasterTitle(paneId: string): string | null {
         const models = this.scene.orderedIndicatorsForPane(paneId);
         const master = models.find((m) => m.ownScale !== true) ?? models[0];
-        return master?.title || null;
+        return master ? this.modelTitle(master) || null : null;
     }
 
     /**
@@ -3850,11 +4099,16 @@ export class NativeRenderer implements IChartRenderer {
         return null;
     }
 
-    /** One transparent, pointer-transparent SDK layer canvas covering the plot. */
-    private createLayerCanvas(): HTMLCanvasElement {
+    /**
+     * Every canvas of the plot's pile comes from here: absolutely placed over the whole plot,
+     * pointer-transparent unless it is the data canvas (which takes the gestures), and pinned
+     * left to right whatever the page's direction (see `pinPlotCanvas`).
+     */
+    private createPlotCanvas(opts: { pointerEvents?: boolean } = {}): HTMLCanvasElement {
         const canvas = document.createElement('canvas');
-        Object.assign(canvas.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', pointerEvents: 'none' });
-        return canvas;
+        Object.assign(canvas.style, { position: 'absolute', inset: '0', width: '100%', height: '100%' });
+        if (!opts.pointerEvents) canvas.style.pointerEvents = 'none';
+        return pinPlotCanvas(canvas);
     }
 
     /**
@@ -3871,7 +4125,7 @@ export class NativeRenderer implements IChartRenderer {
         if (this.extLayers.some((l) => l.owner === model.id)) return;
         const base = this.extLayers.find((l) => l.owner === null && l.def.id === model.native!.type);
         if (!base) return; // no layer registered for the type — the model paints through its series alone
-        const canvas = this.createLayerCanvas();
+        const canvas = this.createPlotCanvas();
         // Match the pile's current backing size; the next resize re-sizes every layer anyway.
         canvas.width = this.dataCanvas.width;
         canvas.height = this.dataCanvas.height;
@@ -4256,7 +4510,7 @@ export class NativeRenderer implements IChartRenderer {
     private buildAttributionEl(): HTMLElement {
         return this.attributionHtml !== null
             ? createCustomMark(document, this.attributionHtml, this.theme.background)
-            : createAttributionMark(document, this.theme.background);
+            : createAttributionMark(document, this.theme.background, this.i18n);
     }
 
     /** Swap the mark in place — the content kind changed (built-in ↔ host-supplied). */
@@ -4445,6 +4699,10 @@ function applyPatch(model: IndicatorModel, patch: ScenePatch): void {
         if (patch.linefills) model.linefills = patch.linefills;
         if (patch.tables) model.tables = patch.tables;
         if (patch.trades) model.trades = patch.trades;
+        if (patch.fills) model.fills = patch.fills;
+        if (patch.backgrounds) model.backgrounds = patch.backgrounds;
+        if (patch.priceLines) model.priceLines = patch.priceLines;
+        if (patch.barColors) model.barColors = patch.barColors;
         return;
     }
     for (const id of patch.removed) {
@@ -4516,15 +4774,6 @@ function isPriceStyle(v: unknown): v is PriceStyle {
 /** Coerce an untrusted value to a valid `ScaleMode`, defaulting to absolute `'price'`. */
 function asScaleMode(v: unknown): ScaleMode {
     return v === 'percent' || v === 'indexed' ? v : 'price';
-}
-
-/** Abbreviate a volume with a K/M/B suffix (e.g. `1.23M`). */
-function formatVolume(v: number): string {
-    const a = Math.abs(v);
-    if (a >= 1e9) return `${(v / 1e9).toFixed(2)}B`;
-    if (a >= 1e6) return `${(v / 1e6).toFixed(2)}M`;
-    if (a >= 1e3) return `${(v / 1e3).toFixed(2)}K`;
-    return v.toFixed(2);
 }
 
 /** Sort ascending + dedupe by time (last write wins). */

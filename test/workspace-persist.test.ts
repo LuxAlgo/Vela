@@ -29,6 +29,7 @@ const fullDoc: WorkspaceState = {
             watermark: false,
             indicatorTitles: false,
             indicatorValues: false,
+            statuslineParts: { logo: true, name: true, market: false, ohlc: false, change: true },
             rendererConfig: { theme: 'dark', nested: { any: ['shape'] } },
             drawings: { version: 1, items: [{ type: 'trendline' }] },
             indicators: { manifest: ['EMA 20'], natives: ['volume'] },
@@ -260,6 +261,21 @@ describe('sanitizeState (the applyState gate)', () => {
         expect(doc!.drawingTools).toEqual({ defaults: { trendline: { style: { lineColor: '#f00' } } } });
         expect(sanitizeState({ version: 1, layout: '1', charts: [], drawingTools: { magnet: 1 } })!.drawingTools).toBeUndefined();
         expect(sanitizeState({ version: 1, layout: '1', charts: [], drawingTools: 'junk' })!.drawingTools).toBeUndefined();
+    });
+
+    it('keeps the status line parts a chart was saved with, dropping unknown parts and non-boolean values', () => {
+        const doc = sanitizeState({
+            version: 1,
+            layout: '1',
+            charts: [
+                { id: 'c1', statuslineParts: { ohlc: false, change: false, market: 'no', volume: false } },
+                { id: 'c2', statuslineParts: { sparkline: true } },
+                { id: 'c3', statuslineParts: 'off' },
+            ],
+        });
+        expect(doc!.charts[0]).toEqual({ id: 'c1', statuslineParts: { ohlc: false, change: false } });
+        expect(doc!.charts[1]).toEqual({ id: 'c2' });
+        expect(doc!.charts[2]).toEqual({ id: 'c3' });
     });
 
     it('filters shared favorites and per-chart display toggles by type', () => {

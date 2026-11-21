@@ -107,7 +107,7 @@ describe('drawings/position tools', () => {
         expect(d.anchors[2]!.price).toBe(70); // target untouched
     });
 
-    it('account risk % + balance drive dollar loss and position size', () => {
+    it('account risk % + balance drive the loss amount and position size', () => {
         // entry 50, stop 40 → risk 10; 1% of $10_000 = $100 → size 10
         const d = createDrawing('position', { paneId: 'price', anchors: [{ time: 0, price: 50 }, { time: 5 * HR, price: 40 }, { time: 10 * HR, price: 70 }] })! as PositionTool;
         expect(d.riskPercent).toBe(1);
@@ -117,7 +117,8 @@ describe('drawings/position tools', () => {
         d.applySettings({ riskPercent: 2, accountBalance: 5_000 });
         expect(d.dollarLoss()).toBe(100); // 2% of 5000
         expect(d.positionSize()).toBeCloseTo(10, 6);
-        expect(d.lossSizeLabel()).toMatch(/^Loss \$100/);
+        // The balance has no currency, so the loss reads as a plain number.
+        expect(d.lossSizeLabel()).toMatch(/^Loss 100\b/);
     });
 
     it('live preview treats the second anchor as the profit target (going higher → long)', () => {

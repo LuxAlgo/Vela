@@ -9,6 +9,7 @@ import { DEFAULT_MARGINS } from './chartConfig';
  * Per-pane price window from the data visible in `[i0, i1]` (bar indices).
  * Considers candles (price pane), every value/candle series on the pane, and
  * price lines. Backend-agnostic and cheap (only the visible slice is scanned).
+ * `i1` may lie past the last bar: candles end there, series points past it still count.
  */
 export function computePaneScale(
     models: IndicatorModel[],

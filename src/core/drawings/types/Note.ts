@@ -1,3 +1,6 @@
+import { msg } from '../../i18n/message';
+import type { MessageLike } from '../../i18n/types';
+import { sourceText } from '../../i18n/text';
 import { type SerializedDrawing } from '../Drawing';
 import type { SettingsSchema } from '../schema';
 import { LINE_FIELDS, FILL_FIELDS, TEXT_FIELDS } from '../schema';
@@ -12,11 +15,11 @@ export class Note extends PinnedLabel {
         super(init);
         // No color seed: the interactive creation path fixes a theme-contrast ink on the
         // fresh drawing; until then the painter auto-contrasts (`undefined` semantics).
-        if (!this.text) this.text = defaultText('Note');
+        if (!this.text) this.text = defaultText(sourceText(this.defaultLabel()));
     }
 
-    protected override defaultLabel(): string {
-        return 'Note';
+    protected override defaultLabel(): MessageLike {
+        return msg('drawing.note.placeholder', 'Note');
     }
 
     schema(): SettingsSchema {

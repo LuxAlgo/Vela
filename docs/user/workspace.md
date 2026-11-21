@@ -100,10 +100,13 @@ ws.setLayout('8');       // cells diff BY IDENTITY; identities past the new size
 // Shrinking never pools the ACTIVE chart: if its slot would leave the layout, it
 // moves into the last surviving slot instead (the other cells keep their order).
 ws.setTheme('light');    // re-skins the shared chrome + EVERY cell live (also reachable from any cell's chart settings → Canvas → Theme)
+ws.setLocale('de');      // one language, direction and formatting for EVERY cell and the shared chrome (see Localization)
 ws.maximizeCell('sol');  // one cell over the whole grid (null restores) — pure presentation,
 ws.maximizedCell;        //  the other cells keep everything; layout/state changes restore
+ws.setFullscreen(true);  // the charts take the whole shell: the bars hide (false brings them back),
+ws.fullscreen;           //  see Full screen
 ws.swapCells('btc', 'eth'); // the two cells trade SLOTS (arrangement only — cells untouched)
-ws.on('cell:active' | 'layout:changed' | 'cell:maximized' | 'cell:created' | 'cell:destroyed' | 'cell:priceStyle' | 'state:changed', cb);
+ws.on('cell:active' | 'layout:changed' | 'cell:maximized' | 'fullscreen:changed' | 'cell:created' | 'cell:destroyed' | 'cell:priceStyle' | 'state:changed' | 'locale:changed', cb);
 ```
 
 **Rule of thumb:** hold the cell (or its identity), read `cell.chart` at the point of
@@ -121,7 +124,9 @@ applies it immediately. Rectangles matching a classic preset (`1`, `2h`, `2v`, `
 Plugin layouts the canvas cannot express (bespoke `areas`) list as labeled rows under
 the canvas, so `registerLayout` contributions keep appearing automatically. In code,
 the same composition is `layoutForGrid(rows, cols)` (exported from `@luxalgo/vela/workspace`),
-handed to `ws.setLayout(...)`.
+handed to `ws.setLayout(...)`. A registered layout's `label` may be a message (`msg()`), and
+`layouts(ws.i18n)` and `layoutDefinition(id, ws.i18n)` read every label as text in the
+workspace's language (English without a translator); read them again after `locale:changed`.
 
 Splitters between cells resize the grid tracks (double-click a divider for an even
 split).
@@ -145,13 +150,50 @@ chart over the grid, and the stop lights up as an inverse chip whenever somethin
 isolated — the chart itself, or a pane inside it (a double-tap in the plot maximizes
 a pane). Tapping the lit stop restores the view.
 
+### A timeframe the source never serves
+
+When a cell's data source refuses the requested timeframe for good — a monthly economic
+series asked for hourly bars, which a provider signals with a `DataUnavailableError` (see
+[Adding a data provider](../contributing/adding-a-data-provider.md#failures-transient-or-permanent))
+— the cell switches to the timeframe the source suggests (its `default`, else its `finest`)
+and a toast says so: *GDP is not available at 1h. Showing 1D instead.* The timeframe the user
+asked for stays the cell's own:
+
+- `cell.requestedTimeframe` reads it, the saved state keeps it, and the `timeframe` sync link
+  shares it, never the fallback.
+- The next symbol that serves it runs it again.
+- `cell.timeframe`, the topbar and the status line show the timeframe the chart runs.
+- Picking a timeframe by hand (the topbar, a range chip, `ctx.setTimeframe`) makes it the
+  requested one, the fallback included.
+
+A source that suggests no other timeframe gets an error toast, and the chart keeps the
+timeframe as set. The cell never chains switches: a refused fallback is only reported.
+
+### A style the symbol's data cannot draw
+
+A symbol whose source has one value per bar (`SymbolInfo.ohlc: false`, an economic series;
+see [Adding a data provider](../contributing/adding-a-data-provider.md)) has nothing to show in
+candles, bars or Heikin Ashi, nor in a plugin chart type whose `supports` rules it out. On such
+a symbol the cell draws a line instead, and the style menus (the topbar, the mobile drawer, the
+chart settings dialog) show those styles greyed out, with a tooltip saying why. The style the
+user chose stays the cell's own:
+
+- `cell.requestedPriceStyle` reads it, and the saved state keeps it.
+- The next symbol that can draw it shows it again.
+- `cell.priceStyle`, the topbar and the status line show the style the chart draws;
+  `cell.unavailablePriceStyles()` lists the greyed ids.
+- Picking a style by hand on such a symbol (a line, an area…) makes it the cell's style.
+
+Nothing is greyed while the symbol's facts are still loading, or when its source states none.
+
 ## Sync links
 
 Per kind — `viewport`, `symbol`, `timeframe`, `crosshair`, `drawings`, `style` — link
 every cell (`true`) or named groups keyed by cell IDENTITY (`{ btc: 'a', eth: 'a',
 sol: 'b' }`: only same-group cells follow each other). Cross-timeframe viewport groups
 align on the **right edge** (a finer-timeframe cell clamps the window to its own
-minimum zoom).
+minimum zoom). The `timeframe` link carries each cell's requested timeframe, never one a
+source forced on a cell ([A timeframe the source never serves](#a-timeframe-the-source-never-serves)).
 
 `crosshair` mirrors the pointer's TIME onto same-group cells as a **ghost crosshair**
 (a dimmed vertical line snapped to each follower's own bar, with its time chip);
@@ -159,25 +201,68 @@ leaving the origin clears every ghost. The ghost needs the renderer's optional
 `setExternalCrosshair` seam — the native renderer has it; a custom renderer without it
 simply never shows one (enabling warns only when NO cell could).
 
-`drawings` copies each **newly created** drawing onto its same-group cells — the
-anchors are time+price, so the copy lands at the same spot whatever each follower
-shows — and keeps the set **linked**: moving/restyling/deleting any member follows on
-its peers (while the link stays on). Placement itself mirrors **live**: while you are
+`drawings` copies each **newly created** drawing onto the same-group cells that show
+the **same market** — a drawing's anchors are a time and a price on one instrument, so
+a cell on another symbol never receives it — and keeps the set **linked**:
+moving/restyling/deleting any member follows on its peers (while the link stays on).
+Two cells show the same market when their symbols name the same ticker, with or without
+a venue in front (`BTCUSDT` and `binance:BTCUSDT`), so the same ticker on two venues is
+one market here. Placement itself mirrors **live**: while you are
 still clicking anchors, the followers show the in-progress shape as a reduced-opacity
 ghost (the same seam as crosshair ghosts — a custom renderer without it simply syncs
 at completion). Link membership is session-scoped and survives a toggle-off: turning
 the link off freezes create/edit/delete propagation (and clears placement ghosts) but
 keeps the in-memory pairs, so re-enabling resumes edit/delete for drawings that were
 linked earlier in the session. Drawings created while the link was off stay
-independent — re-enabling never copies or pairs them. A reload (or `applyState`)
-drops the pairs, so previously synced drawings are independent again.
+independent — re-enabling never copies them onto peers.
+
+The pairs themselves are not saved. When the link is on after a reload (or
+`applyState`), drawings with identical content (type, pane, anchors, style, text and
+per-type settings) on same-group cells are linked again, so drawings synced in an
+earlier session keep moving, restyling and deleting together, in documents saved by
+any version. Identical duplicates pair one to one, in each cell's drawing order. A
+copy edited while the link was off no longer matches and stays independent. Turning
+the link on applies the same rule to the drawings on screen, on top of the pairs
+already made in the session, so drawings restored while the link was off link once
+it comes on.
 
 Cells a later layout change adds to a linked group arrive with every drawing of the
 active cell (or of another group member when the active cell is outside the group),
 including drawings made while the link was off or on a one-chart layout. The copies
 are linked like any synced drawing and add no undo steps on the new cell. A cell
 returning to the grid refreshes the linked copies it already holds instead of
-duplicating them.
+duplicating them; copies it restored from a saved document link by content first.
+
+A cell that changes symbol leaves the link of the market it showed and joins the one
+it arrives on. What happens to its drawings follows the chart's own setting:
+
+- **Drawings stay on the chart across symbols** (the default). The cell carries its
+  drawings with it. A linked copy it carries stops following the cells it left; copies
+  that several cells carry to the same symbol stay linked to each other.
+- **Drawings belong to the symbol** (`drawings: { clearOnSymbolChange: true }`, with a
+  host that puts each symbol's saved drawings back). Once the switch has landed and
+  the host has restored the symbol's drawings, the cell is brought in line with the
+  cells already on that market, the same way a cell added by a layout change is: it
+  receives their drawings, linked. A linked copy it already holds takes the edits made
+  while it showed another symbol, or passes on its own when it holds the later edit,
+  and one whose set was deleted in the meantime is deleted. The cell keeps the other
+  drawings it had saved for the symbol, and never sends them to the group. A restored
+  document (`applyState`) is not brought in line: its drawings are the ones it
+  carries.
+
+  From the start of the switch until it has landed, the cell is out of the link: it is
+  empty, and its saved drawings are not back yet. A drawing made, edited or deleted on
+  another cell meanwhile does not reach it then; the cell catches up when it lands. The
+  same holds for a cell that comes back from a symbol whose bars never arrived.
+
+  The host's restore must run from a `market:changed` listener, before it returns. A
+  restore that answers later finds the chart already holding the group's drawings, and
+  a host that only fills an empty chart then never puts the saved ones back: keep the
+  restore synchronous where the link is offered.
+
+Which edits and deletions a cell missed is known for the session only. After a reload,
+a copy that was edited while its cell showed another symbol no longer matches the
+original: it stays as an independent drawing beside the one the cell receives.
 
 `style` mirrors the chart's presentation across same-group cells: the settings
 dialog's **Symbol** tab looks (candle body, border and wick colors, the bar, line,
@@ -205,7 +290,7 @@ host-set group record with plain on/off — group records stay an API-only shape
 ws.sync.set('viewport', true); // aligns followers to the active cell, then follows pans
 ws.sync.set('symbol', { btc: 'watch', eth: 'watch' });
 ws.sync.set('crosshair', true); // hover any cell → ghost time-line on all the others
-ws.sync.set('drawings', true); // draw on any cell → the same drawing on all the others
+ws.sync.set('drawings', true); // draw on any cell → the same drawing on the others showing its symbol
 ws.sync.set('style', true); // every look in the settings dialog mirrors on all the others
 ws.sync.get('viewport'); // true
 ws.sync.state(); // { viewport: true, symbol: {...}, crosshair: true, drawings: true, style: true }
@@ -303,7 +388,8 @@ const state = ws.getState();
 // stay-in-drawing-mode — shared by every chart of the workspace, like the favorite stars.
 // One ORDERED `charts` entry per cell, live AND dormant — array position i restores
 // into slot i, `id` is the cell's durable name: { id: 'btc', symbol, provider?, timeframe,
-//   priceStyle, bars?, watermark?, indicatorTitles?, rendererConfig (renderer.getConfig() document),
+//   priceStyle, bars?, watermark?, indicatorTitles?, statuslineParts? ({ logo?, name?, market?,
+//   ohlc?, change? }: the status line's segments), rendererConfig (renderer.getConfig() document),
 //   drawings (drawings.toJSON() document), indicators: { manifest: string[], natives: string[] },
 //   ext? (third-party per-chart state, by namespaced key) }
 // `ext` bags (document root and per chart) carry PLUGIN state — written and restored by
@@ -389,7 +475,10 @@ provider; an `EXCHANGE:` prefix pins a venue), `timeframe`, `bars`, `priceStyle`
 `data`, `visibleRange`, `theme`, `live`, `volume`, `upColor`, `downColor`, `glow`,
 `animations`, `logScale`, `currentPriceLine`, `drawings` (toolbar excepted),
 `priceAxis`, `defaultLanguage`, `renderer`, `nativeBackend` (explicit value wins over the
-`maxWebglCells` policy). `cells` overrides the market/view seeds per cell:
+`maxWebglCells` policy). The [localization options](./options.md#localization-options)
+(`locale`, `direction`, `messages`, `numberingSystem`, `hourCycle`, `weekStart`,
+`formatters`) are one choice for the whole workspace rather than per cell: every cell and
+the shared chrome follow them, and `ws.setLocale(...)` changes them at runtime. `cells` overrides the market/view seeds per cell:
 `{ symbol, timeframe, bars, priceStyle, data, visibleRange }`.
 
 **Cell names are identities, not positions.** A `cells` key is free-form (`btc`, `main`,
@@ -414,6 +503,7 @@ silently reorder them).
 | `indicatorPicker` | `true` | **Deprecated (removal in 0.7.0).** `false` removes the built-in indicator dialog's entry points. Replace it with the composition (omit `'indicators'` from `topbar.left` — same effect) or a plugin [slot override](../contributing/plugin-sdk.md#replacing-a-built-in-button--slot-overrides). |
 | `layoutMode` | `'auto'` | Chrome size class — see [Mobile](#mobile). |
 | `autofocus` | `false` | Focus the active chart on mount (off: an embedded workspace should not steal the page's focus). |
+| `symbolMenuFromKey` | `true` | Typing a letter or `0` on a chart opens the symbol search, seeded with it. `false` leaves those keys to the page: for a host whose own shortcuts are bare letters, or whose symbol is chosen outside the chart. The symbol button still opens the search, and a digit from 1 to 9 still opens the timeframe entry. |
 | `persist` / `storage` | off / localStorage | State persistence (see above). |
 
 **Workspace options** (the grid's own):
@@ -455,10 +545,13 @@ wrapper) of entries, inline or fetched from a URL, shared by every cell:
 The shell is keyboard-first (bindings act on the **active cell**):
 
 - Type a **letter** or `0` anywhere on a chart → the symbol search opens, seeded with it.
+  `symbolMenuFromKey: false` turns this off and leaves those keys to the page; the topbar's
+  symbol button still opens the search.
 - Type a **digit from 1 to 9** → the timeframe entry opens (`15`, `4H`, `D`, `3M`, … — a
   bare number is minutes, a bare letter means one unit; letters show in capitals).
 - `alt+S` → download a PNG of the visible layout (every chart, or the
   maximized one). `?` → the shortcuts panel.
+- `alt+Enter` → [full screen](#full-screen), and again to leave it. `Esc` leaves it too.
 - `mod+↑/↓` glide-zoom, `mod+←/→` glide-pan with the exact feel and limits of a drag
   (toward now it rests on the newest candle plus the usual empty space). `alt+T` arms
   the trend line tool; `alt+H` / `alt+V` drop a horizontal / vertical line at the
@@ -542,13 +635,45 @@ they work from the very first keystroke, before any click.
   whole workspace back to that zone.
 - **Context menus** — right-click the chart body for reset view, removing all drawings or all
   indicators, and the settings dialog; the price axis for that pane's own scale (autoscale,
-  invert, regular/percent/indexed/logarithmic, and the label and level toggles); the time axis
+  scale price chart only on the main price scale, invert, regular/percent/indexed/logarithmic, and the label and level toggles); the time axis
   for the display timezone. Every pane's price scale has its own menu, so a study pane's scale
   is independent of the main one. Each menu's settings entry opens the settings dialog on the
   tab that belongs to it — Canvas from the chart body, Scales and lines from either axis.
   Rows a plugin adds sort in with the built-in ones: by default after the built-in actions and
   before the settings entry at the bottom of the menu (see [Right-click menu
   actions](../contributing/plugin-sdk.md#right-click-menu-actions)).
+
+### Full screen
+
+Full screen leaves only the charts: the topbar, the drawing toolbar, the bottom bar and the
+sidebar hide, and the open side panel closes. Leaving brings all of it back as it was,
+including the panel. A split layout stays split.
+
+- **The topbar button** enters full screen. It hides with the bar, so a short notice says
+  how to leave.
+- **`alt+Enter`** toggles it. The chord is listed in the `?` panel and can be rebound
+  (`ws.keymap.rebind('chart.fullscreen', …)`).
+- **`Esc`** leaves, once nothing else has a use for it. With a menu, a popover or a dialog
+  open, a drawing selected, or a drawing tool armed, `Esc` closes or cancels that first, and
+  the next press leaves. An armed tool returns to the cursor, because its toolbar is hidden.
+- **In code**, `ws.setFullscreen(true | false)` enters and leaves, `ws.fullscreen` reads the
+  state, and `fullscreen:changed` fires with `{ on }` whichever way it changed.
+
+The shell keeps the size of its container: full screen never resizes the page or asks the
+browser for its own full screen. A host that shows its own interface around the shell
+follows the event to hide it:
+
+```ts
+ws.on('fullscreen:changed', ({ on }) => {
+    document.body.classList.toggle('charts-only', on); // your header, your side columns
+});
+```
+
+Full screen is view state. It is not saved with the workspace, and it applies to the desktop
+layout only: on the [mobile layout](#mobile) the one bar is how the chart is driven, so
+`setFullscreen(true)` does nothing there, and a shell that turns mobile leaves full screen.
+Docked strips a plugin added stay where they are: the plugin that owns one decides, and
+follows full screen through [`ctx.fullscreen`](../contributing/plugin-sdk.md#full-screen--ctxfullscreen).
 
 ### Following menus and panels
 
@@ -625,7 +750,7 @@ option is pure opt-in, and a shell without it behaves exactly as before.
 ```ts
 new VelaWorkspace('#chart', {
     topbar: {
-        // right undeclared ⇒ default right side (actions, alerts, panels, screenshot)
+        // right undeclared ⇒ default right side (actions, alerts, panels, screenshot, fullscreen)
         left: ['symbol', 'timeframes', 'style', 'my-plugin.indicator-menu.open', 'undo-redo'],
     },
 });
@@ -644,6 +769,7 @@ Entries come from one shared vocabulary:
 | `'alerts'` | The alerts bell (badge included). |
 | `'panels'` | The side-panel toggle group (object tree, data window, contributed panels). |
 | `'screenshot'` | The screenshot slot — the built-in download button, or a plugin's override (which then also owns `mod+alt+S` and the mobile drawer button). |
+| `'fullscreen'` | The [full screen](#full-screen) button. Omitting it removes the button and the `alt+Enter` chord; `ws.setFullscreen()` still works. |
 | `'actions'` | The FLOW slot: where contributed actions not named in the lists land, per their declared `align` (may appear once per side). |
 | any other id | A [contributed action](../contributing/plugin-sdk.md#widget-actions--registerwidgetaction)'s `id` — naming it PINS the action at that list position, overriding its declared `align`/`order`. |
 
@@ -656,7 +782,7 @@ The rules that make it predictable:
 - **Hiding an entry removes its other entry points too**: the mobile counterpart (the
   more-drawer's undo/redo/screenshot buttons, alerts and panel rows, the mobile-bar
   indicators stop) and the entry's keyboard chord — `mod+alt+S` goes with
-  `'screenshot'`. Ctrl+Z / Ctrl+Y stay regardless of `'undo-redo'`: they belong to
+  `'screenshot'`, `alt+Enter` with `'fullscreen'`. Ctrl+Z / Ctrl+Y stay regardless of `'undo-redo'`: they belong to
   editing, not to the buttons.
 - **Mobile keeps its own arrangement.** The composition decides *visibility* everywhere,
   but only the desktop bar takes the *ordering* — the mobile bar and drawers keep their
@@ -667,6 +793,34 @@ The replace-a-built-in recipe pairs naturally with the plugin SDK: hide `'screen
 pin your own action in its place (`right: ['actions', 'alerts', 'panels',
 'mytool.screenshot.open']`), and the contributed dropdown sits exactly where the
 built-in button was.
+
+## The sidebar
+
+`sidebar: true` adds a toolbar along the shell's right edge, beside the topbar, the charts
+and the bottom bar, so the shell has a toolbar on every side. It is off by default; a shell
+without it keeps its layout exactly as before.
+
+```ts
+new VelaWorkspace('#chart', {
+    sidebar: true, // or { top: [...], bottom: [...] }
+});
+```
+
+- **It takes over the side-panel toggles.** On the desktop layout the panel buttons
+  (object tree, data window, every contributed panel) move from the topbar to the sidebar;
+  they stay in step with the dock either way.
+- **Plugins add their own entries** with `registerWidgetAction({ target: 'sidebar', … })`
+  (see the [plugin SDK](../contributing/plugin-sdk.md#the-sidebar)).
+- **Its layout is declarative**, like the topbar's: `{ top, bottom }` list the entries of the
+  upper section (from the top edge down) and of the lower section (anchored to the bottom
+  edge). Entries are panel ids (`'objects'`, `'dataWindow'`, a `registerSidePanel` id),
+  sidebar action ids, the flow slots `'panels'` and `'actions'` (everything of that kind not
+  listed elsewhere, in order) and `'|'` for a separator. An undeclared section keeps its
+  default: `top: ['panels']`, `bottom: ['objects', 'dataWindow', '|', 'actions']`.
+- **Desktop only.** On the mobile layout the sidebar is hidden: the panels keep their rows
+  in the three-dots menu, and the sidebar actions join them there.
+- It sits outermost on the right, outside full-height `placement: 'column'` panels and any
+  element a plugin docks at the edge.
 
 ## Mobile
 
@@ -719,6 +873,14 @@ re-skins live and the chrome follows, no rebuild. Users reach the same switch in
 settings → Canvas → Theme. The built-in themes share the same candle colors, so
 switching never recolors the series.
 
+## Localization
+
+The [localization options](./localization.md) apply to the whole workspace: every cell's
+chart, the shared chrome, and cells a later layout creates. `ws.setLocale(...)` switches
+them at runtime and emits `locale:changed` once every cell has switched; `ws.i18n` is the
+workspace's translator, and contributed actions read it as `ctx.i18n`. The workspace root
+carries `lang` once a locale is set and `dir` once a direction is.
+
 ## Customization
 
 Three levels, shallow to deep:
@@ -730,8 +892,8 @@ Three levels, shallow to deep:
 3. **Contributed actions** — plugins and hosts add topbar buttons and context-menu items
    as data descriptors via
    [`registerWidgetAction`](../contributing/plugin-sdk.md#widget-actions--registerwidgetaction);
-   the kit's primitives (`Dialog`, `Drawer`, `Menu`, `Tooltip`, `Popover`, `Switch`,
-   `Select`, `NumberInput`, `TextField`, `ColorField` / `buildColorPicker`,
+   the kit's primitives (`Dialog`, `Drawer`, `DropdownMenu`, `Tooltip`, `Popover`, `Checkbox`,
+   `Select`, `NumberInput`, `Input`, `ColorField` / `buildColorPicker`,
    `KeymapManager`) are exported from `@luxalgo/vela/ui` for building your own panels against
    the headless core. Form controls share `md` (settings dialogs: 34px fields, hover
    steppers, chip colors) and a compact `sm` size so a host panel can match either

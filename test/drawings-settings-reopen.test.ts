@@ -62,7 +62,8 @@ function setup(drawing: Drawing) {
     const barButton = (tip: string): HTMLButtonElement => host.querySelector<HTMLButtonElement>(`.vela-dpop [data-tip="${tip}"]`)!;
     const dialogButton = (label: string): HTMLButtonElement =>
         [...host.querySelectorAll<HTMLButtonElement>('.vela-dsp button')].find((b) => b.textContent === label)!;
-    const ratioInputs = (): HTMLInputElement[] => [...host.querySelectorAll<HTMLInputElement>('.vela-dsp .vela-dsp-lv input')];
+    // The levels' ratio fields (each level's switch holds a checkbox too).
+    const ratioInputs = (): HTMLInputElement[] => [...host.querySelectorAll<HTMLInputElement>('.vela-dsp .vela-dsp-lv input:not([type="checkbox"])')];
     return { host, popup, live: c.live, barButton, dialogButton, ratioInputs };
 }
 
@@ -83,7 +84,7 @@ describe('drawing settings reopened from the same toolbar', () => {
         await settled();
         commit(s.ratioInputs()[1]!, 0.25);
         commit(s.ratioInputs()[2]!, 0.4);
-        s.dialogButton('Ok').click();
+        s.dialogButton('OK').click();
         await settled();
         expect(ratios(s.live()).slice(0, 3)).toEqual([0, 0.25, 0.4]);
 
@@ -99,7 +100,7 @@ describe('drawing settings reopened from the same toolbar', () => {
         await settled();
         commit(s.ratioInputs()[1]!, 0.25);
         commit(s.ratioInputs()[2]!, 0.4);
-        s.dialogButton('Ok').click();
+        s.dialogButton('OK').click();
         await settled();
 
         s.barButton('Settings').click();

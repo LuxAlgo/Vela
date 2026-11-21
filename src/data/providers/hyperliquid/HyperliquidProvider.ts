@@ -15,6 +15,8 @@ const WS_URL = 'wss://api.hyperliquid.xyz/ws';
 const STREAM_STALL_MS = 15_000;
 /** Reconnect backoff after an unexpected socket close. */
 const STREAM_RECONNECT_MS = 2_000;
+/** `spotMeta` token index of USDC, the main dex's collateral. */
+const USDC_TOKEN = 0;
 
 /** One raw Hyperliquid candle: `{ t, T, s, i, o, h, l, c, v, n }` (prices/volume are strings). */
 interface RawCandle {
@@ -69,12 +71,24 @@ export function normalizeTf(tf: string): string {
 
 /**
  * Map a Vela ticker to a Hyperliquid `coin`. Perps are bare names (`BTC`); spot
- * pairs are `BASE/QUOTE` (`PURR/USDC`). Bare names are upper-cased for convenience;
- * pair names are passed through verbatim (they're the API coin).
+ * pairs are `BASE/QUOTE` (`PURR/USDC`); a builder-deployed (HIP-3) dex's perps are
+ * `dex:COIN` (`xyz:TSLA`). Bare names are upper-cased for convenience; pair names are
+ * passed through verbatim (they're the API coin). The API matches coins case-sensitively,
+ * and dex names are lower-case, so a HIP-3 ticker gets a lower-case dex and an upper-case
+ * coin — the provider swaps in the listed spelling when it knows the market.
  */
 export function parseCoin(ticker: string): string {
     const t = ticker.trim();
-    return t.includes('/') ? t : t.toUpperCase();
+    if (t.includes('/')) return t;
+    const hip3 = splitDexCoin(t);
+    return hip3 ? `${hip3.dex.toLowerCase()}:${hip3.name.toUpperCase()}` : t.toUpperCase();
+}
+
+/** The dex and coin of a HIP-3 market (`xyz:TSLA` → `{ dex: 'xyz', name: 'TSLA' }`), or null for any other ticker. */
+export function splitDexCoin(coin: string): { dex: string; name: string } | null {
+    const i = coin.indexOf(':');
+    if (i <= 0 || i === coin.length - 1 || coin.includes('/')) return null;
+    return { dex: coin.slice(0, i), name: coin.slice(i + 1) };
 }
 
 /** Map a single raw candle to neutral OHLCV (open-time in epoch ms). */
@@ -114,10 +128,12 @@ function selectSubTf(targetMin: number): number | null {
 
 /**
  * Hyperliquid market-data provider, built from scratch on the public info API — no
- * third-party SDK, no API key. Serves USD-margined perpetuals (bare coins like `BTC`) and
- * spot pairs (`PURR/USDC`), and aggregates timeframes Hyperliquid doesn't serve
- * natively (e.g. `45`, `180`, `360`). Live ticks use a real WebSocket candle stream
- * (`subscribe`).
+ * third-party SDK, no API key. Serves USD-margined perpetuals (bare coins like `BTC`),
+ * spot pairs (`PURR/USDC`) and the perpetuals of every builder-deployed (HIP-3) perp dex
+ * (`xyz:TSLA` — the dex name, a colon, the coin: the API's own coin name, so
+ * `hyperliquid:xyz:TSLA` is the qualified form), and aggregates timeframes Hyperliquid
+ * doesn't serve natively (e.g. `45`, `180`, `360`). Live ticks use a real WebSocket
+ * candle stream (`subscribe`).
  *
  * History note: Hyperliquid only serves the most recent ~5000 candles per interval
  * (≈ 3.5d of 1m, ~7mo of 1h, daily back to listing) — there is no deeper backfill, so
@@ -131,6 +147,12 @@ export class HyperliquidProvider implements DataProvider {
     private metaPromise: Promise<PerpMeta> | null = null;
     /** Cached `spotMeta`. */
     private spotMetaPromise: Promise<SpotMeta> | null = null;
+    /** Cached `perpDexs` (the HIP-3 dexes; the main dex is left out). */
+    private perpDexsPromise: Promise<PerpDex[]> | null = null;
+    /** Cached `meta` per HIP-3 dex name. */
+    private readonly dexMetaPromises = new Map<string, Promise<PerpMeta>>();
+    /** Upper-cased HIP-3 coin → its listed spelling, filled as dex metas arrive. */
+    private readonly hip3Coins = new Map<string, string>();
     /** Cached symbol enumeration. */
     private symbolsPromise: Promise<SymbolDescriptor[]> | null = null;
 
@@ -146,7 +168,7 @@ export class HyperliquidProvider implements DataProvider {
 
     async getBars(ticker: string, timeframe: string, range: BarRange): Promise<OHLCV[]> {
         try {
-            const coin = parseCoin(ticker);
+            const coin = await this.resolveCoin(ticker);
             const tf = normalizeTf(timeframe);
 
             const nativeInterval = TF_TO_INTERVAL[tf];
@@ -175,7 +197,19 @@ export class HyperliquidProvider implements DataProvider {
     }
 
     async getSymbolInfo(ticker: string): Promise<SymbolInfo | undefined> {
-        const coin = parseCoin(ticker);
+        const coin = await this.resolveCoin(ticker);
+
+        const hip3 = splitDexCoin(coin);
+        if (hip3) {
+            const meta = await this.fetchDexMeta(hip3.dex).catch(() => null);
+            const perp = meta?.universe?.find((u) => u.name === coin);
+            if (!perp) return undefined;
+            const [dex, quote] = await Promise.all([this.findDex(hip3.dex), this.collateralName(meta?.collateralToken)]);
+            const name = perp.name.slice(hip3.dex.length + 1);
+            // Same price rule as the main dex's perps (≤ 6 − szDecimals decimals).
+            const mintick = decimalsToTick(Math.max(0, 6 - (perp.szDecimals ?? 2)));
+            return symbolInfo(ticker, name, quote, 'futures', hip3Description(name, quote, dex?.fullName || hip3.dex), mintick);
+        }
 
         const meta = await this.fetchMeta().catch(() => null);
         const perp = meta?.universe?.find((u) => u.name === coin);
@@ -203,19 +237,22 @@ export class HyperliquidProvider implements DataProvider {
             this.symbolsPromise = Promise.all([
                 this.listPerps().catch(() => [] as SymbolDescriptor[]),
                 this.listSpot().catch(() => [] as SymbolDescriptor[]),
-            ]).then(([perps, spot]) => [...perps, ...spot]);
+                this.listHip3().catch(() => [] as SymbolDescriptor[]),
+            ]).then(([perps, spot, hip3]) => [...perps, ...spot, ...hip3]);
         }
         return this.symbolsPromise;
     }
 
     /** Predefined icon source for a crypto venue: the Ledger crypto-icon CDN, keyed by
-     *  the BASE asset (the description's first segment, else the de-suffixed ticker). */
+     *  the BASE asset (the description's first segment, else the de-suffixed ticker; a
+     *  HIP-3 ticker without its dex). */
     resolveSymbolIcon(symbol: SymbolDescriptor): string | undefined {
-        return ledgerCryptoIconUrl(baseOf(symbol));
+        const hip3 = symbol.description ? null : splitDexCoin(symbol.ticker);
+        return ledgerCryptoIconUrl(baseOf(hip3 ? { ticker: hip3.name } : symbol));
     }
 
     subscribe(ticker: string, timeframe: string, onBar: (bar: OHLCV) => void): Unsubscribe {
-        const coin = parseCoin(ticker);
+        const coin = this.coinOf(ticker);
         const interval = TF_TO_INTERVAL[normalizeTf(timeframe)];
         // Native interval + a WebSocket implementation ⇒ true streaming. Otherwise
         // (aggregated timeframe, or no WebSocket) fall back to polling getBars.
@@ -224,6 +261,21 @@ export class HyperliquidProvider implements DataProvider {
     }
 
     // ── internals ────────────────────────────────────────────────────────
+
+    /** The API coin for a ticker: {@link parseCoin}, with a known HIP-3 market's listed spelling. */
+    private coinOf(ticker: string): string {
+        const coin = parseCoin(ticker);
+        return this.hip3Coins.get(coin.toUpperCase()) ?? coin;
+    }
+
+    /** {@link coinOf}, after loading a HIP-3 market's dex when its spelling isn't known yet. */
+    private async resolveCoin(ticker: string): Promise<string> {
+        const coin = this.coinOf(ticker);
+        const hip3 = splitDexCoin(coin);
+        if (!hip3 || this.hip3Coins.has(coin.toUpperCase())) return coin;
+        await this.fetchDexMeta(hip3.dex).catch(() => null);
+        return this.coinOf(ticker);
+    }
 
     private async listPerps(): Promise<SymbolDescriptor[]> {
         const meta = await this.fetchMeta();
@@ -242,6 +294,40 @@ export class HyperliquidProvider implements DataProvider {
             const description = base && quote ? `${base} / ${quote}` : u.name;
             return { ticker: u.name, description, type: 'crypto' };
         });
+    }
+
+    /**
+     * Every HIP-3 dex's listed perps. A dex whose meta fails, or whose markets are all
+     * delisted (a halted dex), simply contributes nothing.
+     */
+    private async listHip3(): Promise<SymbolDescriptor[]> {
+        const dexes = await this.fetchPerpDexs();
+        const lists = await Promise.all(
+            dexes.map(async (dex) => {
+                const meta = await this.fetchDexMeta(dex.name);
+                const quote = await this.collateralName(meta.collateralToken);
+                const prefix = `${dex.name}:`;
+                return (meta.universe ?? [])
+                    .filter((u) => !u.isDelisted && u.name.startsWith(prefix) && u.name.length > prefix.length)
+                    .map((u): SymbolDescriptor => {
+                        const name = u.name.slice(prefix.length);
+                        return { ticker: u.name, description: hip3Description(name, quote, dex.fullName || dex.name), type: 'futures' };
+                    });
+            }).map((p) => p.catch(() => [] as SymbolDescriptor[])),
+        );
+        return lists.flat();
+    }
+
+    /** The quote currency of a dex's perps, from its collateral token: USDC reads `USD` like the main dex. */
+    private async collateralName(token: number | undefined): Promise<string> {
+        if (token == null || token === USDC_TOKEN) return 'USD';
+        const spot = await this.fetchSpotMeta().catch(() => null);
+        return spot?.tokens?.find((t) => t.index === token)?.name ?? 'USD';
+    }
+
+    private async findDex(name: string): Promise<PerpDex | undefined> {
+        const dexes = await this.fetchPerpDexs().catch(() => [] as PerpDex[]);
+        return dexes.find((d) => d.name === name);
     }
 
     /**
@@ -354,6 +440,26 @@ export class HyperliquidProvider implements DataProvider {
         return (this.spotMetaPromise ??= this.post({ type: 'spotMeta' }).then((d) => d as SpotMeta));
     }
 
+    /** The HIP-3 dexes: `perpDexs` lists the main dex first, as `null`, which is dropped. */
+    private fetchPerpDexs(): Promise<PerpDex[]> {
+        return (this.perpDexsPromise ??= this.post({ type: 'perpDexs' }).then((d) =>
+            (Array.isArray(d) ? d : []).filter((x): x is PerpDex => x != null && typeof (x as PerpDex).name === 'string' && (x as PerpDex).name !== ''),
+        ));
+    }
+
+    private fetchDexMeta(dex: string): Promise<PerpMeta> {
+        let p = this.dexMetaPromises.get(dex);
+        if (!p) {
+            p = this.post({ type: 'meta', dex }).then((d) => {
+                const meta = (d ?? {}) as PerpMeta;
+                for (const u of meta.universe ?? []) this.hip3Coins.set(u.name.toUpperCase(), u.name);
+                return meta;
+            });
+            this.dexMetaPromises.set(dex, p);
+        }
+        return p;
+    }
+
     private async post(body: unknown): Promise<unknown> {
         const res = await fetch(INFO_URL, {
             method: 'POST',
@@ -384,6 +490,11 @@ function symbolInfo(
     };
 }
 
+/** A HIP-3 market's description: the coin, its quote and the dex that lists it (`TSLA / USD Perpetual (XYZ)`). */
+function hip3Description(name: string, quote: string, dexName: string): string {
+    return `${name} / ${quote} Perpetual (${dexName})`;
+}
+
 /** 10^-decimals as a tick size (e.g. 1 → 0.1, 3 → 0.001). */
 function decimalsToTick(decimals: number): number {
     return Math.pow(10, -decimals);
@@ -392,10 +503,18 @@ function decimalsToTick(decimals: number): number {
 /** The subset of Hyperliquid `meta` this provider reads. */
 interface PerpMeta {
     universe?: Array<{ name: string; szDecimals?: number; maxLeverage?: number; isDelisted?: boolean }>;
+    /** The spot token the dex's perps are margined in (its `index` in `spotMeta.tokens`). */
+    collateralToken?: number;
+}
+
+/** The subset of one Hyperliquid `perpDexs` entry this provider reads. */
+interface PerpDex {
+    name: string;
+    fullName?: string;
 }
 
 /** The subset of Hyperliquid `spotMeta` this provider reads. */
 interface SpotMeta {
     universe?: Array<{ name: string; tokens?: number[]; isCanonical?: boolean }>;
-    tokens?: Array<{ name: string; szDecimals?: number }>;
+    tokens?: Array<{ name: string; szDecimals?: number; index?: number }>;
 }

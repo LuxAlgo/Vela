@@ -11,6 +11,9 @@
 import type { OHLCV } from '../core/model/ohlcv';
 import type { BarTransform } from '../core/price-styles/BarTransform';
 import type { DataControl } from '../core/DataControl';
+import type { SymbolFacts } from '../core/ports/MarketDataFeed';
+import { msg, withValues } from '../core/i18n/message';
+import type { MessageLike } from '../core/i18n/types';
 
 /** The environment a chart hands to a style's data engine when the style activates. */
 export interface SeriesDataEngineHost {
@@ -74,8 +77,9 @@ export interface SeriesDataEngine {
 export interface ChartTypeDefinition {
     /** The price-style id (`'heikinashi'`; a plugin might register `'footprint'`, `'renko'`…). */
     id: string;
-    /** Human-readable label for style pickers. Defaults to the id. */
-    label?: string;
+    /** Human-readable label for style pickers. Defaults to the id. A message (`msg()`)
+     *  reads in the chart's language. */
+    label?: MessageLike;
     /** Raw `<svg>` markup for style pickers (surfaced as icon id `style-<id>`). */
     icon?: string;
     /** Optional SETTINGS SECTION rendered inside the chart-settings dialog — declarative
@@ -100,6 +104,16 @@ export interface ChartTypeDefinition {
      * indicators and drawings are unaffected.
      */
     basePainting?: 'candles' | 'none';
+    /**
+     * Whether the style can draw a symbol, from the facts its data source states about it
+     * (`SymbolFacts`: `ohlc: false` for one value per bar, `volume: false` for no volume).
+     * Return `false` and the style menus grey the type out for that symbol, and a chart set
+     * to it shows a close-based style (a line) instead, without changing the chosen style:
+     * the type comes back on the next symbol it supports. Only called once the facts are
+     * known; while they are not, every type applies. Absent ⇒ the type applies to every
+     * symbol. Keep it pure and cheap: the chart calls it on every symbol change and menu build.
+     */
+    supports?(facts: Readonly<SymbolFacts>): boolean;
 }
 
 /**
@@ -125,7 +139,7 @@ export type SettingsRowWhen = SettingsRowCondition | readonly SettingsRowConditi
 export interface SettingsRowSwatch {
     key: string;
     /** Names the color for the swatch's tooltip (`'Highlight color'`). */
-    label: string;
+    label: MessageLike;
     defval: string;
     /**
      * Optional visibility gate, evaluated live against the values bag exactly like a
@@ -146,7 +160,7 @@ export interface SettingsRowSwatch {
 export interface SettingsRowWidth {
     key: string;
     /** Names the control for its tooltip (`'Line width'`). */
-    label: string;
+    label: MessageLike;
     defval: number;
 }
 
@@ -159,7 +173,7 @@ export interface SettingsRowWidth {
 export interface SettingsRowInlineNumber {
     key: string;
     /** Names the input for its tooltip (`'Value area (%)'`). */
-    label: string;
+    label: MessageLike;
     defval: number;
     min?: number;
     max?: number;
@@ -170,7 +184,7 @@ export interface SettingsRowInlineNumber {
  * A select option: a bare string (value = label) or a `[value, label]` pair when the
  * stored id differs from the human-readable text (`['bidAskProfile', 'Bid × Ask Profile']`).
  */
-export type SettingsSelectOption = string | readonly [value: string, label: string];
+export type SettingsSelectOption = string | readonly [value: string, label: MessageLike];
 
 /**
  * One INLINE CONTROL on a composite `row` — the composable unit every value row is
@@ -191,11 +205,11 @@ export type SettingsSelectOption = string | readonly [value: string, label: stri
  *   a unit); stores nothing.
  */
 export type SettingsInlineControl =
-    | { kind: 'number'; key: string; label: string; defval: number; min?: number; max?: number; step?: number; placeholder?: string; when?: SettingsRowWhen }
-    | { kind: 'color'; key: string; label: string; defval: string; when?: SettingsRowWhen }
-    | { kind: 'width'; key: string; label: string; defval: number; when?: SettingsRowWhen }
-    | { kind: 'select'; key: string; label: string; options: readonly SettingsSelectOption[]; defval: string; when?: SettingsRowWhen }
-    | { kind: 'hint'; text: string };
+    | { kind: 'number'; key: string; label: MessageLike; defval: number; min?: number; max?: number; step?: number; placeholder?: MessageLike; when?: SettingsRowWhen }
+    | { kind: 'color'; key: string; label: MessageLike; defval: string; when?: SettingsRowWhen }
+    | { kind: 'width'; key: string; label: MessageLike; defval: number; when?: SettingsRowWhen }
+    | { kind: 'select'; key: string; label: MessageLike; options: readonly SettingsSelectOption[]; defval: string; when?: SettingsRowWhen }
+    | { kind: 'hint'; text: MessageLike };
 
 /**
  * One declarative settings row. To add a NEW inline control kind, see
@@ -226,25 +240,29 @@ export type SettingsInlineControl =
  * Any row may carry `when` — it is shown only while the condition holds.
  */
 export type SettingsRowDescriptor =
-    | { kind: 'heading'; label: string; when?: SettingsRowWhen }
-    | { kind: 'header'; label: string; when?: SettingsRowWhen }
-    | { kind: 'row'; label: string; toggle?: { key: string; defval: boolean }; controls: readonly SettingsInlineControl[]; when?: SettingsRowWhen }
-    | { kind: 'toggle'; key: string; label: string; defval: boolean; number?: SettingsRowInlineNumber; colors?: readonly SettingsRowSwatch[]; width?: SettingsRowWidth; when?: SettingsRowWhen }
-    | { kind: 'number'; key: string; label: string; defval: number; min?: number; max?: number; step?: number; when?: SettingsRowWhen }
-    | { kind: 'color'; key: string; label: string; defval: string; when?: SettingsRowWhen }
-    | { kind: 'select'; key: string; label: string; options: readonly SettingsSelectOption[]; defval: string; when?: SettingsRowWhen }
-    | { kind: 'range'; label: string; minKey: string; maxKey: string; defval: number; min?: number; max?: number; step?: number; placeholder?: string; when?: SettingsRowWhen };
+    | { kind: 'heading'; label: MessageLike; when?: SettingsRowWhen }
+    | { kind: 'header'; label: MessageLike; when?: SettingsRowWhen }
+    | { kind: 'row'; label: MessageLike; toggle?: { key: string; defval: boolean }; controls: readonly SettingsInlineControl[]; when?: SettingsRowWhen }
+    | { kind: 'toggle'; key: string; label: MessageLike; defval: boolean; number?: SettingsRowInlineNumber; colors?: readonly SettingsRowSwatch[]; width?: SettingsRowWidth; when?: SettingsRowWhen }
+    | { kind: 'number'; key: string; label: MessageLike; defval: number; min?: number; max?: number; step?: number; when?: SettingsRowWhen }
+    | { kind: 'color'; key: string; label: MessageLike; defval: string; when?: SettingsRowWhen }
+    | { kind: 'select'; key: string; label: MessageLike; options: readonly SettingsSelectOption[]; defval: string; when?: SettingsRowWhen }
+    | { kind: 'range'; label: MessageLike; minKey: string; maxKey: string; defval: number; min?: number; max?: number; step?: number; placeholder?: MessageLike; when?: SettingsRowWhen };
 
 /** A value-carrying row (everything except the key-less `heading`/`header` titles). */
 export type SettingsValueRow = Exclude<SettingsRowDescriptor, { kind: 'heading' | 'header' }>;
 
 /** The canonical row shape every {@link SettingsValueRow} reduces to (the `row` kind's fields). */
 export interface NormalizedSettingsRow {
-    label: string;
+    label: MessageLike;
     toggle?: { key: string; defval: boolean };
     controls: readonly SettingsInlineControl[];
     when?: SettingsRowWhen;
 }
+
+/** The tooltips of a range's two inputs; `{label}` is the row's own label. */
+const RANGE_MIN = msg('chart.settings.rangeMin', '{label} — min');
+const RANGE_MAX = msg('chart.settings.rangeMax', '{label} — max');
 
 /**
  * Reduce a value row to the canonical composite shape — the ONE contract view layers
@@ -273,9 +291,9 @@ export function normalizeSettingsRow(r: SettingsValueRow): NormalizedSettingsRow
             return {
                 label: r.label,
                 controls: [
-                    { kind: 'number', key: r.minKey, label: `${r.label} — min`, defval: r.defval, min: r.min, max: r.max, step: r.step, placeholder: r.placeholder },
+                    { kind: 'number', key: r.minKey, label: withValues(RANGE_MIN, { label: r.label }), defval: r.defval, min: r.min, max: r.max, step: r.step, placeholder: r.placeholder },
                     { kind: 'hint', text: '–' },
-                    { kind: 'number', key: r.maxKey, label: `${r.label} — max`, defval: r.defval, min: r.min, max: r.max, step: r.step, placeholder: r.placeholder },
+                    { kind: 'number', key: r.maxKey, label: withValues(RANGE_MAX, { label: r.label }), defval: r.defval, min: r.min, max: r.max, step: r.step, placeholder: r.placeholder },
                 ],
                 when: r.when,
             };
@@ -323,7 +341,7 @@ export function settingsRowVisible(when: SettingsRowWhen | undefined, bag: Recor
  * present and not removable — the base instance.
  */
 export interface ChartTypeSettingsInstance {
-    label: string;
+    label: MessageLike;
     /** Boolean bag key controlling presence; omitted = always present, not removable. */
     enableKey?: string;
     rows: readonly SettingsRowDescriptor[];
@@ -331,7 +349,7 @@ export interface ChartTypeSettingsInstance {
 
 /** An indented sub-entry under the section's rail tab, with its own pane of rows. */
 export interface ChartTypeSettingsSubsection {
-    title: string;
+    title: MessageLike;
     rows: readonly SettingsRowDescriptor[];
     /**
      * Boolean bag key that masters this pane. While it is false, every row EXCEPT the
@@ -361,7 +379,7 @@ export interface ChartTypeSettingsSubsection {
  */
 export interface ChartTypeSettingsSection {
     /** Section heading in the settings dialog. */
-    title: string;
+    title: MessageLike;
     /** Flat form. Ignored when `instances` is declared. */
     rows?: readonly SettingsRowDescriptor[];
     /** How `rows` are presented: `'flat'` (default) renders headings as inline group

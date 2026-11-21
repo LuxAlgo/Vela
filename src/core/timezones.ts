@@ -1,3 +1,6 @@
+import { msg } from './i18n/message';
+import { sourceText, textOf } from './i18n/text';
+import type { MessageDescriptor, Translator } from './i18n/types';
 // The canonical display-timezone catalog — ONE list for every zone picker (the widget's
 // bottom bar, the time-axis context menu, the renderer's settings dialog), so they can
 // never drift apart. Ordered by standard UTC offset (UTC first); every whole, half and
@@ -6,62 +9,69 @@
 
 export interface TimezoneEntry {
     value: string;
+    /** The place the zone is named after, in English. */
     label: string;
+    /** The same name as a message, for pickers in other languages. */
+    name: MessageDescriptor;
+}
+
+function tz(value: string, name: MessageDescriptor): TimezoneEntry {
+    return { value, label: sourceText(name), name };
 }
 
 export const TIMEZONES: readonly TimezoneEntry[] = [
-    { value: 'Etc/UTC', label: 'UTC' },
-    { value: 'Etc/GMT+12', label: 'International Date Line West' },
-    { value: 'Pacific/Pago_Pago', label: 'Pago Pago' },
-    { value: 'Pacific/Honolulu', label: 'Honolulu' },
-    { value: 'Pacific/Marquesas', label: 'Marquesas Islands' },
-    { value: 'America/Anchorage', label: 'Anchorage' },
-    { value: 'America/Los_Angeles', label: 'Los Angeles' },
-    { value: 'America/Phoenix', label: 'Phoenix' },
-    { value: 'America/Denver', label: 'Denver' },
-    { value: 'America/Chicago', label: 'Chicago' },
-    { value: 'America/Mexico_City', label: 'Mexico City' },
-    { value: 'America/New_York', label: 'New York' },
-    { value: 'America/Bogota', label: 'Bogotá' },
-    { value: 'America/Caracas', label: 'Caracas' },
-    { value: 'America/Santiago', label: 'Santiago' },
-    { value: 'America/St_Johns', label: "St. John's" },
-    { value: 'America/Sao_Paulo', label: 'São Paulo' },
-    { value: 'America/Argentina/Buenos_Aires', label: 'Buenos Aires' },
-    { value: 'America/Noronha', label: 'Fernando de Noronha' },
-    { value: 'Atlantic/Azores', label: 'Azores' },
-    { value: 'Atlantic/Reykjavik', label: 'Reykjavik' },
-    { value: 'Europe/London', label: 'London' },
-    { value: 'Europe/Paris', label: 'Paris' },
-    { value: 'Europe/Berlin', label: 'Berlin' },
-    { value: 'Europe/Athens', label: 'Athens' },
-    { value: 'Africa/Cairo', label: 'Cairo' },
-    { value: 'Africa/Johannesburg', label: 'Johannesburg' },
-    { value: 'Europe/Moscow', label: 'Moscow' },
-    { value: 'Europe/Istanbul', label: 'Istanbul' },
-    { value: 'Asia/Tehran', label: 'Tehran' },
-    { value: 'Asia/Dubai', label: 'Dubai' },
-    { value: 'Asia/Kabul', label: 'Kabul' },
-    { value: 'Asia/Karachi', label: 'Karachi' },
-    { value: 'Asia/Kolkata', label: 'Mumbai' },
-    { value: 'Asia/Kathmandu', label: 'Kathmandu' },
-    { value: 'Asia/Dhaka', label: 'Dhaka' },
-    { value: 'Asia/Yangon', label: 'Yangon' },
-    { value: 'Asia/Bangkok', label: 'Bangkok' },
-    { value: 'Asia/Shanghai', label: 'Shanghai' },
-    { value: 'Asia/Hong_Kong', label: 'Hong Kong' },
-    { value: 'Asia/Singapore', label: 'Singapore' },
-    { value: 'Australia/Eucla', label: 'Eucla' },
-    { value: 'Asia/Tokyo', label: 'Tokyo' },
-    { value: 'Asia/Seoul', label: 'Seoul' },
-    { value: 'Australia/Adelaide', label: 'Adelaide' },
-    { value: 'Australia/Sydney', label: 'Sydney' },
-    { value: 'Australia/Lord_Howe', label: 'Lord Howe Island' },
-    { value: 'Pacific/Noumea', label: 'Nouméa' },
-    { value: 'Pacific/Auckland', label: 'Auckland' },
-    { value: 'Pacific/Chatham', label: 'Chatham Islands' },
-    { value: 'Pacific/Apia', label: 'Apia' },
-    { value: 'Pacific/Kiritimati', label: 'Kiritimati' },
+    tz('Etc/UTC', msg('timezone.Etc.UTC', 'UTC')),
+    tz('Etc/GMT+12', msg('timezone.Etc.GMTPlus12', 'International Date Line West')),
+    tz('Pacific/Pago_Pago', msg('timezone.Pacific.PagoPago', 'Pago Pago')),
+    tz('Pacific/Honolulu', msg('timezone.Pacific.Honolulu', 'Honolulu')),
+    tz('Pacific/Marquesas', msg('timezone.Pacific.Marquesas', 'Marquesas Islands')),
+    tz('America/Anchorage', msg('timezone.America.Anchorage', 'Anchorage')),
+    tz('America/Los_Angeles', msg('timezone.America.LosAngeles', 'Los Angeles')),
+    tz('America/Phoenix', msg('timezone.America.Phoenix', 'Phoenix')),
+    tz('America/Denver', msg('timezone.America.Denver', 'Denver')),
+    tz('America/Chicago', msg('timezone.America.Chicago', 'Chicago')),
+    tz('America/Mexico_City', msg('timezone.America.MexicoCity', 'Mexico City')),
+    tz('America/New_York', msg('timezone.America.NewYork', 'New York')),
+    tz('America/Bogota', msg('timezone.America.Bogota', 'Bogotá')),
+    tz('America/Caracas', msg('timezone.America.Caracas', 'Caracas')),
+    tz('America/Santiago', msg('timezone.America.Santiago', 'Santiago')),
+    tz('America/St_Johns', msg('timezone.America.StJohns', "St. John's")),
+    tz('America/Sao_Paulo', msg('timezone.America.SaoPaulo', 'São Paulo')),
+    tz('America/Argentina/Buenos_Aires', msg('timezone.America.Argentina.BuenosAires', 'Buenos Aires')),
+    tz('America/Noronha', msg('timezone.America.Noronha', 'Fernando de Noronha')),
+    tz('Atlantic/Azores', msg('timezone.Atlantic.Azores', 'Azores')),
+    tz('Atlantic/Reykjavik', msg('timezone.Atlantic.Reykjavik', 'Reykjavik')),
+    tz('Europe/London', msg('timezone.Europe.London', 'London')),
+    tz('Europe/Paris', msg('timezone.Europe.Paris', 'Paris')),
+    tz('Europe/Berlin', msg('timezone.Europe.Berlin', 'Berlin')),
+    tz('Europe/Athens', msg('timezone.Europe.Athens', 'Athens')),
+    tz('Africa/Cairo', msg('timezone.Africa.Cairo', 'Cairo')),
+    tz('Africa/Johannesburg', msg('timezone.Africa.Johannesburg', 'Johannesburg')),
+    tz('Europe/Moscow', msg('timezone.Europe.Moscow', 'Moscow')),
+    tz('Europe/Istanbul', msg('timezone.Europe.Istanbul', 'Istanbul')),
+    tz('Asia/Tehran', msg('timezone.Asia.Tehran', 'Tehran')),
+    tz('Asia/Dubai', msg('timezone.Asia.Dubai', 'Dubai')),
+    tz('Asia/Kabul', msg('timezone.Asia.Kabul', 'Kabul')),
+    tz('Asia/Karachi', msg('timezone.Asia.Karachi', 'Karachi')),
+    tz('Asia/Kolkata', msg('timezone.Asia.Kolkata', 'Mumbai')),
+    tz('Asia/Kathmandu', msg('timezone.Asia.Kathmandu', 'Kathmandu')),
+    tz('Asia/Dhaka', msg('timezone.Asia.Dhaka', 'Dhaka')),
+    tz('Asia/Yangon', msg('timezone.Asia.Yangon', 'Yangon')),
+    tz('Asia/Bangkok', msg('timezone.Asia.Bangkok', 'Bangkok')),
+    tz('Asia/Shanghai', msg('timezone.Asia.Shanghai', 'Shanghai')),
+    tz('Asia/Hong_Kong', msg('timezone.Asia.HongKong', 'Hong Kong')),
+    tz('Asia/Singapore', msg('timezone.Asia.Singapore', 'Singapore')),
+    tz('Australia/Eucla', msg('timezone.Australia.Eucla', 'Eucla')),
+    tz('Asia/Tokyo', msg('timezone.Asia.Tokyo', 'Tokyo')),
+    tz('Asia/Seoul', msg('timezone.Asia.Seoul', 'Seoul')),
+    tz('Australia/Adelaide', msg('timezone.Australia.Adelaide', 'Adelaide')),
+    tz('Australia/Sydney', msg('timezone.Australia.Sydney', 'Sydney')),
+    tz('Australia/Lord_Howe', msg('timezone.Australia.LordHowe', 'Lord Howe Island')),
+    tz('Pacific/Noumea', msg('timezone.Pacific.Noumea', 'Nouméa')),
+    tz('Pacific/Auckland', msg('timezone.Pacific.Auckland', 'Auckland')),
+    tz('Pacific/Chatham', msg('timezone.Pacific.Chatham', 'Chatham Islands')),
+    tz('Pacific/Apia', msg('timezone.Pacific.Apia', 'Apia')),
+    tz('Pacific/Kiritimati', msg('timezone.Pacific.Kiritimati', 'Kiritimati')),
 ];
 
 /**
@@ -108,13 +118,18 @@ export interface TimezoneRow {
  * edits a resolved zone and lists {@link TIMEZONES} alone (the workspace hides that row
  * and contributes this list in its place).
  */
-export function timezoneMenuRows(current: string): TimezoneRow[] {
+export function timezoneMenuRows(current: string, i18n?: Translator | null): TimezoneRow[] {
     const active = normalizeTimezone(current);
-    const [utc, ...zones] = TIMEZONES.map((t) => ({ value: t.value, label: tzMenuLabel(t.value, t.label), checked: t.value === active }));
-    return [utc!, { value: EXCHANGE_TIMEZONE, label: 'Exchange', checked: isExchangeTimezone(current) }, ...zones];
+    const [utc, ...zones] = TIMEZONES.map((t) => ({ value: t.value, label: tzMenuLabel(t.value, textOf(i18n, t.name), i18n), checked: t.value === active }));
+    return [utc!, { value: EXCHANGE_TIMEZONE, label: textOf(i18n, EXCHANGE_LABEL), checked: isExchangeTimezone(current) }, ...zones];
 }
 
-/** Current UTC offset of an IANA zone as `"UTC"`, `"UTC+2"` or `"UTC-9:30"`. */
+const EXCHANGE_LABEL = msg('timezone.exchange', 'Exchange');
+const MENU_LABEL = msg('timezone.menuLabel', '({offset}) {location}');
+
+/** Current UTC offset of an IANA zone as `"UTC"`, `"UTC+2"` or `"UTC-9:30"`. The
+ *  formatter stays pinned to en-US whatever the chart's locale: the `GMT±h:mm` it emits is
+ *  PARSED below, and a localized one could spell the offset differently. */
 export function tzOffset(zone: string, date: Date = new Date()): string {
     try {
         const parts = new Intl.DateTimeFormat('en-US', { timeZone: zone, timeZoneName: 'shortOffset' }).formatToParts(date);
@@ -130,10 +145,11 @@ export function tzOffset(zone: string, date: Date = new Date()): string {
     }
 }
 
-/** Dropdown row label — UTC omits the offset prefix. */
-export function tzMenuLabel(zone: string, location: string): string {
+/** Dropdown row label — UTC omits the offset prefix. `location` is the zone's place name
+ *  as the picker shows it; `i18n` places the offset the way its language writes it. */
+export function tzMenuLabel(zone: string, location: string, i18n?: Translator | null): string {
     if (normalizeTimezone(zone) === 'Etc/UTC') return location;
-    return `(${tzOffset(zone)}) ${location}`;
+    return textOf(i18n, MENU_LABEL, { offset: tzOffset(zone), location });
 }
 
 /** Compact label for the bottom-bar button — just the offset ("UTC", "UTC+2", "UTC-9:30"). */

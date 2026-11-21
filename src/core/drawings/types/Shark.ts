@@ -1,11 +1,13 @@
+import { msg } from '../../i18n/message';
+import type { MessageLike } from '../../i18n/types';
 import { HarmonicPattern, type HarmonicRanges } from './HarmonicPattern';
 
 /** Shark: AB 0.382–0.618 XA, BC 1.13–1.618 AB, CD 1.618–2.24 BC, completion AD 0.886–1.13 XA. */
 export class Shark extends HarmonicPattern {
     readonly type = 'shark' as const;
 
-    patternName(): string {
-        return 'Shark';
+    patternName(): MessageLike {
+        return msg('drawing.shark.patternName', 'Shark');
     }
 
     protected ranges(): HarmonicRanges {

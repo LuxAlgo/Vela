@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/message';
 import type { AnchorSlot, SerializedDrawing } from '../Drawing';
 import type { Projector } from '../geometry';
 import type { SettingsSchema } from '../schema';
@@ -15,9 +16,9 @@ export interface LiquiditySettings {
 }
 
 const EXTEND_OPTIONS = [
-    { value: 'swept', label: 'Until swept' },
-    { value: 'broken', label: 'Until broken' },
-    { value: 'always', label: 'Always' },
+    { value: 'swept', label: msg('drawing.liquidity.option.swept', 'Until swept') },
+    { value: 'broken', label: msg('drawing.liquidity.option.broken', 'Until broken') },
+    { value: 'always', label: msg('drawing.liquidity.option.always', 'Always') },
 ];
 
 function defaults(): LiquiditySettings {
@@ -101,8 +102,8 @@ export class Liquidity extends PriceActionTool {
         return {
             fields: [
                 ...LINE_FIELDS,
-                { path: 'liq.extend', label: 'Extend right', kind: 'select', options: EXTEND_OPTIONS, group: 'behavior' },
-                { path: 'liq.markSweep', label: 'Mark sweep', kind: 'boolean', group: 'behavior' },
+                { path: 'liq.extend', label: msg('drawing.liquidity.liqExtend', 'Extend right'), kind: 'select', options: EXTEND_OPTIONS, group: 'behavior' },
+                { path: 'liq.markSweep', label: msg('drawing.liquidity.liqMarkSweep', 'Mark sweep'), kind: 'boolean', group: 'behavior' },
             ],
         };
     }

@@ -4,14 +4,20 @@
 // ONLY if they display an equivalent visible attribution elsewhere in their UI, which the
 // same file also allows them to restyle or reposition to fit their design.
 
+import { msg } from '../../../core/i18n/message';
+import { textOf } from '../../../core/i18n/text';
+import type { Translator } from '../../../core/i18n/types';
 import { isDarkColor } from '../../../core/color';
 import { VELA_LETTERS_SVG, VELA_MARK_SVG } from './vela-logos';
+import { css } from '@luxalgo/vela-ui/css';
+
 
 /** Where the mark links — the canonical project page. */
 export const ATTRIBUTION_URL = 'https://velacharts.dev/?utm_source=vela&utm_medium=attribution';
 
 const STYLE_ID = 'vela-attribution-styles';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 .vela-attribution {
     text-decoration: none;
     display: flex;
@@ -65,7 +71,8 @@ const CSS = `
 [data-layout='mobile'] .vela-attribution .vela-attr-wordmark svg { height: 20px; }
 [data-vela-layout='mobile'] .vela-attribution:hover .vela-attr-wordmark,
 [data-layout='mobile'] .vela-attribution:hover .vela-attr-wordmark { transform: translateX(0); }
-`;
+
+}`;
 
 function ensureStyles(doc: Document): void {
     let s = doc.getElementById(STYLE_ID) as HTMLStyleElement | null;
@@ -121,16 +128,28 @@ export function createCustomMark(doc: Document, html: string, background: string
     return el;
 }
 
+/** The mark's tooltip; Vela's name is never translated. */
+const ATTRIBUTION_LABEL = msg('chart.attribution', 'Charting by Vela');
+
+/** Re-read the built-in mark's tooltip in `i18n`'s language; a host's own mark keeps its words. */
+export function relabelAttributionMark(el: HTMLElement, i18n?: Translator | null): void {
+    if (!el.classList.contains('vela-attribution')) return;
+    const label = textOf(i18n, ATTRIBUTION_LABEL);
+    el.title = label;
+    el.setAttribute('aria-label', label);
+}
+
 /** Build the mark element (an anchor; the caller owns absolute positioning). */
-export function createAttributionMark(doc: Document, background: string): HTMLAnchorElement {
+export function createAttributionMark(doc: Document, background: string, i18n?: Translator | null): HTMLAnchorElement {
     ensureStyles(doc);
     const a = doc.createElement('a');
     a.className = 'vela-attribution';
     a.href = ATTRIBUTION_URL;
     a.target = '_blank';
     a.rel = 'noopener';
-    a.title = 'Charting by Vela';
-    a.setAttribute('aria-label', 'Charting by Vela');
+    const label = textOf(i18n, ATTRIBUTION_LABEL);
+    a.title = label;
+    a.setAttribute('aria-label', label);
     Object.assign(a.style, {
         position: 'absolute',
         zIndex: '6',

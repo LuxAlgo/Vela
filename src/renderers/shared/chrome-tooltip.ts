@@ -104,6 +104,12 @@ export interface ChromeHintOptions {
     theme: () => VelaTheme;
     /** Badge diameter in px. Default 16. */
     size?: number;
+    /** The glyph in the badge. Default `info`. */
+    icon?: string;
+    /** Make the badge a link opening this URL in a new tab. The caller vets the URL. */
+    href?: string;
+    /** The accessible name when `text` is empty. */
+    label?: string;
 }
 
 /**
@@ -111,18 +117,29 @@ export interface ChromeHintOptions {
  * icon and a wrapped chrome tooltip that opens quickly (a hint is asked for, not stumbled
  * on). The glyph is an SVG, so it is centered in the badge regardless of the font. Styled
  * inline (renderer chrome carries no stylesheet); the hover state is the tip's own
- * pointer listeners. Returns the element and a disposer for the tooltip.
+ * pointer listeners. With `href` the badge is a link instead (a section's help page), opened
+ * in a new tab that can never reach back into the chart's page. Returns the element and a
+ * disposer for the tooltip.
  */
 export function chromeHint(text: string, opts: ChromeHintOptions): { el: HTMLElement; dispose: () => void } {
     const px = opts.size ?? 16;
-    const el = document.createElement('span');
+    let el: HTMLElement;
+    if (opts.href) {
+        const a = document.createElement('a');
+        a.href = opts.href;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        el = a;
+    } else {
+        el = document.createElement('span');
+        el.setAttribute('role', 'img');
+    }
     el.className = 'vela-hint';
-    el.setAttribute('role', 'img');
-    el.setAttribute('aria-label', text);
-    el.innerHTML = iconAt('info', px);
+    el.setAttribute('aria-label', text || opts.label || '');
+    el.innerHTML = iconAt(opts.icon ?? 'info', px);
     el.style.cssText =
         `flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:${px}px;height:${px}px;` +
-        'border-radius:50%;cursor:help;user-select:none;background:var(--vela-hover);color:var(--vela-fg-muted);' +
+        `border-radius:50%;cursor:${opts.href ? 'pointer' : 'help'};user-select:none;background:var(--vela-hover);color:var(--vela-fg-muted);` +
         'transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;';
     const hover = (on: boolean): void => {
         el.style.background = on ? 'var(--vela-active)' : 'var(--vela-hover)';

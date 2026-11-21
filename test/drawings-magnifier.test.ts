@@ -10,6 +10,12 @@ import {
     type Projector,
     type DrawingSeriesState,
 } from '../src/core/drawings';
+import { createTranslator, type MessageLike } from '../src/plugin';
+
+/** Toolbar and drawing text as an English chart shows it. */
+const english = createTranslator({ locale: 'en' });
+const en = (m: MessageLike | null | undefined): string | null | undefined => (m == null ? m : english.t(m));
+
 const HR = 3600_000;
 
 /** Linear projector (x = time/HR, y = 1000 − price); `series` backs seriesInRange when given. */
@@ -47,7 +53,7 @@ describe('drawings/Magnifier', () => {
     it('appears under the Measurements section of the toolbar', () => {
         const { definition } = buildToolbar(true);
         const measure = definition.groups.find((g) => g.id === 'measurements');
-        expect(measure?.sections?.find((s) => s.label === 'Measurements')?.tools.map((t) => t.type)).toEqual([
+        expect(measure?.sections?.find((s) => en(s.label) === 'Measurements')?.tools.map((t) => t.type)).toEqual([
             'position',
             'datepricerange',
             'magnifier',
@@ -130,11 +136,11 @@ describe('drawings/Magnifier', () => {
     });
 
     it('labels timeframe values for display', () => {
-        expect(magnifierTimeframeLabel('auto')).toBe('Auto');
-        expect(magnifierTimeframeLabel('1')).toBe('1m');
-        expect(magnifierTimeframeLabel('60')).toBe('1h');
-        expect(magnifierTimeframeLabel('240')).toBe('4h');
-        expect(magnifierTimeframeLabel('D')).toBe('1D');
-        expect(magnifierTimeframeLabel('120')).toBe('2h'); // outside the option list still formats
+        expect(en(magnifierTimeframeLabel('auto'))).toBe('Auto');
+        expect(en(magnifierTimeframeLabel('1'))).toBe('1m');
+        expect(en(magnifierTimeframeLabel('60'))).toBe('1h');
+        expect(en(magnifierTimeframeLabel('240'))).toBe('4h');
+        expect(en(magnifierTimeframeLabel('D'))).toBe('1D');
+        expect(en(magnifierTimeframeLabel('120'))).toBe('2h'); // outside the option list still formats
     });
 });

@@ -1,4 +1,9 @@
-import type { VelaTheme, ThemeName } from '../../../core/options';
+import { msg, withValues } from '../../../core/i18n/message';
+import { sourceText, textOf } from '../../../core/i18n/text';
+import type { MessageArgs, MessageLike, Translator } from '../../../core/i18n/types';
+import { PRICE_STYLE_UNAVAILABLE, priceStyleMessage } from '../../../chart-types/labels';
+import type { VelaTheme, ThemeId } from '../../../core/options';
+import { registeredThemes } from '../../../core/theme';
 import type { ChartConfig } from '../core/chartConfig';
 import {
     chartType,
@@ -16,17 +21,17 @@ import {
 } from '../../../chart-types/registry';
 import { iconAt } from '../../../core/icons';
 import { TIMEZONES, tzMenuLabel, normalizeTimezone } from '../../../core/timezones';
-import { closeOpenPopovers } from '../../../ui/components/popover';
-import { closeWidthPopover } from '../../../ui/components/glyph-select';
-import { Dialog } from '../../../ui/components/dialog';
-import { overlayScrollbarCss } from '../../../ui/styles';
+import { closeOpenPopovers } from '@luxalgo/vela-ui/popover';
+import { closeWidthPopover } from '@luxalgo/vela-ui/glyph-select';
+import { Dialog } from '@luxalgo/vela-ui/dialog';
+import { overlayScrollbarCss } from '@luxalgo/vela-ui/styles';
 import {
     fieldGrid,
     fieldRow,
     fieldSection,
     fieldSeparator,
     buildFieldControl,
-} from '../../../ui/components/field';
+} from '@luxalgo/vela-ui/field';
 import { priceStyleIds, hasOwnCandlePaint } from '../core/chartConfig';
 import { chromeHint } from '../../shared/chrome-tooltip';
 import {
@@ -41,6 +46,98 @@ import {
 } from './settings-visibility';
 import type { MarkGroup } from '../../../core/marks/types';
 import { markGroupRows } from '../../../core/marks/visibility';
+import { withKitTranslator } from '@luxalgo/vela-ui/kit-text';
+import { css } from '@luxalgo/vela-ui/css';
+import { disposeWithin } from '@luxalgo/vela-ui/dispose';
+import { t } from '@luxalgo/vela-ui/t';
+
+
+const TEXT = {
+    sections: msg('chart.settings.sections', 'Sections'),
+    chartSettings: msg('chart.settings.chartSettings', 'Chart settings'),
+    resetDefaults: msg('chart.settings.resetDefaults', 'Reset defaults'),
+    symbol: msg('chart.settings.symbol', 'Symbol'),
+    chartType: msg('chart.settings.chartType', 'Chart type'),
+    type: msg('chart.settings.type', 'Type'),
+    candles: msg('chart.settings.candles', 'Candles'),
+    body: msg('chart.settings.body', 'Body'),
+    borders: msg('chart.settings.borders', 'Borders'),
+    wick: msg('chart.settings.wick', 'Wick'),
+    spacing: msg('chart.settings.spacing', 'Spacing'),
+    bars: msg('chart.settings.bars', 'Bars'),
+    colorUp: msg('chart.settings.colorUp', 'Up color'),
+    colorDown: msg('chart.settings.colorDown', 'Down color'),
+    line: msg('chart.settings.line', 'Line'),
+    color: msg('chart.settings.color', 'Color'),
+    width: msg('chart.settings.width', 'Width'),
+    area: msg('chart.settings.area', 'Area'),
+    lineColor: msg('chart.settings.lineColor', 'Line color'),
+    topFill: msg('chart.settings.topFill', 'Top fill'),
+    bottomFill: msg('chart.settings.bottomFill', 'Bottom fill'),
+    baseline: msg('chart.settings.baseline', 'Baseline'),
+    topLine: msg('chart.settings.topLine', 'Top line'),
+    bottomLine: msg('chart.settings.bottomLine', 'Bottom line'),
+    fillTopArea: msg('chart.settings.fillTopArea', 'Fill top area'),
+    fillBottomArea: msg('chart.settings.fillBottomArea', 'Fill bottom area'),
+    baseLevelPct: msg('chart.settings.baseLevelPct', 'Base level %'),
+    columns: msg('chart.settings.columns', 'Columns'),
+    animation: msg('chart.settings.animation', 'Animation'),
+    animateZoom: msg('chart.settings.animateZoom', 'Animate zoom'),
+    animateZoomHint: msg('chart.settings.animateZoomHint', 'Glide the chart to each zoom step instead of jumping.'),
+    panMomentum: msg('chart.settings.panMomentum', 'Pan momentum'),
+    panMomentumHint: msg('chart.settings.panMomentumHint', 'Keep gliding briefly after a drag release, and ease scroll-to-latest and keyboard pans.'),
+    animatePriceScale: msg('chart.settings.animatePriceScale', 'Animate price scale'),
+    animatePriceScaleHint: msg('chart.settings.animatePriceScaleHint', 'Glide the price scale to its new range while zooming or panning.'),
+    animatePriceChanges: msg('chart.settings.animatePriceChanges', 'Animate price changes'),
+    animatePriceChangesHint: msg('chart.settings.animatePriceChangesHint', 'Glide the live bar to each new price instead of snapping.'),
+    revealOnLoad: msg('chart.settings.revealOnLoad', 'Reveal on load'),
+    revealOnLoadHint: msg('chart.settings.revealOnLoadHint', 'Draw the candles in when a chart first loads. Takes effect on the next load.'),
+    timeZone: msg('chart.settings.timeZone', 'Time zone'),
+    scalesAndLines: msg('chart.settings.scalesAndLines', 'Scales and lines'),
+    priceScale: msg('chart.settings.priceScale', 'Price scale'),
+    mode: msg('chart.settings.mode', 'Mode'),
+    regular: msg('chart.settings.regular', 'Regular'),
+    percent: msg('chart.settings.percent', 'Percent'),
+    indexedTo100: msg('chart.settings.indexedTo100', 'Indexed to 100'),
+    logarithmic: msg('chart.settings.logarithmic', 'Logarithmic'),
+    invertScale: msg('chart.settings.invertScale', 'Invert scale'),
+    scalePriceOnly: msg('chart.settings.scalePriceOnly', 'Scale price chart only'),
+    freePan: msg('chart.settings.freePan', 'Free pan'),
+    lastPriceLine: msg('chart.settings.lastPriceLine', 'Last price line'),
+    lastPriceLabel: msg('chart.settings.lastPriceLabel', 'Last price label'),
+    countdownToBarClose: msg('chart.settings.countdownToBarClose', 'Countdown to bar close'),
+    axisLabels: msg('chart.settings.axisLabels', 'Axis labels'),
+    scaleBorderColor: msg('chart.settings.scaleBorderColor', 'Scale border color'),
+    crosshair: msg('chart.settings.crosshair', 'Crosshair'),
+    style: msg('chart.settings.style', 'Style'),
+    solid: msg('chart.settings.solid', 'Solid'),
+    dashed: msg('chart.settings.dashed', 'Dashed'),
+    dotted: msg('chart.settings.dotted', 'Dotted'),
+    canvas: msg('chart.settings.canvas', 'Canvas'),
+    backgroundAndText: msg('chart.settings.backgroundAndText', 'Background & text'),
+    background: msg('chart.settings.background', 'Background'),
+    textColor: msg('chart.settings.textColor', 'Text color'),
+    textSize: msg('chart.settings.textSize', 'Text size'),
+    paneSeparatorColor: msg('chart.settings.paneSeparatorColor', 'Panel separator color'),
+    grid: msg('chart.settings.grid', 'Grid'),
+    vertical: msg('chart.settings.vertical', 'Vertical'),
+    horizontal: msg('chart.settings.horizontal', 'Horizontal'),
+    margins: msg('chart.settings.margins', 'Margins'),
+    top: msg('chart.settings.top', 'Top'),
+    bottom: msg('chart.settings.bottom', 'Bottom'),
+    right: msg('chart.settings.right', 'Right'),
+    theme: msg('chart.settings.theme', 'Theme'),
+    events: msg('chart.settings.events', 'Events'),
+    visibleEvents: msg('chart.settings.visibleEvents', 'Visible events'),
+};
+
+/** Built-in styles drawn with another style's settings: Heikin Ashi is candle-drawn, and
+ *  the line with markers and the step line are the line drawn two other ways. */
+const SHARED_STYLE_GROUP: ReadonlyMap<string, string> = new Map([
+    ['heikinashi', 'candles'],
+    ['linemarkers', 'line'],
+    ['stepline', 'line'],
+]);
 
 /** A nested partial of `ChartConfig` — what a single control edit emits. */
 type ConfigPatch = Record<string, unknown>;
@@ -63,14 +160,14 @@ type ConfigPatch = Record<string, unknown>;
  *  `id` is the row's stable visibility id (defaults to the label's slug) — hiding a
  *  heading's id hides its whole group (see `settings-visibility.ts`). */
 export type HostSettingsRow =
-    | { kind: 'heading'; label: string; id?: string }
-    | { kind: 'toggle'; label: string; get: () => boolean; set: (v: boolean) => void; id?: string }
-    | { kind: 'select'; label: string; options: readonly SettingsSelectOption[]; get: () => string; set: (v: string) => void; id?: string }
-    | { kind: 'color'; label: string; get: () => string; set: (v: string) => void; id?: string };
+    | { kind: 'heading'; label: MessageLike; id?: string }
+    | { kind: 'toggle'; label: MessageLike; get: () => boolean; set: (v: boolean) => void; id?: string }
+    | { kind: 'select'; label: MessageLike; options: readonly SettingsSelectOption[]; get: () => string; set: (v: string) => void; id?: string }
+    | { kind: 'color'; label: MessageLike; get: () => string; set: (v: string) => void; id?: string };
 
 /** A host-contributed settings tab (see `RendererControl.setSettingsSections`). */
 export interface HostSettingsSection {
-    title: string;
+    title: MessageLike;
     rows: readonly HostSettingsRow[];
     /** Tab position: own tab after Symbol (default), end of the rail, or rows INSIDE
      *  the Symbol tab itself (`'symbol'` — e.g. the widget's watermark toggle). */
@@ -79,18 +176,23 @@ export interface HostSettingsSection {
     id?: string;
 }
 
-const BUILTIN_STYLE_LABELS: Record<string, string> = {
-    candles: 'Candles',
-    bars: 'Bars',
-    line: 'Line',
-    area: 'Area',
-    baseline: 'Baseline',
+
+const TEXT_THEME = {
+    colorTheme: msg('chart.settings.colorTheme', 'Color theme'),
+    dark: msg('chart.settings.themeDark', 'Dark'),
+    light: msg('chart.settings.themeLight', 'Light'),
 };
 
-/** Display label for a price style: registry label, built-in name, else the raw id. */
-function styleLabel(id: string): string {
-    return chartType(id)?.label ?? BUILTIN_STYLE_LABELS[id] ?? id;
-}
+/** Units after a number input. */
+const TEXT_UNITS = {
+    bars: msg('chart.settings.unitBars', '{count, plural, one {bar} other {bars}}'),
+};
+
+/** The instance strip's buttons; `{name}` is the instance's label. */
+const TEXT_STRIP = {
+    remove: msg('chart.settings.removeInstance', 'Remove {name}'),
+    add: msg('chart.settings.addInstance', 'Add {name}'),
+};
 
 const SD_STYLE_ID = 'vela-settings-controls';
 const SD_STYLE_REV = '6';
@@ -112,34 +214,35 @@ function ensureControlStyles(): void {
     const st = existing ?? document.createElement('style');
     st.id = SD_STYLE_ID;
     st.dataset.rev = SD_STYLE_REV;
-    st.textContent = `
+    st.textContent = css`@layer vela.chrome {
+
 ${overlayScrollbarCss('.vela-sd-pane')}
 /* Tab rail / footer button / header close: base styles live HERE, not inline on the
    elements — inline declarations always beat stylesheet :hover rules, which is exactly
    what killed these hovers before. Active tab state is the .on class,
    hover fills follow the app convention (--vela-hover + --vela-fg-bright, fast transition). */
-.vela-sd-tab{text-align:left;padding:9px 12px;background:transparent;border:none;border-radius:var(--vela-radius-md);color:var(--vela-fg-muted);font-weight:600;font-size:13px;font-family:inherit;cursor:pointer;transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
-.vela-sd-tab:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
-.vela-sd-tab.on{background:var(--vela-active);color:var(--vela-fg-bright);}
-.vela-sd-btn{height:30px;padding:0 14px;font-size:var(--vela-font-size-md);color:var(--vela-fg);background:var(--vela-surface-sunken);border:1px solid var(--vela-border);border-radius:var(--vela-radius-md);cursor:pointer;font-family:inherit;transition:background var(--vela-dur-fast) ease,border-color var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
-.vela-sd-btn:hover{background:var(--vela-hover);border-color:var(--vela-border-strong);color:var(--vela-fg-bright);}
-.vela-sd-close{cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:none;color:var(--vela-fg-muted);line-height:0;width:30px;height:30px;border-radius:var(--vela-radius-sm);transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
-.vela-sd-close:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
+.vela-sd-tab{text-align:start;padding:9px 12px;background:transparent;border:none;border-radius:${t.radius.md};color:${t.fg.muted};font-weight:600;font-size:13px;font-family:inherit;cursor:pointer;transition:background ${t.dur.fast} ease,color ${t.dur.fast} ease;}
+.vela-sd-tab:hover{background:${t.hover};color:${t.fg.bright};}
+.vela-sd-tab.on{background:${t.active};color:${t.fg.bright};}
+.vela-sd-btn{height:30px;padding:0 14px;font-size:${t.fontSize.md};color:${t.fg};background:${t.surface.sunken};border:1px solid ${t.border};border-radius:${t.radius.md};cursor:pointer;font-family:inherit;transition:background ${t.dur.fast} ease,border-color ${t.dur.fast} ease,color ${t.dur.fast} ease;}
+.vela-sd-btn:hover{background:${t.hover};border-color:${t.border.strong};color:${t.fg.bright};}
+.vela-sd-close{cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:none;color:${t.fg.muted};line-height:0;width:30px;height:30px;border-radius:${t.radius.sm};transition:background ${t.dur.fast} ease,color ${t.dur.fast} ease;}
+.vela-sd-close:hover{background:${t.hover};color:${t.fg.bright};}
 /* Rows/blocks gated away by chart-type conditions, TOC filters, or the instance strip.
    !important: the pane grid rewrites inline display ('contents') AFTER the initial
    visibility pass, so a class must win. */
 .vela-sd-hide{display:none !important;}
 /* Indented rail sub-entry (a chart-type section's subsection tab). */
-.vela-sd-tab-sub{padding-left:28px;font-weight:600;font-size:12px;}
+.vela-sd-tab-sub{padding-inline-start:28px;font-weight:600;font-size:12px;}
 /* Instance strip: a tab per present instance (label, ✕ on the active removable one)
    and a dashed + that turns on the next absent instance. The rule under it separates
    the strip from the instance's TOC + rows area. */
-.vela-sd-itabs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:14px 0 0;padding-bottom:12px;border-bottom:1px solid var(--vela-border);}
-.vela-sd-itab{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 11px;background:transparent;border:1px solid var(--vela-border);border-radius:var(--vela-radius-md);color:var(--vela-fg-muted);font-family:inherit;font-size:var(--vela-font-size-md);font-weight:600;cursor:pointer;transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease,border-color var(--vela-dur-fast) ease;}
-.vela-sd-itab:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
-.vela-sd-itab.on{background:var(--vela-active);color:var(--vela-fg-bright);border-color:var(--vela-border-strong);}
-.vela-sd-ix{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-right:-4px;border-radius:var(--vela-radius-sm);color:var(--vela-fg-muted);font-size:10px;line-height:1;}
-.vela-sd-ix:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
+.vela-sd-itabs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:14px 0 0;padding-bottom:12px;border-bottom:1px solid ${t.border};}
+.vela-sd-itab{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 11px;background:transparent;border:1px solid ${t.border};border-radius:${t.radius.md};color:${t.fg.muted};font-family:inherit;font-size:${t.fontSize.md};font-weight:600;cursor:pointer;transition:background ${t.dur.fast} ease,color ${t.dur.fast} ease,border-color ${t.dur.fast} ease;}
+.vela-sd-itab:hover{background:${t.hover};color:${t.fg.bright};}
+.vela-sd-itab.on{background:${t.active};color:${t.fg.bright};border-color:${t.border.strong};}
+.vela-sd-ix{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-inline-end:-4px;border-radius:${t.radius.sm};color:${t.fg.muted};font-size:10px;line-height:1;}
+.vela-sd-ix:hover{background:${t.hover};color:${t.fg.bright};}
 .vela-sd-itab-add{border-style:dashed;min-width:30px;justify-content:center;padding:0;}
 /* Structured pane: group TOC column + rows column, TOP-ALIGNED (the shared padding-top
    lives on the wrap, never on one column). The TOC sticks while the pane scrolls; the
@@ -147,11 +250,11 @@ ${overlayScrollbarCss('.vela-sd-pane')}
    group gates out the TOC hides and .no-toc drops the rule with it. */
 .vela-sd-struct{display:flex;align-items:flex-start;padding-top:14px;}
 .vela-sd-toc{position:sticky;top:0;flex:0 0 auto;min-width:104px;display:flex;flex-direction:column;gap:2px;padding:2px 14px 0 0;}
-.vela-sd-struct>[data-sd-rows-host]{border-left:1px solid var(--vela-border);padding-left:18px;}
-.vela-sd-struct.no-toc>[data-sd-rows-host]{border-left:none;padding-left:0;}
-.vela-sd-toc-btn{text-align:left;padding:6px 10px;background:transparent;border:none;border-radius:var(--vela-radius-sm);color:var(--vela-fg-muted);font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;transition:background var(--vela-dur-fast) ease,color var(--vela-dur-fast) ease;}
-.vela-sd-toc-btn:hover{background:var(--vela-hover);color:var(--vela-fg-bright);}
-.vela-sd-toc-btn.on{background:var(--vela-active);color:var(--vela-fg-bright);}
+.vela-sd-struct>[data-sd-rows-host]{border-inline-start:1px solid ${t.border};padding-inline-start:18px;}
+.vela-sd-struct.no-toc>[data-sd-rows-host]{border-inline-start:none;padding-inline-start:0;}
+.vela-sd-toc-btn{text-align:start;padding:6px 10px;background:transparent;border:none;border-radius:${t.radius.sm};color:${t.fg.muted};font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;transition:background ${t.dur.fast} ease,color ${t.dur.fast} ease;}
+.vela-sd-toc-btn:hover{background:${t.hover};color:${t.fg.bright};}
+.vela-sd-toc-btn.on{background:${t.active};color:${t.fg.bright};}
 /* Soft-disable: a subsection's enableKey is off — rows stay visible (browseable) but
    muted and non-interactive. Applied to each row's children so it survives display:contents;
    !important beats the inline opacity on labels. */
@@ -159,23 +262,23 @@ ${overlayScrollbarCss('.vela-sd-pane')}
 /* A mark group nested under a parent group on the Events tab: indented one step per level
    (--vela-sd-depth). The indent rides the first child (the switch) as a MARGIN — padding
    would push the switch's own tick out of its box. */
-.vela-sd-nested>*:first-child{margin-left:calc(var(--vela-sd-depth,1)*24px);}
+.vela-sd-nested>*:first-child{margin-inline-start:calc(var(--vela-sd-depth,1)*24px);}
 /* ── mobile presentation (.vela-sd-mobile on the scrim; structural sizes are inline in open()) ──
    The tab rail becomes a burger-opened overlay sidebar; the group TOC becomes a sticky
    row of horizontally scrollable tabs; the instance strip scrolls instead of wrapping;
    controls grow to touch size and labels may wrap (the grid gives them a flexible track). */
-.vela-sd-mobile .vela-sd-burger{cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:none;color:var(--vela-fg);line-height:0;width:36px;height:36px;border-radius:var(--vela-radius-sm);margin-right:2px;}
-.vela-sd-mobile .vela-sd-burger:active{background:var(--vela-hover);}
-.vela-sd-mobile .vela-sd-railscrim{position:absolute;inset:0;z-index:2;background:var(--vela-backdrop);display:none;}
+.vela-sd-mobile .vela-sd-burger{cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:none;color:${t.fg};line-height:0;width:36px;height:36px;border-radius:${t.radius.sm};margin-inline-end:2px;}
+.vela-sd-mobile .vela-sd-burger:active{background:${t.hover};}
+.vela-sd-mobile .vela-sd-railscrim{position:absolute;inset:0;z-index:2;background:${t.backdrop};display:none;}
 .vela-sd-mobile .vela-sd-railscrim.open{display:block;}
-.vela-sd-mobile .vela-sd-rail{position:absolute;left:0;top:0;bottom:0;z-index:3;width:min(240px,80%);box-sizing:border-box;background:var(--vela-surface);border-right:1px solid var(--vela-border);box-shadow:var(--vela-shadow-dialog);transform:translateX(-105%);transition:transform var(--vela-dur-med) var(--vela-ease);}
+.vela-sd-mobile .vela-sd-rail{position:absolute;inset-inline-start:0;top:0;bottom:0;z-index:3;width:min(240px,80%);box-sizing:border-box;background:${t.surface};border-inline-end:1px solid ${t.border};box-shadow:${t.shadow.dialog};transform:translateX(-105%);transition:transform ${t.dur.med} ${t.ease};}
 .vela-sd-mobile .vela-sd-rail.open{transform:translateX(0);}
 .vela-sd-mobile .vela-sd-tab{padding:12px;}
 .vela-sd-mobile .vela-sd-struct{flex-direction:column;padding-top:8px;}
-.vela-sd-mobile .vela-sd-toc{position:sticky;top:0;z-index:1;background:var(--vela-surface);flex-direction:row;overflow-x:auto;scrollbar-width:none;min-width:0;width:100%;box-sizing:border-box;gap:4px;padding:2px 0 8px;}
+.vela-sd-mobile .vela-sd-toc{position:sticky;top:0;z-index:1;background:${t.surface};flex-direction:row;overflow-x:auto;scrollbar-width:none;min-width:0;width:100%;box-sizing:border-box;gap:4px;padding:2px 0 8px;}
 .vela-sd-mobile .vela-sd-toc::-webkit-scrollbar{display:none;}
 .vela-sd-mobile .vela-sd-toc-btn{flex:none;padding:8px 12px;font-size:13px;}
-.vela-sd-mobile .vela-sd-struct>[data-sd-rows-host]{border-left:none;padding-left:0;width:100%;}
+.vela-sd-mobile .vela-sd-struct>[data-sd-rows-host]{border-inline-start:none;padding-inline-start:0;width:100%;}
 .vela-sd-mobile .vela-sd-itabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;}
 .vela-sd-mobile .vela-sd-itabs::-webkit-scrollbar{display:none;}
 .vela-sd-mobile .vela-sd-itab{height:36px;flex:none;}
@@ -191,7 +294,8 @@ ${overlayScrollbarCss('.vela-sd-pane')}
    alignment device; on mobile the trigger hugs its value instead (the grid's control
    column is max-content), capped so a long option still ellipsizes before the label. */
 .vela-sd-mobile .vela-select-trigger .vela-select-label{white-space:nowrap !important;}
-.vela-sd-mobile .vela-select:not([data-fill]){width:auto;min-width:100px;max-width:min(220px,55vw);}`;
+.vela-sd-mobile .vela-select:not([data-fill]){width:auto;min-width:100px;max-width:min(220px,55vw);}
+}`;
     if (!existing) document.head.appendChild(st);
 }
 
@@ -202,6 +306,9 @@ export class SettingsDialog {
     private onImport: ((json: unknown) => void) | null = null;
     private onReset: (() => void) | null = null;
     private config: ChartConfig | null = null;
+    /** The style the chart draws and the styles its symbol rules out, read at every build
+     *  (see {@link setPriceStyleState}). Absent: the config's style, nothing ruled out. */
+    private priceStyleState: (() => { shown: string; unavailable: readonly string[] }) | null = null;
     private syncTypeTabs: ((style: string) => void) | null = null;
     private hostSections: HostSettingsSection[] = [];
     /** The timeline-mark groups (defined + named by marks) — one checkbox each on the Events tab. */
@@ -212,7 +319,7 @@ export class SettingsDialog {
     /** The Canvas → Theme row: current app theme + where a pick is raised. The row is a
      *  host callback, NOT a config patch — the app theme stays out of the persisted
      *  `ChartConfig`, so exported templates never carry it. */
-    private themeControl: { current: ThemeName; onSelect: (name: ThemeName) => void } | null = null;
+    private themeControl: { current: ThemeId; onSelect: (id: ThemeId) => void } | null = null;
     /** The built tabs, by title — how `showSection` reaches a pane while the dialog is open. */
     private tabs: Array<{ title: string; show: () => void }> = [];
     private hintTips: Array<() => void> = []; // ⓘ tooltip disposers of the open build (see hint)
@@ -251,8 +358,14 @@ export class SettingsDialog {
         if (!same) this.reopenIfLive();
     }
 
+    /** Where the Type row reads the style the chart DRAWS (its value — a fallback while the
+     *  symbol rules the chosen one out) and the styles to grey out (not selectable). */
+    setPriceStyleState(read: () => { shown: string; unavailable: readonly string[] }): void {
+        this.priceStyleState = read;
+    }
+
     /** Configure the Canvas → Theme row (see {@link themeControl}); null hides the row. */
-    setThemeControl(current: ThemeName, onSelect: (name: ThemeName) => void): void {
+    setThemeControl(current: ThemeId, onSelect: (id: ThemeId) => void): void {
         this.themeControl = { current, onSelect };
     }
 
@@ -266,8 +379,20 @@ export class SettingsDialog {
     constructor(
         private readonly container: HTMLElement,
         private theme: VelaTheme,
+        /** The chart's translator (absent: English). */
+        private readonly i18n: (() => Translator) | null = null,
     ) {
         if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
+    }
+
+    /** Display text in the chart's language. */
+    private t(m: MessageLike, values?: MessageArgs): string {
+        return textOf(this.i18n?.() ?? null, m, values);
+    }
+
+    /** The chart's language changed: an open dialog rebuilds in it. */
+    relocalize(): void {
+        this.reopenIfLive();
     }
 
     setTheme(theme: VelaTheme): void {
@@ -333,12 +458,14 @@ export class SettingsDialog {
             burger.type = 'button';
             burger.className = 'vela-sd-burger';
             burger.innerHTML = iconAt('burger', 16);
-            burger.title = 'Sections';
+            burger.title = this.t(TEXT.sections);
             burger.addEventListener('click', () => this.toggleRail?.());
         }
+        const i18n = this.i18n?.();
         const ui = new Dialog({
             host: this.container,
-            title: 'Chart settings',
+            title: this.t(TEXT.chartSettings),
+            ...(i18n ? { i18n } : {}),
             // Non-modal: a live-edit dialog must leave the page interactive — a modal
             // machine locks pointer events on the whole body, killing the chart, the
             // legend, and the body-portaled popovers (color picker, select lists).
@@ -347,14 +474,14 @@ export class SettingsDialog {
             align: 'top',
             draggable: !mobile,
             flush: true,
-            className: 'vela-dialog--settings',
+            variant: 'settings',
             headerStart: burger,
             closeOnBackdrop: true,
             footer: (foot) => {
                 foot.style.cssText = `padding:10px 14px;display:flex;align-items:center;justify-content:flex-start;gap:8px;`;
                 const resetBtn = document.createElement('button');
                 resetBtn.type = 'button';
-                resetBtn.textContent = 'Reset defaults';
+                resetBtn.textContent = this.t(TEXT.resetDefaults);
                 resetBtn.className = 'vela-sd-btn';
                 resetBtn.addEventListener('click', () => this.onReset?.());
                 foot.appendChild(resetBtn);
@@ -369,7 +496,8 @@ export class SettingsDialog {
 
         this.root = ui.positioner;
         this.ui = ui;
-        const panes = this.buildContent(ui, config, section, mobile);
+        // Kit controls built here (steppers, color pickers) speak the chart's language too.
+        const panes = withKitTranslator(this.i18n?.(), () => this.buildContent(ui, config, section, mobile));
         ui.show();
         this.layoutPanes(panes);
     }
@@ -388,8 +516,9 @@ export class SettingsDialog {
         for (const dispose of this.hintTips) dispose();
         this.hintTips = [];
         this.config = config;
+        disposeWithin(ui.body);
         ui.body.replaceChildren();
-        this.layoutPanes(this.buildContent(ui, config, this.activeSection ?? undefined, this.mobileLayout));
+        this.layoutPanes(withKitTranslator(this.i18n?.(), () => this.buildContent(ui, config, this.activeSection ?? undefined, this.mobileLayout)));
     }
 
     /** Structured chart-type panes (instance strip / group TOC) own their layout and
@@ -425,11 +554,14 @@ export class SettingsDialog {
         };
 
         // ══ SYMBOL — chart type + per-style cosmetics + time zone (the reference tab) ══
-        body.append(sid(this.section('Symbol'), 'symbol'));
-        body.append(sid(this.sectionTitle('Chart type'), 'symbol.type'));
+        body.append(sid(this.section(TEXT.symbol), 'symbol'));
+        body.append(sid(this.sectionTitle(TEXT.chartType), 'symbol.type'));
+        const styles = this.priceStyleState?.() ?? { shown: config.series.style, unavailable: [] };
+        const shownStyle = styles.shown;
+        const unavailable = new Set(styles.unavailable);
         const groups: Partial<Record<string, HTMLElement>> = {};
         const showActive = (style: string): void => {
-            const active = style === 'heikinashi' ? 'candles' : style; // heikin-ashi is candle-drawn
+            const active = SHARED_STYLE_GROUP.get(style) ?? style;
             // Gate via the !important class, not inline display: the field-grid pass
             // rewrites every group's display to 'contents' AFTER this visibility pass.
             for (const key of priceStyleIds()) {
@@ -437,71 +569,79 @@ export class SettingsDialog {
             }
         };
         body.append(
-            sid(this.selectRowLabeled('Type', config.series.style, priceStyleIds().map((id) => [id, styleLabel(id)] as const), (v) => {
+            sid(this.selectRowLabeled(TEXT.type, shownStyle, priceStyleIds().map((id) => [id, priceStyleMessage(id)] as const), (v) => {
                 this.emit({ series: { style: v } });
                 showActive(v);
                 this.syncTypeTabs?.(v);
-            }), 'symbol.type'),
+            }, { ids: unavailable, title: PRICE_STYLE_UNAVAILABLE }), 'symbol.type'),
         );
         // Candles — the reference compact rows: one toggle + an up/down swatch pair each.
         const candles = sid(this.group(), 'symbol.style.candles');
-        candles.append(this.sectionTitle('Candles'));
-        candles.append(sid(this.toggleRow('Body', config.candles.bodyVisible, (v) => this.emit({ candles: { bodyVisible: v } }), [
+        candles.append(this.sectionTitle(TEXT.candles));
+        candles.append(sid(this.toggleRow(TEXT.body, config.candles.bodyVisible, (v) => this.emit({ candles: { bodyVisible: v } }), [
             this.swatch(config.candles.upColor, (v) => this.emit({ candles: { upColor: v } })),
             this.swatch(config.candles.downColor, (v) => this.emit({ candles: { downColor: v } })),
         ]), 'symbol.style.candles.body'));
-        candles.append(sid(this.toggleRow('Borders', config.candles.borderVisible, (v) => this.emit({ candles: { borderVisible: v } }), [
+        candles.append(sid(this.toggleRow(TEXT.borders, config.candles.borderVisible, (v) => this.emit({ candles: { borderVisible: v } }), [
             this.swatch(config.candles.borderUpColor, (v) => this.emit({ candles: { borderUpColor: v } })),
             this.swatch(config.candles.borderDownColor, (v) => this.emit({ candles: { borderDownColor: v } })),
         ]), 'symbol.style.candles.borders'));
-        candles.append(sid(this.toggleRow('Wick', config.candles.wickVisible, (v) => this.emit({ candles: { wickVisible: v } }), [
+        candles.append(sid(this.toggleRow(TEXT.wick, config.candles.wickVisible, (v) => this.emit({ candles: { wickVisible: v } }), [
             this.swatch(config.candles.wickUpColor, (v) => this.emit({ candles: { wickUpColor: v } })),
             this.swatch(config.candles.wickDownColor, (v) => this.emit({ candles: { wickDownColor: v } })),
         ]), 'symbol.style.candles.wick'));
-        candles.append(sid(this.numberRow('Spacing', config.series.spacing, 0.1, 10, 0.1, (v) => this.emit({ series: { spacing: v } })), 'symbol.style.candles.spacing'));
+        candles.append(sid(this.numberRow(TEXT.spacing, config.series.spacing, 0.1, 10, 0.1, (v) => this.emit({ series: { spacing: v } })), 'symbol.style.candles.spacing'));
         groups.candles = candles;
         body.append(candles);
 
         const bars = sid(this.group(), 'symbol.style.bars');
-        bars.append(this.sectionTitle('Bars'));
-        bars.append(sid(this.colorRow('Color Up', config.bars.upColor, (v) => this.emit({ bars: { upColor: v } })), 'symbol.style.bars.up-color'));
-        bars.append(sid(this.colorRow('Color Down', config.bars.downColor, (v) => this.emit({ bars: { downColor: v } })), 'symbol.style.bars.down-color'));
-        bars.append(sid(this.numberRow('Spacing', config.series.spacing, 0.1, 10, 0.1, (v) => this.emit({ series: { spacing: v } })), 'symbol.style.bars.spacing'));
+        bars.append(this.sectionTitle(TEXT.bars));
+        bars.append(sid(this.colorRow(TEXT.colorUp, config.bars.upColor, (v) => this.emit({ bars: { upColor: v } })), 'symbol.style.bars.up-color'));
+        bars.append(sid(this.colorRow(TEXT.colorDown, config.bars.downColor, (v) => this.emit({ bars: { downColor: v } })), 'symbol.style.bars.down-color'));
+        bars.append(sid(this.numberRow(TEXT.spacing, config.series.spacing, 0.1, 10, 0.1, (v) => this.emit({ series: { spacing: v } })), 'symbol.style.bars.spacing'));
         groups.bars = bars;
         body.append(bars);
 
         const line = sid(this.group(), 'symbol.style.line');
-        line.append(this.sectionTitle('Line'));
-        line.append(sid(this.colorRow('Color', config.line.color, (v) => this.emit({ line: { color: v } })), 'symbol.style.line.color'));
-        line.append(sid(this.numberRow('Width', config.line.width, 1, 10, 1, (v) => this.emit({ line: { width: v } })), 'symbol.style.line.width'));
+        line.append(this.sectionTitle(TEXT.line));
+        line.append(sid(this.colorRow(TEXT.color, config.line.color, (v) => this.emit({ line: { color: v } })), 'symbol.style.line.color'));
+        line.append(sid(this.numberRow(TEXT.width, config.line.width, 1, 10, 1, (v) => this.emit({ line: { width: v } })), 'symbol.style.line.width'));
         groups.line = line;
         body.append(line);
 
         const area = sid(this.group(), 'symbol.style.area');
-        area.append(this.sectionTitle('Area'));
-        area.append(sid(this.colorRow('Line color', config.area.lineColor, (v) => this.emit({ area: { lineColor: v } })), 'symbol.style.area.line-color'));
-        area.append(sid(this.numberRow('Width', config.area.width, 1, 10, 1, (v) => this.emit({ area: { width: v } })), 'symbol.style.area.width'));
-        area.append(sid(this.colorRow('Top fill', config.area.topColor, (v) => this.emit({ area: { topColor: v } })), 'symbol.style.area.top-fill'));
-        area.append(sid(this.colorRow('Bottom fill', config.area.bottomColor, (v) => this.emit({ area: { bottomColor: v } })), 'symbol.style.area.bottom-fill'));
+        area.append(this.sectionTitle(TEXT.area));
+        area.append(sid(this.colorRow(TEXT.lineColor, config.area.lineColor, (v) => this.emit({ area: { lineColor: v } })), 'symbol.style.area.line-color'));
+        area.append(sid(this.numberRow(TEXT.width, config.area.width, 1, 10, 1, (v) => this.emit({ area: { width: v } })), 'symbol.style.area.width'));
+        area.append(sid(this.colorRow(TEXT.topFill, config.area.topColor, (v) => this.emit({ area: { topColor: v } })), 'symbol.style.area.top-fill'));
+        area.append(sid(this.colorRow(TEXT.bottomFill, config.area.bottomColor, (v) => this.emit({ area: { bottomColor: v } })), 'symbol.style.area.bottom-fill'));
         groups.area = area;
         body.append(area);
 
         const baseline = sid(this.group(), 'symbol.style.baseline');
-        baseline.append(this.sectionTitle('Baseline'));
-        baseline.append(sid(this.rowWith('Top line', [this.swatch(config.baseline.topLineColor, (v) => this.emit({ baseline: { topLineColor: v } }))]), 'symbol.style.baseline.top-line'));
-        baseline.append(sid(this.rowWith('Bottom line', [this.swatch(config.baseline.bottomLineColor, (v) => this.emit({ baseline: { bottomLineColor: v } }))]), 'symbol.style.baseline.bottom-line'));
-        baseline.append(sid(this.rowWith('Fill top area', [
+        baseline.append(this.sectionTitle(TEXT.baseline));
+        baseline.append(sid(this.rowWith(TEXT.topLine, [this.swatch(config.baseline.topLineColor, (v) => this.emit({ baseline: { topLineColor: v } }))]), 'symbol.style.baseline.top-line'));
+        baseline.append(sid(this.rowWith(TEXT.bottomLine, [this.swatch(config.baseline.bottomLineColor, (v) => this.emit({ baseline: { bottomLineColor: v } }))]), 'symbol.style.baseline.bottom-line'));
+        baseline.append(sid(this.rowWith(TEXT.fillTopArea, [
             this.swatch(config.baseline.topFillColor, (v) => this.emit({ baseline: { topFillColor: v } })),
             this.swatch(config.baseline.topFillColor2, (v) => this.emit({ baseline: { topFillColor2: v } })),
         ]), 'symbol.style.baseline.fill-top'));
-        baseline.append(sid(this.rowWith('Fill bottom area', [
+        baseline.append(sid(this.rowWith(TEXT.fillBottomArea, [
             this.swatch(config.baseline.bottomFillColor2, (v) => this.emit({ baseline: { bottomFillColor2: v } })),
             this.swatch(config.baseline.bottomFillColor, (v) => this.emit({ baseline: { bottomFillColor: v } })),
         ]), 'symbol.style.baseline.fill-bottom'));
-        baseline.append(sid(this.numberRow('Base level %', config.baseline.baselineLevel, 0, 100, 1, (v) => this.emit({ baseline: { baselineLevel: v } })), 'symbol.style.baseline.base-level'));
-        baseline.append(sid(this.numberRow('Width', config.baseline.width, 1, 10, 1, (v) => this.emit({ baseline: { width: v } })), 'symbol.style.baseline.width'));
+        baseline.append(sid(this.numberRow(TEXT.baseLevelPct, config.baseline.baselineLevel, 0, 100, 1, (v) => this.emit({ baseline: { baselineLevel: v } })), 'symbol.style.baseline.base-level'));
+        baseline.append(sid(this.numberRow(TEXT.width, config.baseline.width, 1, 10, 1, (v) => this.emit({ baseline: { width: v } })), 'symbol.style.baseline.width'));
         groups.baseline = baseline;
         body.append(baseline);
+
+        const columns = sid(this.group(), 'symbol.style.columns');
+        columns.append(this.sectionTitle(TEXT.columns));
+        columns.append(sid(this.colorRow(TEXT.colorUp, config.columns.upColor, (v) => this.emit({ columns: { upColor: v } })), 'symbol.style.columns.up-color'));
+        columns.append(sid(this.colorRow(TEXT.colorDown, config.columns.downColor, (v) => this.emit({ columns: { downColor: v } })), 'symbol.style.columns.down-color'));
+        columns.append(sid(this.numberRow(TEXT.spacing, config.series.spacing, 0.1, 10, 0.1, (v) => this.emit({ series: { spacing: v } })), 'symbol.style.columns.spacing'));
+        groups.columns = columns;
+        body.append(columns);
 
         // Candle-based PLUGIN styles (an order-flow type keeps candles under its layer):
         // the same candle rows, but stored in the type's OWN bag (chartTypes.<id>.candle*)
@@ -513,61 +653,61 @@ export class SettingsDialog {
             const colorOf = (key: string, shared: string): string => (typeof bag[key] === 'string' && bag[key] !== '' ? bag[key] as string : shared);
             const boolOf = (key: string, shared: boolean): boolean => (typeof bag[key] === 'boolean' ? bag[key] as boolean : shared);
             const g = sid(this.group(), `symbol.style.${def.id}`);
-            g.append(this.sectionTitle('Candles'));
-            g.append(sid(this.toggleRow('Body', boolOf('candleBodyVisible', config.candles.bodyVisible), (v) => this.emitType(def.id, 'candleBodyVisible', v), [
+            g.append(this.sectionTitle(TEXT.candles));
+            g.append(sid(this.toggleRow(TEXT.body, boolOf('candleBodyVisible', config.candles.bodyVisible), (v) => this.emitType(def.id, 'candleBodyVisible', v), [
                 this.swatch(colorOf('candleUpColor', config.candles.upColor), (v) => this.emitType(def.id, 'candleUpColor', v)),
                 this.swatch(colorOf('candleDownColor', config.candles.downColor), (v) => this.emitType(def.id, 'candleDownColor', v)),
             ]), `symbol.style.${def.id}.body`));
-            g.append(sid(this.toggleRow('Borders', boolOf('candleBorderVisible', config.candles.borderVisible), (v) => this.emitType(def.id, 'candleBorderVisible', v), [
+            g.append(sid(this.toggleRow(TEXT.borders, boolOf('candleBorderVisible', config.candles.borderVisible), (v) => this.emitType(def.id, 'candleBorderVisible', v), [
                 this.swatch(colorOf('candleBorderUpColor', config.candles.borderUpColor), (v) => this.emitType(def.id, 'candleBorderUpColor', v)),
                 this.swatch(colorOf('candleBorderDownColor', config.candles.borderDownColor), (v) => this.emitType(def.id, 'candleBorderDownColor', v)),
             ]), `symbol.style.${def.id}.borders`));
-            g.append(sid(this.toggleRow('Wick', boolOf('candleWickVisible', config.candles.wickVisible), (v) => this.emitType(def.id, 'candleWickVisible', v), [
+            g.append(sid(this.toggleRow(TEXT.wick, boolOf('candleWickVisible', config.candles.wickVisible), (v) => this.emitType(def.id, 'candleWickVisible', v), [
                 this.swatch(colorOf('candleWickUpColor', config.candles.wickUpColor), (v) => this.emitType(def.id, 'candleWickUpColor', v)),
                 this.swatch(colorOf('candleWickDownColor', config.candles.wickDownColor), (v) => this.emitType(def.id, 'candleWickDownColor', v)),
             ]), `symbol.style.${def.id}.wick`));
-            g.append(sid(this.numberRow('Spacing', config.series.spacing, 0.1, 10, 0.1, (v) => this.emit({ series: { spacing: v } })), `symbol.style.${def.id}.spacing`));
+            g.append(sid(this.numberRow(TEXT.spacing, config.series.spacing, 0.1, 10, 0.1, (v) => this.emit({ series: { spacing: v } })), `symbol.style.${def.id}.spacing`));
             groups[def.id] = g;
             body.append(g);
         }
-        showActive(config.series.style);
+        showActive(shownStyle);
 
         // Style-independent (every motion applies to every price style), so it gets its own
         // group. On/off switches only — the durations stay the host's.
-        body.append(sid(this.sectionTitle('Animation'), 'symbol.animation'));
+        body.append(sid(this.sectionTitle(TEXT.animation), 'symbol.animation'));
         body.append(sid(this.boolRow(
-            'Animate zoom',
+            TEXT.animateZoom,
             config.animations.zoom,
             (v) => this.emit({ animations: { zoom: v } }),
-            this.hint('Glide the chart to each zoom step instead of jumping.'),
+            this.hint(TEXT.animateZoomHint),
         ), 'symbol.animation.zoom'));
         body.append(sid(this.boolRow(
-            'Pan momentum',
+            TEXT.panMomentum,
             config.animations.pan,
             (v) => this.emit({ animations: { pan: v } }),
-            this.hint('Keep gliding briefly after a drag release, and ease scroll-to-latest and keyboard pans.'),
+            this.hint(TEXT.panMomentumHint),
         ), 'symbol.animation.pan'));
         body.append(sid(this.boolRow(
-            'Animate price scale',
+            TEXT.animatePriceScale,
             config.animations.autoscale,
             (v) => this.emit({ animations: { autoscale: v } }),
-            this.hint('Glide the price scale to its new range while zooming or panning.'),
+            this.hint(TEXT.animatePriceScaleHint),
         ), 'symbol.animation.autoscale'));
         body.append(sid(this.boolRow(
-            'Animate price changes',
+            TEXT.animatePriceChanges,
             config.priceScale.animateLastPrice,
             (v) => this.emit({ priceScale: { animateLastPrice: v } }),
-            this.hint('Glide the live bar to each new price instead of snapping.'),
+            this.hint(TEXT.animatePriceChangesHint),
         ), 'symbol.animation.price-changes'));
         body.append(sid(this.boolRow(
-            'Reveal on load',
+            TEXT.revealOnLoad,
             config.animations.intro,
             (v) => this.emit({ animations: { intro: v } }),
-            this.hint('Draw the candles in when a chart first loads. Takes effect on the next load.'),
+            this.hint(TEXT.revealOnLoadHint),
         ), 'symbol.animation.intro'));
 
-        body.append(sid(this.sectionTitle('Time zone'), 'symbol.timezone'));
-        body.append(sid(this.selectRowLabeled('Time zone', normalizeTimezone(config.timeScale.timezone), timezoneOptions(config.timeScale.timezone), (v) => this.emit({ timeScale: { timezone: v } })), 'symbol.timezone'));
+        body.append(sid(this.sectionTitle(TEXT.timeZone), 'symbol.timezone'));
+        body.append(sid(this.selectRowLabeled(TEXT.timeZone, normalizeTimezone(config.timeScale.timezone), this.timezoneOptions(config.timeScale.timezone), (v) => this.emit({ timeScale: { timezone: v } })), 'symbol.timezone'));
 
         // ══ HOST SECTIONS — tabs contributed by the embedding app (widget Status line…) ══
         const renderHostSections = (placement: 'after-symbol' | 'end' | 'symbol'): void => {
@@ -615,55 +755,58 @@ export class SettingsDialog {
         renderHostSections('after-symbol');
 
         // ══ SCALES AND LINES — price scale + crosshair (the reference tab) ══
-        body.append(sid(this.section('Scales and lines'), 'scales'));
-        body.append(sid(this.sectionTitle('Price scale'), 'scales.price-scale'));
+        body.append(sid(this.section(TEXT.scalesAndLines), 'scales'));
+        body.append(sid(this.sectionTitle(TEXT.priceScale), 'scales.price-scale'));
         body.append(
             sid(this.selectRowLabeled(
-                'Mode',
+                TEXT.mode,
                 config.priceScale.log ? 'log' : config.priceScale.mode,
-                [['price', 'Regular'], ['percent', 'Percent'], ['indexed', 'Indexed to 100'], ['log', 'Logarithmic']] as const,
+                [['price', TEXT.regular], ['percent', TEXT.percent], ['indexed', TEXT.indexedTo100], ['log', TEXT.logarithmic]] as const,
                 (v) => this.emit({ priceScale: v === 'log' ? { mode: 'price', log: true } : { mode: v, log: false } }),
             ), 'scales.price-scale.mode'),
         );
-        body.append(sid(this.boolRow('Invert scale', config.priceScale.invert, (v) => this.emit({ priceScale: { invert: v } })), 'scales.price-scale.invert'));
+        body.append(sid(this.boolRow(TEXT.invertScale, config.priceScale.invert, (v) => this.emit({ priceScale: { invert: v } })), 'scales.price-scale.invert'));
+        body.append(sid(this.boolRow(TEXT.scalePriceOnly, config.priceScale.priceOnly, (v) => this.emit({ priceScale: { priceOnly: v } })), 'scales.price-scale.price-only'));
+        body.append(sid(this.boolRow(TEXT.freePan, config.priceScale.freePan, (v) => this.emit({ priceScale: { freePan: v } })), 'scales.price-scale.free-pan'));
         body.append(sid(this.separator(), 'scales.price-scale'));
-        body.append(sid(this.boolRow('Last Price Line', config.priceScale.currentPriceLine, (v) => this.emit({ priceScale: { currentPriceLine: v } })), 'scales.price-scale.last-price-line'));
-        body.append(sid(this.boolRow('Last price label', config.priceScale.priceLabel, (v) => this.emit({ priceScale: { priceLabel: v } })), 'scales.price-scale.last-price-label'));
-        body.append(sid(this.boolRow('Countdown to bar close', config.priceScale.countdown, (v) => this.emit({ priceScale: { countdown: v } })), 'scales.price-scale.countdown'));        body.append(sid(this.boolRow('Axis labels', config.priceScale.labelsVisible, (v) => this.emit({ priceScale: { labelsVisible: v } })), 'scales.price-scale.axis-labels'));
-        body.append(sid(this.colorRow('Scale border color', config.priceScale.borderColor, (v) => this.emit({ priceScale: { borderColor: v } })), 'scales.price-scale.border-color'));
-        body.append(sid(this.sectionTitle('Crosshair'), 'scales.crosshair'));
-        body.append(sid(this.colorRow('Color', config.crosshair.color, (v) => this.emit({ crosshair: { color: v } })), 'scales.crosshair.color'));
-        body.append(sid(this.numberRow('Width', config.crosshair.width, 0.5, 8, 0.5, (v) => this.emit({ crosshair: { width: v } })), 'scales.crosshair.width'));
-        body.append(sid(this.selectRowLabeled('Style', config.crosshair.style, [['solid', 'Solid'], ['dashed', 'Dashed'], ['dotted', 'Dotted']] as const, (v) => this.emit({ crosshair: { style: v } })), 'scales.crosshair.style'));
+        body.append(sid(this.boolRow(TEXT.lastPriceLine, config.priceScale.currentPriceLine, (v) => this.emit({ priceScale: { currentPriceLine: v } })), 'scales.price-scale.last-price-line'));
+        body.append(sid(this.boolRow(TEXT.lastPriceLabel, config.priceScale.priceLabel, (v) => this.emit({ priceScale: { priceLabel: v } })), 'scales.price-scale.last-price-label'));
+        body.append(sid(this.boolRow(TEXT.countdownToBarClose, config.priceScale.countdown, (v) => this.emit({ priceScale: { countdown: v } })), 'scales.price-scale.countdown'));        body.append(sid(this.boolRow(TEXT.axisLabels, config.priceScale.labelsVisible, (v) => this.emit({ priceScale: { labelsVisible: v } })), 'scales.price-scale.axis-labels'));
+        body.append(sid(this.colorRow(TEXT.scaleBorderColor, config.priceScale.borderColor, (v) => this.emit({ priceScale: { borderColor: v } })), 'scales.price-scale.border-color'));
+        body.append(sid(this.sectionTitle(TEXT.crosshair), 'scales.crosshair'));
+        body.append(sid(this.colorRow(TEXT.color, config.crosshair.color, (v) => this.emit({ crosshair: { color: v } })), 'scales.crosshair.color'));
+        body.append(sid(this.numberRow(TEXT.width, config.crosshair.width, 0.5, 8, 0.5, (v) => this.emit({ crosshair: { width: v } })), 'scales.crosshair.width'));
+        body.append(sid(this.selectRowLabeled(TEXT.style, config.crosshair.style, [['solid', TEXT.solid], ['dashed', TEXT.dashed], ['dotted', TEXT.dotted]] as const, (v) => this.emit({ crosshair: { style: v } })), 'scales.crosshair.style'));
 
         // ══ CANVAS — background/text + grid (the reference tab) ══
-        body.append(sid(this.section('Canvas'), 'canvas'));
-        body.append(sid(this.sectionTitle('Background & text'), 'canvas.background'));
-        body.append(sid(this.colorRow('Background', config.layout.background, (v) => this.emit({ layout: { background: v } })), 'canvas.background.color'));
-        body.append(sid(this.colorRow('Text color', config.layout.textColor, (v) => this.emit({ layout: { textColor: v } })), 'canvas.background.text-color'));
-        body.append(sid(this.numberRow('Text size', config.layout.fontSize, 6, 32, 1, (v) => this.emit({ layout: { fontSize: v } })), 'canvas.background.text-size'));
-        body.append(sid(this.colorRow('Pane separator color', config.panes.separatorColor, (v) => this.emit({ panes: { separatorColor: v } })), 'canvas.background.pane-separator'));
-        body.append(sid(this.sectionTitle('Grid'), 'canvas.grid'));
-        body.append(sid(this.toggleRow('Vertical', config.grid.vertLines.visible, (v) => this.emit({ grid: { vertLines: { visible: v } } }), [
+        body.append(sid(this.section(TEXT.canvas), 'canvas'));
+        body.append(sid(this.sectionTitle(TEXT.backgroundAndText), 'canvas.background'));
+        body.append(sid(this.colorRow(TEXT.background, config.layout.background, (v) => this.emit({ layout: { background: v } })), 'canvas.background.color'));
+        body.append(sid(this.colorRow(TEXT.textColor, config.layout.textColor, (v) => this.emit({ layout: { textColor: v } })), 'canvas.background.text-color'));
+        body.append(sid(this.numberRow(TEXT.textSize, config.layout.fontSize, 6, 32, 1, (v) => this.emit({ layout: { fontSize: v } })), 'canvas.background.text-size'));
+        body.append(sid(this.colorRow(TEXT.paneSeparatorColor, config.panes.separatorColor, (v) => this.emit({ panes: { separatorColor: v } })), 'canvas.background.pane-separator'));
+        body.append(sid(this.sectionTitle(TEXT.grid), 'canvas.grid'));
+        body.append(sid(this.toggleRow(TEXT.vertical, config.grid.vertLines.visible, (v) => this.emit({ grid: { vertLines: { visible: v } } }), [
             this.swatch(config.grid.vertLines.color, (v) => this.emit({ grid: { vertLines: { color: v } } })),
         ]), 'canvas.grid.vertical'));
-        body.append(sid(this.toggleRow('Horizontal', config.grid.horzLines.visible, (v) => this.emit({ grid: { horzLines: { visible: v } } }), [
+        body.append(sid(this.toggleRow(TEXT.horizontal, config.grid.horzLines.visible, (v) => this.emit({ grid: { horzLines: { visible: v } } }), [
             this.swatch(config.grid.horzLines.color, (v) => this.emit({ grid: { horzLines: { color: v } } })),
         ]), 'canvas.grid.horizontal'));
-        body.append(sid(this.sectionTitle('Margins'), 'canvas.margins'));
-        body.append(sid(this.numberRow('Top', config.margins.top, 0, 40, 1, (v) => this.emit({ margins: { top: v } }), '%'), 'canvas.margins.top'));
-        body.append(sid(this.numberRow('Bottom', config.margins.bottom, 0, 40, 1, (v) => this.emit({ margins: { bottom: v } }), '%'), 'canvas.margins.bottom'));
-        body.append(sid(this.numberRow('Right', config.margins.right, 0, 200, 1, (v) => this.emit({ margins: { right: v } }), 'bars'), 'canvas.margins.right'));
+        body.append(sid(this.sectionTitle(TEXT.margins), 'canvas.margins'));
+        body.append(sid(this.numberRow(TEXT.top, config.margins.top, 0, 40, 1, (v) => this.emit({ margins: { top: v } }), '%'), 'canvas.margins.top'));
+        body.append(sid(this.numberRow(TEXT.bottom, config.margins.bottom, 0, 40, 1, (v) => this.emit({ margins: { bottom: v } }), '%'), 'canvas.margins.bottom'));
+        body.append(sid(this.numberRow(TEXT.right, config.margins.right, 0, 200, 1, (v) => this.emit({ margins: { right: v } }), TEXT_UNITS.bars), 'canvas.margins.right'));
         if (this.themeControl) {
             const tc = this.themeControl;
-            body.append(sid(this.sectionTitle('Theme'), 'canvas.theme'));
-            body.append(sid(this.selectRow('Color theme', tc.current === 'dark' ? 'Dark' : 'Light', ['Dark', 'Light'], (v) => tc.onSelect(v === 'Dark' ? 'dark' : 'light')), 'canvas.theme'));
+            body.append(sid(this.sectionTitle(TEXT.theme), 'canvas.theme'));
+            const choices: Array<readonly [string, MessageLike]> = [['dark', TEXT_THEME.dark], ['light', TEXT_THEME.light], ...registeredThemes().map((t) => [t.id, t.label] as const)];
+            body.append(sid(this.selectRowLabeled(TEXT_THEME.colorTheme, tc.current, choices, (v) => tc.onSelect(v)), 'canvas.theme'));
         }
 
         // ══ EVENTS — timeline-mark group visibility, a tab of its own (present only while marks name groups) ══
         if (this.markGroups.length > 0) {
-            body.append(sid(this.section('Events'), MARKS_SETTINGS_ID));
-            body.append(sid(this.sectionTitle('Visible events'), MARKS_GROUPS_SETTINGS_ID));
+            body.append(sid(this.section(TEXT.events), MARKS_SETTINGS_ID));
+            body.append(sid(this.sectionTitle(TEXT.visibleEvents), MARKS_GROUPS_SETTINGS_ID));
             // Children list indented under their parent and dim while the parent is off — the
             // parent is the master switch, the child keeps its own choice for when it returns.
             const rowsById = new Map<string, HTMLElement>();
@@ -706,11 +849,14 @@ export class SettingsDialog {
                     skipTab = child.dataset.sdId !== undefined && settingsIdHidden(child.dataset.sdId, this.hiddenSettings);
                 }
                 if (skipTab || (child.dataset.sdId !== undefined && settingsIdHidden(child.dataset.sdId, this.hiddenSettings))) {
+                    disposeWithin(child);
                     child.remove();
                     continue;
                 }
                 for (const el of [...child.querySelectorAll('[data-sd-id]')] as HTMLElement[]) {
-                    if (settingsIdHidden(el.dataset.sdId!, this.hiddenSettings)) el.remove();
+                    if (!settingsIdHidden(el.dataset.sdId!, this.hiddenSettings)) continue;
+                    disposeWithin(el);
+                    el.remove();
                 }
             }
         }
@@ -744,18 +890,19 @@ export class SettingsDialog {
         // body-portaled popover (select list, color picker) is swapped in one gesture.
         paneHost.style.cssText = mobile ? 'flex:1;min-width:0;overflow-y:auto;overflow-anchor:none;padding:6px 14px calc(14px + env(safe-area-inset-bottom, 0px));' : 'flex:1;overflow-y:auto;overflow-anchor:none;padding:6px 18px 14px;';
 
-        const panes: Array<{ title: string; el: HTMLElement; tab: HTMLButtonElement; style?: string; visibility?: string }> = [];
+        const panes: Array<{ title: string; label: string; el: HTMLElement; tab: HTMLButtonElement; style?: string; visibility?: string }> = [];
         let current: HTMLElement | null = null;
         for (const child of [...body.children] as HTMLElement[]) {
             const title = child.dataset.sdTab;
             if (title !== undefined) {
+                const label = child.dataset.sdTabLabel ?? title;
                 const el = document.createElement('div');
                 el.style.display = 'none';
                 const tab = document.createElement('button');
                 tab.type = 'button';
-                tab.textContent = title;
+                tab.textContent = label;
                 tab.className = 'vela-sd-tab' + (child.dataset.sdSub !== undefined ? ' vela-sd-tab-sub' : '');
-                panes.push({ title, el, tab, style: child.dataset.sdStyle, visibility: child.dataset.sdVisibility });
+                panes.push({ title, label, el, tab, style: child.dataset.sdStyle, visibility: child.dataset.sdVisibility });
                 current = el;
                 child.remove();
                 continue;
@@ -787,7 +934,7 @@ export class SettingsDialog {
             });
             this.activeSection = panes[idx]?.title ?? null;
             if (mobile) {
-                ui.titleEl.textContent = panes[idx]?.title ?? 'Chart settings';
+                ui.titleEl.textContent = panes[idx]?.label ?? this.t(TEXT.chartSettings);
                 this.toggleRail?.(false);
             }
         };
@@ -803,9 +950,9 @@ export class SettingsDialog {
         const wanted =
             section !== undefined
                 ? panes.findIndex((p) => p.title.toLowerCase() === section.toLowerCase())
-                : panes.findIndex((p) => p.style === config.series.style && !p.tab.classList.contains('vela-sd-tab-sub'));
+                : panes.findIndex((p) => p.style === shownStyle && !p.tab.classList.contains('vela-sd-tab-sub'));
         activate(wanted >= 0 ? wanted : 0);
-        this.syncTypeTabs?.(config.series.style);
+        this.syncTypeTabs?.(shownStyle);
 
         shell.append(rail, paneHost);
         if (railScrim) shell.append(railScrim);
@@ -843,8 +990,8 @@ export class SettingsDialog {
     }
 
     /** In-pane section title. The generous top margin is what separates groups. */
-    private sectionTitle(text: string): HTMLElement {
-        return fieldSection(text);
+    private sectionTitle(text: MessageLike): HTMLElement {
+        return fieldSection(this.t(text));
     }
 
     /**
@@ -916,7 +1063,7 @@ export class SettingsDialog {
             subMarker.dataset.sdVisibility = section.visibility ?? 'active';
             subMarker.dataset.sdSub = '1';
             body.append(subMarker);
-            body.append(this.groupedRows(`${typeId}/${sub.title}`, rows, bag, put, refreshers, sub.enableKey));
+            body.append(this.groupedRows(`${typeId}/${sourceText(sub.title)}`, rows, bag, put, refreshers, sub.enableKey));
         }
         for (const r of refreshers) r();
     }
@@ -997,7 +1144,7 @@ export class SettingsDialog {
     ): HTMLElement {
         if (c.kind === 'hint') {
             const s = document.createElement('span');
-            s.textContent = c.text;
+            s.textContent = this.t(c.text);
             s.style.cssText = 'color:var(--vela-fg-muted);';
             return s;
         }
@@ -1007,7 +1154,7 @@ export class SettingsDialog {
                 theme: this.theme,
                 get: () => bag[c.key] as string,
                 onChange: (v) => put(c.key, v),
-                title: c.label,
+                title: this.t(c.label),
             }).el;
         }
         if (c.kind === 'width') {
@@ -1017,18 +1164,18 @@ export class SettingsDialog {
                 theme: this.theme,
                 get: () => (typeof bag[c.key] === 'number' ? (bag[c.key] as number) : def),
                 onChange: (v) => put(c.key, v),
-                title: c.label,
+                title: this.t(c.label),
             }).el;
         }
         if (c.kind === 'select') {
             const def = typeof bag[c.key] === 'string' ? (bag[c.key] as string) : c.defval;
             return buildFieldControl({
                 kind: 'select',
-                options: normalizeSelectOptions(c.options).map(([value, label]) => ({ value, label })),
+                options: normalizeSelectOptions(c.options).map(([value, label]) => ({ value, label: this.t(label) })),
                 value: def,
                 fill: false,
                 theme: this.theme,
-                title: c.label,
+                title: this.t(c.label),
                 onChange: (v) => put(c.key, v),
                 sync: () => (typeof bag[c.key] === 'string' ? (bag[c.key] as string) : c.defval),
             }).el;
@@ -1045,8 +1192,8 @@ export class SettingsDialog {
             clamp: c.placeholder !== undefined,
             steppers: true,
             compact,
-            title: c.label,
-            placeholder: c.placeholder,
+            title: this.t(c.label),
+            placeholder: c.placeholder !== undefined ? this.t(c.placeholder) : undefined,
             emptyValue: c.placeholder !== undefined ? c.defval : undefined,
             onChange: (v) => put(c.key, v),
             sync: () => (typeof bag[c.key] === 'number' ? (bag[c.key] as number) : c.defval),
@@ -1092,13 +1239,13 @@ export class SettingsDialog {
                 tab.type = 'button';
                 tab.className = 'vela-sd-itab' + (i === active ? ' on' : '');
                 const lbl = document.createElement('span');
-                lbl.textContent = inst.label;
+                lbl.textContent = this.t(inst.label);
                 tab.append(lbl);
                 if (i === active && inst.enableKey) {
                     const x = document.createElement('span');
                     x.className = 'vela-sd-ix';
                     x.textContent = '✕';
-                    x.title = `Remove ${inst.label}`;
+                    x.title = this.t(TEXT_STRIP.remove, { name: inst.label });
                     x.addEventListener('click', (e) => {
                         e.stopPropagation();
                         this.typeActiveInstance.set(typeId, 0);
@@ -1118,7 +1265,7 @@ export class SettingsDialog {
                 add.type = 'button';
                 add.className = 'vela-sd-itab vela-sd-itab-add';
                 add.textContent = '+';
-                add.title = `Add ${instances[absent]!.label}`;
+                add.title = this.t(TEXT_STRIP.add, { name: instances[absent]!.label });
                 add.addEventListener('click', () => {
                     this.typeActiveInstance.set(typeId, absent);
                     put(instances[absent]!.enableKey!, true);
@@ -1163,13 +1310,16 @@ export class SettingsDialog {
         wrap.append(toc, rowsHost);
 
         const entries: Array<{ el: HTMLElement; when?: SettingsRowWhen; group: number; key?: string; header?: boolean }> = [];
+        // A group's identity (the remembered active group) is its English title.
         const groups: string[] = [];
+        const groupLabels: MessageLike[] = [];
         const groupWhens: Array<SettingsRowWhen | undefined> = [];
         let g = -1; // -1 = the always block before the first heading
         for (const r of rows) {
             if (r.kind === 'heading') {
                 g = groups.length;
-                groups.push(r.label);
+                groups.push(sourceText(r.label));
+                groupLabels.push(r.label);
                 groupWhens.push(r.when);
                 continue; // headings live in the TOC, not the rows column
             }
@@ -1201,7 +1351,7 @@ export class SettingsDialog {
                 const b = document.createElement('button');
                 b.type = 'button';
                 b.className = 'vela-sd-toc-btn' + (gi === activeIdx ? ' on' : '');
-                b.textContent = label;
+                b.textContent = this.t(groupLabels[gi] ?? label);
                 b.addEventListener('click', () => {
                     this.typeActiveGroup.set(paneKey, label);
                     refresh();
@@ -1272,14 +1422,17 @@ export class SettingsDialog {
     }
 
     /** A label row with arbitrary controls in the shared control column (no toggle). */
-    private rowWith(label: string, controls: HTMLElement[]): HTMLElement {
-        return fieldRow({ label, labelSize: 'sm', control: controls, className: 'vela-sd-row' });
+    private rowWith(label: MessageLike, controls: HTMLElement[]): HTMLElement {
+        return fieldRow({ label: this.t(label), labelSize: 'sm', control: controls, className: 'vela-sd-row' });
     }
 
-    private section(title: string): HTMLElement {
-        // Tab MARKER — the shell splits the linear build into panes at these.
+    /** A tab MARKER — the shell splits the linear build into panes at these. The tab's
+     *  identity is its English title (what `section` arguments and the remembered active
+     *  tab name); it shows translated. */
+    private section(title: MessageLike): HTMLElement {
         const el = document.createElement('div');
-        el.dataset.sdTab = title;
+        el.dataset.sdTab = sourceText(title);
+        el.dataset.sdTabLabel = this.t(title);
         el.style.display = 'none';
         return el;
     }
@@ -1293,10 +1446,10 @@ export class SettingsDialog {
         return el;
     }
 
-    private colorRow(label: string, value: string, onChange: (v: string) => void): HTMLElement {
+    private colorRow(label: MessageLike, value: string, onChange: (v: string) => void): HTMLElement {
         let current = value;
         return fieldRow({
-            label,
+            label: this.t(label),
             labelSize: 'sm',
             fit: true,
             className: 'vela-sd-row',
@@ -1311,16 +1464,16 @@ export class SettingsDialog {
 
     /** A toggle row: the checkbox sits to the LEFT of its label (never in the control area).
      *  `info` (see {@link hint}) rides after the label. */
-    private boolRow(label: string, value: boolean, onChange: (v: boolean) => void, info?: HTMLElement): HTMLElement {
+    private boolRow(label: MessageLike, value: boolean, onChange: (v: boolean) => void, info?: HTMLElement): HTMLElement {
         return this.toggleRow(label, value, onChange, [], undefined, info);
     }
 
     /** An enable row: checkbox + label in the label column, dependent controls in the
      *  shared control column; the control group dims and ignores input while the toggle
      *  is off. With `get`, the row re-reads its state on a 'vela-sync' event. */
-    private toggleRow(label: string, value: boolean, onToggle: (v: boolean) => void, controls: HTMLElement[], get?: () => boolean, info?: HTMLElement): HTMLElement {
+    private toggleRow(label: MessageLike, value: boolean, onToggle: (v: boolean) => void, controls: HTMLElement[], get?: () => boolean, info?: HTMLElement): HTMLElement {
         return fieldRow({
-            label,
+            label: this.t(label),
             labelSize: 'sm',
             bool: controls.length === 0,
             toggle: { checked: value, onChange: onToggle, get },
@@ -1331,18 +1484,26 @@ export class SettingsDialog {
     }
 
     /** The shared ⓘ hint after a row label (see {@link chromeHint}). Disposed with the dialog. */
-    private hint(text: string): HTMLElement {
-        const { el, dispose } = chromeHint(text, { host: this.container, theme: () => this.theme });
+    private hint(text: MessageLike): HTMLElement {
+        const { el, dispose } = chromeHint(this.t(text), { host: this.container, theme: () => this.theme });
         this.hintTips.push(dispose);
         return el;
     }
 
-    /** `unit` (optional) trails the input as muted text — "%", "bars". */
-    private numberRow(label: string, value: number, min: number, max: number, step: number, onChange: (v: number) => void, unit?: string): HTMLElement {
-        const controls = [buildFieldControl({ kind: 'number', value, min, max, step, fill: false, commit: 'live', steppers: true, onChange }).el];
-        if (unit) {
-            const u = document.createElement('span');
-            u.textContent = unit;
+    /** `unit` (optional) trails the input as muted text ("bars"); it receives the input's
+     *  value as `count`, so its wording agrees with the number. */
+    private numberRow(label: MessageLike, value: number, min: number, max: number, step: number, onChange: (v: number) => void, unit?: MessageLike): HTMLElement {
+        const u = unit ? document.createElement('span') : null;
+        const showUnit = (count: number): void => {
+            if (u && unit) u.textContent = this.t(unit, { count });
+        };
+        const commit = (v: number): void => {
+            showUnit(v);
+            onChange(v);
+        };
+        const controls = [buildFieldControl({ kind: 'number', value, min, max, step, fill: false, commit: 'live', steppers: true, onChange: commit }).el];
+        if (u) {
+            showUnit(value);
             u.style.cssText = 'color:var(--vela-fg-muted);';
             controls.push(u);
         }
@@ -1350,14 +1511,22 @@ export class SettingsDialog {
     }
 
     /** A dropdown whose option values differ from their display labels. */
-    private selectRowLabeled(label: string, value: string, options: readonly (readonly [string, string])[], onChange: (v: string) => void): HTMLElement {
+    private selectRowLabeled(
+        label: MessageLike,
+        value: string,
+        options: readonly (readonly [string, MessageLike])[],
+        onChange: (v: string) => void,
+        /** Options listed but not selectable, with the tooltip saying why. */
+        unavailable?: { ids: ReadonlySet<string>; title: MessageLike },
+    ): HTMLElement {
+        const off = unavailable && unavailable.ids.size > 0 ? { ids: unavailable.ids, title: this.t(unavailable.title) } : null;
         return fieldRow({
-            label,
+            label: this.t(label),
             labelSize: 'sm',
             className: 'vela-sd-row',
             control: buildFieldControl({
                 kind: 'select',
-                options: options.map(([v, l]) => ({ value: v, label: l })),
+                options: options.map(([v, l]) => (off?.ids.has(v) ? { value: v, label: this.t(l), disabled: true, title: off.title } : { value: v, label: this.t(l) })),
                 value,
                 fill: false,
                 theme: this.theme,
@@ -1366,22 +1535,19 @@ export class SettingsDialog {
         });
     }
 
-    private selectRow(label: string, value: string, options: string[], onChange: (v: string) => void): HTMLElement {
-        return this.selectRowLabeled(label, value, options.map((o) => [o, o] as const), onChange);
+    /** The shared zone catalog as labeled options, with the current value guaranteed
+     *  present (so an externally-set custom zone still shows selected). */
+    private timezoneOptions(current: string): readonly (readonly [string, string])[] {
+        const i18n = this.i18n?.() ?? null;
+        const options = TIMEZONES.map((t) => [t.value, tzMenuLabel(t.value, textOf(i18n, t.name), i18n)] as const);
+        const normalized = normalizeTimezone(current);
+        if (TIMEZONES.some((t) => t.value === normalized)) return options;
+        return [[normalized, tzMenuLabel(normalized, normalized, i18n)] as const, ...options];
     }
 }
 
 /** Normalize a select descriptor's options to `[value, label]` pairs. */
-function normalizeSelectOptions(options: readonly SettingsSelectOption[]): readonly (readonly [string, string])[] {
+function normalizeSelectOptions(options: readonly SettingsSelectOption[]): readonly (readonly [string, MessageLike])[] {
     return options.map((o) => (typeof o === 'string' ? [o, o] as const : o));
-}
-
-/** The shared zone catalog as labeled options, with the current value guaranteed
- *  present (so an externally-set custom zone still shows selected). */
-function timezoneOptions(current: string): readonly (readonly [string, string])[] {
-    const options = TIMEZONES.map((t) => [t.value, tzMenuLabel(t.value, t.label)] as const);
-    const normalized = normalizeTimezone(current);
-    if (TIMEZONES.some((t) => t.value === normalized)) return options;
-    return [[normalized, tzMenuLabel(normalized, normalized)] as const, ...options];
 }
 

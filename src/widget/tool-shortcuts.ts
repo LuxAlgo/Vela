@@ -4,6 +4,7 @@
 // is pushed to the drawing toolbar, which shows each hint beside its tool in the flyout.
 import type { KeymapManager } from '../ui/keymap';
 import type { DrawingTypeKey } from '../core/drawings';
+import type { Translator } from '../core/i18n/types';
 
 /** Binding id → the drawing tool its chord arms/places. */
 const TOOL_BINDINGS: readonly (readonly [DrawingTypeKey, string])[] = [
@@ -13,8 +14,8 @@ const TOOL_BINDINGS: readonly (readonly [DrawingTypeKey, string])[] = [
 ];
 
 /** Per-tool shortcut hints (display strings) for the toolbar flyouts, from the live keymap. */
-export function toolShortcutHints(keymap: KeymapManager): Partial<Record<DrawingTypeKey, string>> {
-    const byId = new Map(keymap.bindings().map((b) => [b.id, b.display[0]]));
+export function toolShortcutHints(keymap: KeymapManager, i18n?: Translator | null): Partial<Record<DrawingTypeKey, string>> {
+    const byId = new Map(keymap.bindings(i18n).map((b) => [b.id, b.display[0]]));
     const out: Partial<Record<DrawingTypeKey, string>> = {};
     for (const [type, id] of TOOL_BINDINGS) {
         const display = byId.get(id);

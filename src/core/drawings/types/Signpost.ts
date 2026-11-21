@@ -1,3 +1,5 @@
+import { msg } from '../../i18n/message';
+import type { MessageLike } from '../../i18n/types';
 import { CalloutBase } from './CalloutBase';
 
 /**
@@ -7,7 +9,7 @@ import { CalloutBase } from './CalloutBase';
 export class Signpost extends CalloutBase {
     readonly type = 'signpost' as const;
 
-    protected override defaultLabel(): string {
-        return 'Signpost';
+    protected override defaultLabel(): MessageLike {
+        return msg('drawing.signpost.placeholder', 'Signpost');
     }
 }

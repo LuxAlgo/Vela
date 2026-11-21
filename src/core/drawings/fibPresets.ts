@@ -1,3 +1,5 @@
+import { msg } from '../i18n/message';
+import type { MessageLike } from '../i18n/types';
 import type { FibLevel } from './types/FibRatios';
 import { fibLevels, LEVEL_AMBER } from './levelPalette';
 
@@ -10,7 +12,7 @@ export type FibPresetKey = 'classic' | 'extension' | 'ote';
 
 export interface FibPreset {
     key: FibPresetKey;
-    label: string;
+    label: MessageLike;
     /** Level 0 on the first anchor (the swing's start) instead of the second. */
     reverse: boolean;
     levels: readonly FibLevel[];
@@ -31,19 +33,19 @@ export function ladder(ratios: readonly number[], on: readonly number[], colors:
 export const FIB_PRESETS: readonly FibPreset[] = [
     {
         key: 'classic',
-        label: 'Classic',
+        label: msg('drawing.fibPreset.classic', 'Classic'),
         reverse: false,
         levels: ladder(LADDER, [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1]),
     },
     {
         key: 'extension',
-        label: 'Extension',
+        label: msg('drawing.fibPreset.extension', 'Extension'),
         reverse: true,
         levels: ladder(LADDER, [0, 1, 1.272, 1.414, 1.618, 2, 2.618, 3.618, 4.236]),
     },
     {
         key: 'ote',
-        label: 'OTE',
+        label: msg('drawing.fibPreset.ote', 'OTE'),
         reverse: false,
         // The entry zone reads as one band.
         levels: ladder(OTE_LADDER, [0, 0.5, 0.62, 0.705, 0.79, 1, -0.27, -0.62], { '0.62': LEVEL_AMBER, '0.79': LEVEL_AMBER }),

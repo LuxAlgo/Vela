@@ -3,9 +3,10 @@
 // the contribution system anticipated), plus additive multi-chart extensions. Existing
 // plugins keep working unchanged; grid-aware ones narrow to WorkspaceWidgetContext.
 import type { Vela } from '../Vela';
-import type { WidgetContext } from '../widget/contributions';
+import type { DockedStrip, DockStripOptions, FullscreenControl, PanelDockView, SidebarControl, TopbarItems, WidgetContext } from '../widget/contributions';
 import type { ChartCell } from './ChartCell';
 import type { WorkspaceReplay } from './WorkspaceReplay';
+import type { Translator } from '../core/i18n/types';
 
 /** The extended context a workspace hands to contributed actions/attachments. */
 export interface WorkspaceWidgetContext extends WidgetContext {
@@ -29,12 +30,20 @@ export interface ContextHost {
     setActiveCell(id: string): void;
     openSymbolSearch(query?: string): void;
     togglePanel(id: string, open?: boolean): void;
-    dockStrip(el: HTMLElement): () => void;
+    dockStrip(el: HTMLElement, opts?: DockStripOptions): DockedStrip;
+    dockEdge(el: HTMLElement, side: 'right'): () => void;
     root: HTMLElement;
+    /** The workspace's translator (one object for its lifetime). */
+    i18n: Translator;
     toast(message: string, kind?: 'info' | 'success' | 'error'): void;
     /** Debounced dirty mark — third-party persistable state changed (`ctx.stateChanged()`). */
     stateDirty(): void;
     replay: WorkspaceReplay;
+    topbar: TopbarItems;
+    /** The dock's view — a function: the context is built before the dock exists. */
+    panels(): PanelDockView;
+    sidebar: SidebarControl;
+    fullscreen: FullscreenControl;
 }
 
 /** Build a fresh context bound to the CURRENT active cell. EVERY read resolves live —
@@ -66,8 +75,10 @@ export function buildContext(host: ContextHost): WorkspaceWidgetContext {
         setPriceStyle: (style) => host.active()?.setPriceStyle(style),
         openSymbolSearch: (query) => host.openSymbolSearch(query),
         togglePanel: (id, open) => host.togglePanel(id, open),
-        dockStrip: (el) => host.dockStrip(el),
+        dockStrip: (el, opts) => host.dockStrip(el, opts),
+        dockEdge: (el, side) => host.dockEdge(el, side),
         host: host.root,
+        i18n: host.i18n,
         toast: (message, kind) => host.toast(message, kind),
         addIndicator: (entry) => host.active()?.addExternalIndicator(entry),
         addNativeIndicator: (type) => host.active()?.addNative(type),
@@ -80,5 +91,11 @@ export function buildContext(host: ContextHost): WorkspaceWidgetContext {
         },
         setActiveCell: (id) => host.setActiveCell(id),
         replay: host.replay,
+        topbar: host.topbar,
+        get panels() {
+            return host.panels();
+        },
+        sidebar: host.sidebar,
+        fullscreen: host.fullscreen,
     };
 }

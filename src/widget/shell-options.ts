@@ -9,6 +9,7 @@ import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import type { IndicatorManifest, IndicatorLoader } from './indicators';
 import type { VelaStorage } from './persist';
 import type { TopbarComposition } from './topbar-composition';
+import type { SidebarComposition } from './sidebar-composition';
 
 /** What a shell (widget or workspace) accepts BEYOND the chart options themselves. */
 export interface VelaShellOptions {
@@ -39,14 +40,24 @@ export interface VelaShellOptions {
     /** Declarative topbar composition: `{ left, right }` lists of the VISIBLE entries,
      *  in render order — built-in ids (`'symbol'`, `'timeframes'`, `'style'`,
      *  `'layout'`, `'indicators'`, `'actions'`, `'undo-redo'`, `'alerts'`, `'panels'`,
-     *  `'screenshot'`) and/or contributed-action ids (naming one PINS it there,
-     *  overriding its `align`/`order`; `'actions'` is where the unlisted ones flow).
+     *  `'screenshot'`, `'fullscreen'`) and/or contributed-action ids (naming one PINS it
+     *  there, overriding its `align`/`order`; `'actions'` is where the unlisted ones flow).
      *  An undeclared side keeps its default. An explicit list is that side's complete
      *  contract — it also FREEZES it: chrome a future release adds will not appear.
      *  Hiding a built-in removes its mobile entry and keyboard chord too (`mod+alt+S`
-     *  for `'screenshot'`); Ctrl+Z / Ctrl+Y stay — they belong to editing, not to the
-     *  `'undo-redo'` buttons. */
+     *  for `'screenshot'`, `alt+enter` for `'fullscreen'`); Ctrl+Z / Ctrl+Y stay — they
+     *  belong to editing, not to the `'undo-redo'` buttons. */
     topbar?: TopbarComposition;
+    /** A toolbar along the shell's right edge, beside the topbar, the charts and the bottom
+     *  bar (default off). It takes over the side-panel toggles from the topbar and hosts
+     *  the actions plugins register with `target: 'sidebar'`. `true` uses the default
+     *  layout; `{ top, bottom }` lists the entries per section, top to bottom — panel
+     *  ids (`'objects'`, `'dataWindow'`, a `registerSidePanel` id), sidebar action ids,
+     *  the `'panels'` and `'actions'` flow slots, and `'|'` for a separator. An
+     *  undeclared section keeps its default (`top: ['panels']`, `bottom: ['objects',
+     *  'dataWindow', '|', 'actions']`). Desktop only: on the mobile layout the panels
+     *  keep their rows in the three-dots menu and the sidebar actions join them. */
+    sidebar?: boolean | SidebarComposition;
     /** The built-in indicator picker's entry points — the topbar button, the mobile-bar
      *  item, and the `/` shortcut. `false` removes them. The `indicators` manifest
      *  still resolves and auto-adds.
@@ -65,6 +76,12 @@ export interface VelaShellOptions {
      *  keystroke — no initial click needed. Default false: an embedded shell must never
      *  steal the page's focus from the host's own controls. */
     autofocus?: boolean;
+    /** Typing a letter (or `0`) on the shell opens the symbol menu, seeded with what was
+     *  typed (default true). `false` leaves those keys to the page: for a host whose own
+     *  shortcuts are bare letters, or whose symbol is chosen outside the chart. The
+     *  topbar's symbol button still opens the menu, and a digit from 1 to 9 still opens
+     *  the timeframe entry. */
+    symbolMenuFromKey?: boolean;
     /** Bring the shell back AS YOU LEFT IT: persist the full state document
      *  (`getState()`) and restore it at construction. `true` uses the shell's default
      *  key ('vela-widget' / 'vela-workspace'); a string is the storage key. */

@@ -1,14 +1,20 @@
 // Bottom bar — date-range presets (left), live clock + timezone picker (right).
 // Range presets switch the timeframe AND frame the matching visible window; the widget
 // owns the rebuild, so the bar only reports the chosen preset upward.
+import { msg } from '../core/i18n/message';
+import { textOf } from '../core/i18n/text';
+import { englishTranslator } from '../core/i18n/translator';
+import type { MessageLike, Translator } from '../core/i18n/types';
 import type { VisibleRangePreset } from '../core/visible-range';
 import type { Unsubscribe } from '../core/util/types';
-import { SecondClock, type WallClock } from '../core/util/wall-clock';
-import { Menu } from '../ui/components/menu';
-import { Tooltip } from '../ui/components/tooltip';
-import { iconEl } from '../ui/icons';
-import { injectStyles } from '../ui/styles';
+import { SecondClock, clockCorrection, type WallClock } from '../core/util/wall-clock';
+import { DropdownMenu } from '@luxalgo/vela-ui/dropdown-menu';
+import { Tooltip } from '@luxalgo/vela-ui/tooltip';
+import { iconEl } from '@luxalgo/vela-ui/icons';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { timezoneMenuRows, tzButtonLabel, resolveTimezone } from './timezones';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 export interface RangePreset {
     /** Button label. */
@@ -44,76 +50,82 @@ export const RANGE_PRESETS: readonly RangePreset[] = [
 ];
 
 const STYLE_ID = 'vela-widget-bottombar';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 .vela-widget-bottombar {
     display: flex;
     align-items: center;
     gap: 2px;
     height: 38px;
     padding: 0 8px;
-    border-top: 1px solid var(--vela-border);
-    color: var(--vela-fg-muted);
+    border-top: 1px solid ${t.border};
+    color: ${t.fg.muted};
     font-size: 12px;
     flex: none;
 }
 .vela-bb-range {
     all: unset;
+    box-sizing: border-box;
     height: 24px;
     display: inline-flex;
     align-items: center;
     padding: 0 9px;
-    border-radius: 4px;
+    border-radius: ${t.radius.sm};
     font-weight: 600;
     cursor: pointer;
 }
-.vela-bb-range:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
-.vela-bb-range[data-active='1'] { color: var(--vela-fg-bright); background: var(--vela-hover); }
+.vela-bb-range:hover { background: ${t.hover}; color: ${t.fg.bright}; }
+.vela-bb-range[data-active='1'] { color: ${t.fg.bright}; background: ${t.hover}; }
 .vela-bb-spacer { flex: 1 1 auto; }
-.vela-bb-clock { font-variant-numeric: tabular-nums; color: var(--vela-fg-bright); font-weight: 600; }
+.vela-bb-clock { font-variant-numeric: tabular-nums; color: ${t.fg.bright}; font-weight: 600; }
 .vela-bb-tz {
     all: unset;
+    box-sizing: border-box;
     height: 26px;
     display: inline-flex;
     align-items: center;
     gap: 8px;
     padding: 0 8px;
-    border-radius: 4px;
+    border-radius: ${t.radius.sm};
     font-weight: 600;
-    color: var(--vela-fg-bright);
+    color: ${t.fg.bright};
     cursor: pointer;
 }
-.vela-bb-tz:hover { background: var(--vela-hover); }
-.vela-bb-session { display: inline-flex; border: 1px solid var(--vela-border-strong); border-radius: 4px; overflow: hidden; margin-left: 6px; }
+.vela-bb-tz:hover { background: ${t.hover}; }
+.vela-bb-session { display: inline-flex; border: 1px solid ${t.border.strong}; border-radius: ${t.radius.sm}; overflow: hidden; margin-inline-start: 6px; }
 .vela-bb-session-btn {
     all: unset;
+    box-sizing: border-box;
     height: 24px;
     display: inline-flex;
     align-items: center;
     padding: 0 8px;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
     font-size: 11px;
     font-weight: 600;
     cursor: pointer;
 }
 .vela-bb-session-btn:disabled { cursor: not-allowed; opacity: 0.55; }
-.vela-bb-session-btn:not(:disabled):hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
-.vela-bb-session-btn.is-active { color: var(--vela-fg); background: var(--vela-surface-elev); }
+.vela-bb-session-btn:not(:disabled):hover { background: ${t.hover}; color: ${t.fg.bright}; }
+.vela-bb-session-btn.is-active { color: ${t.fg}; background: ${t.surface.elev}; }
 .vela-bb-session-btn.is-active:disabled { opacity: 0.8; }
 .vela-bb-settings {
     all: unset;
+    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 28px;
     height: 26px;
-    margin-left: 6px;
-    border-radius: 4px;
+    margin-inline-start: 6px;
+    border-radius: ${t.radius.sm};
     cursor: pointer;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
     font-size: 14px;
 }
-.vela-bb-settings:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
-`;
+.vela-bb-settings:hover { background: ${t.hover}; color: ${t.fg.bright}; }
+
+}`;
 
 export interface BottombarOptions {
     /** The stored display-timezone choice — an IANA zone or the exchange rule. */
@@ -129,6 +141,34 @@ export interface BottombarOptions {
     /** RTH/ETH toggled by the user. Fires only while the toggle is ENABLED (see {@link Bottombar.setSession}). */
     onSession?: (session: 'regular' | 'extended') => void;
     onSettingsClick?: () => void;
+    /** The workspace's translator (labels, the clock, the zone menu). Absent: English. */
+    i18n?: Translator;
+}
+
+const TEXT = {
+    timeZone: msg('widget.bottombar.timeZone', 'Time zone'),
+    session: msg('widget.bottombar.session', 'Session — regular (RTH) vs extended (ETH) hours'),
+    regular: msg('widget.bottombar.regular', 'RTH'),
+    extended: msg('widget.bottombar.extended', 'ETH'),
+    chartSettings: msg('widget.bottombar.chartSettings', 'Chart settings'),
+};
+
+/** The range chips' labels; a chip's id stays its identity. */
+const RANGE_LABELS: Readonly<Record<string, MessageLike>> = {
+    '1D': msg('widget.bottombar.range.1d', '1D'),
+    '7D': msg('widget.bottombar.range.7d', '7D'),
+    '1M': msg('widget.bottombar.range.1m', '1M'),
+    '3M': msg('widget.bottombar.range.3m', '3M'),
+    '6M': msg('widget.bottombar.range.6m', '6M'),
+    YTD: msg('widget.bottombar.range.ytd', 'YTD'),
+    '1Y': msg('widget.bottombar.range.1y', '1Y'),
+    '5Y': msg('widget.bottombar.range.5y', '5Y'),
+    ALL: msg('widget.bottombar.range.all', 'ALL'),
+};
+
+/** A range chip's label in the shell's language; an unknown preset shows its id. */
+export function rangeLabel(id: string, i18n?: Translator | null): string {
+    return textOf(i18n, RANGE_LABELS[id] ?? id);
 }
 
 export class Bottombar {
@@ -136,7 +176,7 @@ export class Bottombar {
     private readonly clockEl: HTMLElement;
     private readonly tzLabelEl: HTMLElement;
     private readonly tzButton: HTMLElement;
-    private readonly tzMenu: Menu;
+    private readonly tzMenu: DropdownMenu;
     private readonly settingsTip: Tooltip | null = null;
     private readonly rangeButtons = new Map<string, HTMLButtonElement>();
     private readonly sessionButtons = new Map<'regular' | 'extended', HTMLButtonElement>();
@@ -144,19 +184,22 @@ export class Bottombar {
     private timezone: string;
     private exchangeTimezone: string | undefined;
     private readonly unsubClock: Unsubscribe;
+    private readonly i18n: Translator | null;
+    private readonly settingsBtn: HTMLButtonElement;
 
     constructor(host: HTMLElement, opts: BottombarOptions) {
+        this.i18n = opts.i18n ?? null;
         this.timezone = opts.timezone;
         this.exchangeTimezone = opts.exchangeTimezone;
         const doc = host.ownerDocument;
-        injectStyles(STYLE_ID, CSS, doc);
+        injectChromeStyles(STYLE_ID, CSS, doc);
 
         this.el = doc.createElement('div');
         this.el.className = 'vela-widget-bottombar';
         for (const preset of RANGE_PRESETS) {
             const b = doc.createElement('button');
             b.className = 'vela-bb-range';
-            b.textContent = preset.id;
+            b.textContent = this.t(RANGE_LABELS[preset.id] ?? preset.id);
             b.addEventListener('click', () => {
                 this.setActiveRange(preset.id);
                 opts.onRange(preset);
@@ -170,7 +213,7 @@ export class Bottombar {
         // zone dropdown as clicking the zone label (one affordance, reference behavior).
         this.tzButton = doc.createElement('button');
         this.tzButton.className = 'vela-bb-tz';
-        this.tzButton.setAttribute('aria-label', 'Time zone');
+        this.tzButton.setAttribute('aria-label', this.t(TEXT.timeZone));
         this.clockEl = doc.createElement('span');
         this.clockEl.className = 'vela-bb-clock';
         this.tzLabelEl = doc.createElement('span');
@@ -182,11 +225,11 @@ export class Bottombar {
         // Boots HIDDEN (sessions only apply to markets that have them); the host reveals
         // it per active chart via `setSession` once symbol metadata declares sessions.
         session.style.display = 'none';
-        session.title = 'Session — regular (RTH) vs extended (ETH) hours';
-        for (const [key, label] of [['regular', 'RTH'], ['extended', 'ETH']] as const) {
+        session.title = this.t(TEXT.session);
+        for (const [key, label] of [['regular', TEXT.regular], ['extended', TEXT.extended]] as const) {
             const b = doc.createElement('button');
             b.className = 'vela-bb-session-btn' + (key === 'regular' ? ' is-active' : '');
-            b.textContent = label;
+            b.textContent = this.t(label);
             b.disabled = true;
             b.addEventListener('click', () => {
                 if (b.disabled) return;
@@ -197,19 +240,20 @@ export class Bottombar {
             session.appendChild(b);
         }
         const settingsBtn = doc.createElement('button');
+        this.settingsBtn = settingsBtn;
         settingsBtn.className = 'vela-bb-settings';
         settingsBtn.appendChild(iconEl('gear', doc));
-        settingsBtn.setAttribute('aria-label', 'Chart settings');
+        settingsBtn.setAttribute('aria-label', this.t(TEXT.chartSettings));
         if (opts.onSettingsClick) settingsBtn.addEventListener('click', opts.onSettingsClick);
-        this.settingsTip = new Tooltip(settingsBtn, { content: 'Chart settings', triggerId: 'vela-bb-settings', host });
+        this.settingsTip = new Tooltip(settingsBtn, { content: this.t(TEXT.chartSettings), triggerId: 'vela-bb-settings', host });
         this.el.append(spacer, this.tzButton, session, settingsBtn);
         host.appendChild(this.el);
 
-        this.tzMenu = new Menu({
+        this.tzMenu = new DropdownMenu({
             trigger: this.tzButton,
             triggerId: 'vela-bb-tz',
             host,
-            placement: 'top-end',
+            side: 'top', align: 'end',
             items: this.tzItems(),
             onSelect: (zone) => {
                 this.setTimezone(zone, this.exchangeTimezone);
@@ -272,20 +316,28 @@ export class Bottombar {
     }
 
     private tzItems() {
-        return timezoneMenuRows(this.timezone).map((r) => ({ id: r.value, label: r.label, checked: r.checked }));
+        return timezoneMenuRows(this.timezone, this.i18n).map((r) => ({ id: r.value, label: r.label, checked: r.checked }));
     }
 
+    private t(m: MessageLike): string {
+        return textOf(this.i18n, m);
+    }
+
+    /** Re-read every label, the zone menu and the clock in the current language. */
+    relocalize(): void {
+        for (const [id, b] of this.rangeButtons) b.textContent = this.t(RANGE_LABELS[id] ?? id);
+        this.tzButton.setAttribute('aria-label', this.t(TEXT.timeZone));
+        if (this.sessionEl) this.sessionEl.title = this.t(TEXT.session);
+        this.sessionButtons.get('regular')!.textContent = this.t(TEXT.regular);
+        this.sessionButtons.get('extended')!.textContent = this.t(TEXT.extended);
+        this.settingsBtn.setAttribute('aria-label', this.t(TEXT.chartSettings));
+        this.settingsTip?.setContent(this.t(TEXT.chartSettings));
+        this.tzMenu.setItems(this.tzItems());
+        this.tick();
+    }
+
+    /** The corrected clock, like the countdown chips beside it, so the two never disagree. */
     private tick(): void {
-        try {
-            this.clockEl.textContent = new Intl.DateTimeFormat('en-GB', {
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit',
-                hour12: false,
-                timeZone: this.displayZone,
-            }).format(new Date());
-        } catch {
-            this.clockEl.textContent = '';
-        }
+        this.clockEl.textContent = (this.i18n ?? englishTranslator()).format.clock(clockCorrection.now(), { timeZone: this.displayZone, surface: 'clock' });
     }
 }

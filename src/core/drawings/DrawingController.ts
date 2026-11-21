@@ -7,6 +7,7 @@ import type { DrawingSeriesGateway } from './series';
 import type { DrawingsOption } from './toolbar';
 import { getDrawingType } from './registry';
 import { buildToolbar } from './toolbar';
+import type { Translator } from '../i18n/types';
 import { DrawingStore } from './DrawingStore';
 import { DrawingHistory } from './DrawingHistory';
 import { createDrawing, deserializeDrawing } from './registry';
@@ -56,11 +57,15 @@ export class DrawingController {
     private readonly history = new DrawingHistory();
     private readonly port: IDrawingsRendererPort | null;
     private readonly enabled: boolean;
+    /** The toolbar as last configured — re-read in the chart's language on {@link relocalize}. */
+    private toolbarOption: DrawingsOption | undefined;
     private activeTool: DrawingTypeKey | null = null;
     /** Mirror of the renderer's sticky magnet mode (the renderer default is 'off'). */
     private snapMode: SnapMode = 'off';
     /** When on, finishing a drawing leaves the tool armed (instead of one-shot disarm). */
     private stayInDrawingMode = false;
+    /** When on, the drawings belong to the chart's symbol: a switch to another one removes them. */
+    private clearOnSymbolChange = false;
     /** Mirror of the renderer-local mode (measure/eraser/none). */
     private mode: DrawingMode = null;
     /** FAVORITE tool types (insertion-ordered) — user prefs, not document data. */
@@ -78,11 +83,15 @@ export class DrawingController {
         private readonly events: TypedEventBus<VelaEventMap>,
         option: DrawingsOption | undefined,
         seriesGateway?: DrawingSeriesGateway,
+        /** The chart's translator: the toolbar reaches the renderer labelled in its language. */
+        private readonly i18n: () => Translator | null = () => null,
     ) {
         this.enabled = !!renderer.capabilities.userDrawings && !!renderer.userDrawingsPort;
         this.port = this.enabled ? renderer.userDrawingsPort! : null;
+        this.toolbarOption = option;
+        this.clearOnSymbolChange = typeof option === 'object' && option.clearOnSymbolChange === true;
         if (this.port) {
-            const { definition, visible } = buildToolbar(option);
+            const { definition, visible } = buildToolbar(option, this.i18n());
             this.port.setToolbar(definition);
             this.port.showToolbar(visible);
             if (seriesGateway) this.port.setSeriesGateway?.(seriesGateway);
@@ -275,7 +284,13 @@ export class DrawingController {
     }
 
     setToolbar(option: DrawingsOption): void {
-        this.port?.setToolbar(buildToolbar(option).definition);
+        this.toolbarOption = option;
+        this.port?.setToolbar(buildToolbar(option, this.i18n()).definition);
+    }
+
+    /** The chart's language changed: hand the renderer the toolbar relabelled in it. */
+    relocalize(): void {
+        this.port?.setToolbar(buildToolbar(this.toolbarOption, this.i18n()).definition);
     }
 
     /** Display (or clear) another chart's in-progress placement as a ghost — silently
@@ -349,6 +364,29 @@ export class DrawingController {
         this.deleteMany(ids);
     }
 
+    /** Delete every drawing as ONE undo step. */
+    clear(): void {
+        this.deleteMany(this.store.serialize().drawings.map((d) => d.id));
+    }
+
+    /** Whether a symbol change empties the chart of its drawings (see {@link onSymbolChange}). */
+    getClearOnSymbolChange(): boolean {
+        return this.clearOnSymbolChange;
+    }
+
+    setClearOnSymbolChange(on: boolean): void {
+        this.clearOnSymbolChange = on;
+    }
+
+    /**
+     * The chart is switching to another symbol. With {@link setClearOnSymbolChange} on, its
+     * drawings belonged to the symbol it leaves: they go the way a replaced document does,
+     * with the undo history and no `drawing:removed`, since the user removed nothing.
+     */
+    onSymbolChange(): void {
+        if (this.clearOnSymbolChange && this.store.serialize().drawings.length > 0) this.replace(null, 'symbol');
+    }
+
     setLocked(id: string, v: boolean): void {
         const before = this.store.serialize();
         this.history.record(before);
@@ -416,12 +454,16 @@ export class DrawingController {
     // ── undo / redo (core-owned; works even without renderer support) ──
     undo(): void {
         const next = this.history.undo(this.store.serialize());
-        if (next) this.restoreSnapshot(next);
+        if (!next) return;
+        this.restoreSnapshot(next);
+        this.events.emit('drawing:history', { action: 'undo' });
     }
 
     redo(): void {
         const next = this.history.redo(this.store.serialize());
-        if (next) this.restoreSnapshot(next);
+        if (!next) return;
+        this.restoreSnapshot(next);
+        this.events.emit('drawing:history', { action: 'redo' });
     }
 
     canUndo(): boolean {
@@ -466,9 +508,16 @@ export class DrawingController {
     }
 
     fromJSON(doc: unknown): void {
+        this.replace(doc, 'load');
+    }
+
+    /** Put `doc` in place of every drawing and say so: nothing else tells a list, a count
+     *  or a store of drawings that the set under it changed. */
+    private replace(doc: unknown, cause: 'load' | 'symbol'): void {
         this.history.clear(); // a new document is a context switch — don't undo into the old one
         this.selectedIds = [];
         this.store.load(doc); // load() emits change → sync() when enabled
+        this.events.emit('drawing:replaced', { cause });
     }
 
     destroy(): void {

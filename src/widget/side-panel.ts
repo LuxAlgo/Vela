@@ -11,12 +11,25 @@
 // that a docked column would crush the plot (an editor). A floating panel carries a PIN in
 // its header: pinned, it docks as a column after all; the choice is the user's and persists
 // with the dock state.
-import { injectStyles } from '../ui/styles';
-import { iconEl } from '../ui/icons';
-import { announceSurface } from '../ui/surface-events';
-import { holdForExit, type SurfaceExit } from '../ui/surface-exit';
+import { msg } from '../core/i18n/message';
+import { textOf } from '../core/i18n/text';
+import type { MessageArgs, MessageLike, Translator } from '../core/i18n/types';
+import { injectChromeStyles } from '../ui/chromeStyles';
+import { iconEl } from '@luxalgo/vela-ui/icons';
+import { announceSurface } from '@luxalgo/vela-ui/surface-events';
+import { holdForExit, type SurfaceExit } from '@luxalgo/vela-ui/surface-exit';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 const STYLE_ID = 'vela-widget-sidepanel';
+
+const TEXT = {
+    close: msg('widget.sidePanel.close', 'Close'),
+    restore: msg('widget.sidePanel.restore', 'Restore'),
+    maximize: msg('widget.sidePanel.maximize', 'Maximize'),
+    unpin: msg('widget.sidePanel.unpin', 'Unpin — float over the chart'),
+    pin: msg('widget.sidePanel.pin', 'Pin beside the chart'),
+};
 
 /** Width (px) a panel takes when it declares none. */
 export const DEFAULT_PANEL_WIDTH = 280;
@@ -24,29 +37,31 @@ export const DEFAULT_PANEL_WIDTH = 280;
 export const DEFAULT_PANEL_MIN_WIDTH = 200;
 export const DEFAULT_PANEL_MAX_WIDTH = 640;
 
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 .vela-panel[hidden] { display: none !important; }
 .vela-panel {
     position: relative;
     width: var(--vela-panel-w, ${DEFAULT_PANEL_WIDTH}px);
     flex: none;
-    border-left: 1px solid var(--vela-border);
+    border-inline-start: 1px solid ${t.border};
     display: flex;
     flex-direction: column;
-    color: var(--vela-fg);
+    color: ${t.fg};
     font-size: 13px;
     box-sizing: border-box;
-    background: var(--vela-bg);
+    background: ${t.bg};
 }
+.vela-panel-header[hidden] { display: none; }
 .vela-panel-header {
     display: flex;
     align-items: center;
     gap: 8px;
     padding: 10px 8px 10px 14px;
-    border-bottom: 1px solid var(--vela-border);
+    border-bottom: 1px solid ${t.border};
     font-size: 14px;
     font-weight: 600;
-    color: var(--vela-fg-bright);
+    color: ${t.fg.bright};
 }
 .vela-panel-title { flex: none; }
 .vela-panel-title:empty { display: none; }
@@ -55,21 +70,23 @@ const CSS = `
 .vela-panel-header-slot { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; }
 .vela-panel-close {
     all: unset;
+    box-sizing: border-box;
     cursor: pointer;
     width: 26px;
     height: 26px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 4px;
-    color: var(--vela-fg-muted);
+    border-radius: ${t.radius.sm};
+    color: ${t.fg.muted};
     font-size: 16px;
 }
 .vela-panel-close .vela-icon { width: 16px; height: 16px; }
-.vela-panel-close:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
+.vela-panel-close:hover { background: ${t.hover}; color: ${t.fg.bright}; }
 /* The pin: same footprint as the close button it sits beside; filled + bright once pinned. */
 .vela-panel-pin {
     all: unset;
+    box-sizing: border-box;
     cursor: pointer;
     width: 26px;
     height: 26px;
@@ -77,14 +94,15 @@ const CSS = `
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 4px;
-    color: var(--vela-fg-muted);
+    border-radius: ${t.radius.sm};
+    color: ${t.fg.muted};
 }
 .vela-panel-pin .vela-icon { width: 15px; height: 15px; }
-.vela-panel-pin:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
-.vela-panel-pin[data-on='1'] { color: var(--vela-fg-bright); }
+.vela-panel-pin:hover { background: ${t.hover}; color: ${t.fg.bright}; }
+.vela-panel-pin[data-on='1'] { color: ${t.fg.bright}; }
 .vela-panel-max {
     all: unset;
+    box-sizing: border-box;
     cursor: pointer;
     width: 26px;
     height: 26px;
@@ -92,11 +110,11 @@ const CSS = `
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 4px;
-    color: var(--vela-fg-muted);
+    border-radius: ${t.radius.sm};
+    color: ${t.fg.muted};
 }
 .vela-panel-max .vela-icon { width: 15px; height: 15px; }
-.vela-panel-max:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
+.vela-panel-max:hover { background: ${t.hover}; color: ${t.fg.bright}; }
 /* MAXIMIZED: the panel covers the whole dock host — every chart of the shell — whatever
    its placement; the width handle and the pin have nothing to do meanwhile. */
 .vela-panel[data-maximized] {
@@ -105,20 +123,18 @@ const CSS = `
     width: auto;
     max-width: none;
     z-index: 26;
-    border-left: none;
+    border-inline-start: none;
 }
 .vela-panel[data-maximized] .vela-panel-resizer,
 .vela-panel[data-maximized] .vela-panel-pin { display: none; }
 .vela-panel-body { flex: 1; overflow: auto; padding: 8px; }
-.vela-panel-body::-webkit-scrollbar { width: 8px; }
-.vela-panel-body::-webkit-scrollbar-thumb { background: var(--vela-scroll); border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; }
 /* Straddles the panel's inner border so the whole seam is grabbable; it paints only under the
    pointer — a permanently visible bar would read as a second border. */
 .vela-panel-resizer {
     position: absolute;
     top: 0;
     bottom: 0;
-    left: -3px;
+    inset-inline-start: -3px;
     width: 7px;
     cursor: col-resize;
     touch-action: none;
@@ -129,14 +145,14 @@ const CSS = `
     position: absolute;
     top: 0;
     bottom: 0;
-    left: 3px;
+    inset-inline-start: 3px;
     width: 1px;
     background: transparent;
 }
 /* The same hover ink as the workspace grid splitters and the canvas pane separators, so
    every draggable seam in the shell reads as one family. */
 .vela-panel-resizer:hover::after,
-.vela-panel-resizer[data-dragging]::after { background: var(--vela-separator-hover-line); }
+.vela-panel-resizer[data-dragging]::after { background: ${t.separatorHover.line}; }
 /* An OVERLAY panel floats over the chart's right edge instead of taking a column: the
    chart keeps its width and layout (the dock host is position:relative — the anchoring the
    mobile rule below relies on too). Same z-order as that mobile overlay, above the chart's
@@ -144,11 +160,11 @@ const CSS = `
 .vela-panel[data-overlay] {
     position: absolute;
     top: 0;
-    right: 0;
+    inset-inline-end: 0;
     bottom: 0;
     max-width: 100%;
     z-index: 25;
-    box-shadow: var(--vela-shadow);
+    box-shadow: ${t.shadow};
 }
 /* Mobile: a 280px column would crush a phone-width chart — the panel overlays the
    chart area instead (its flex parent is position:relative), full-bleed, closed by
@@ -158,11 +174,12 @@ const CSS = `
     inset: 0;
     width: auto;
     z-index: 25;
-    border-left: none;
+    border-inline-start: none;
 }
 [data-layout='mobile'] .vela-panel-resizer { display: none; }
 [data-layout='mobile'] .vela-panel-max { display: none; }
-`;
+
+}`;
 
 /** Per-panel width policy. Omitted fields fall back to the module defaults. */
 export interface SidePanelOptions {
@@ -179,6 +196,10 @@ export interface SidePanelOptions {
     /** A header button that MAXIMIZES the panel over every chart of the shell, and restores
      *  it. For panels that are sometimes the main work surface (an editor). */
     maximizable?: boolean;
+    /** `'none'`: no header row — the panel's content draws its own. Default `'default'`. */
+    header?: 'default' | 'none';
+    /** The shell's translator (title, header buttons). Absent: English. */
+    i18n?: Translator;
 }
 
 /**
@@ -209,8 +230,14 @@ export class SidePanel {
     /** Notified when the USER pins or unpins a floating panel (`overlay` is the NEW placement) —
      *  never on a programmatic {@link setOverlay}, for the same reason as widths. */
     onPlacementChange: ((overlay: boolean) => void) | null = null;
+    /** Notified whenever the panel maximizes or restores, by any path (its header button,
+     *  code, or a close restoring it). */
+    onMaximizedChange: ((maximized: boolean) => void) | null = null;
     protected readonly body: HTMLElement;
     private readonly heading: HTMLElement;
+    private title: MessageLike;
+    private readonly closeButton: HTMLButtonElement;
+    protected readonly i18n: Translator | null;
     private readonly slot: HTMLElement;
     private readonly declaredWidth: number;
     private readonly minWidth: number;
@@ -231,9 +258,11 @@ export class SidePanel {
     private exit: SurfaceExit | null = null;
 
     /** `modifier` is the panel's own class, carrying its content styles (e.g. `vela-ot`). */
-    constructor(host: HTMLElement, title: string, modifier: string, opts: SidePanelOptions = {}) {
+    constructor(host: HTMLElement, title: MessageLike, modifier: string, opts: SidePanelOptions = {}) {
         const doc = host.ownerDocument;
-        injectStyles(STYLE_ID, CSS, doc);
+        this.i18n = opts.i18n ?? null;
+        this.title = title;
+        injectChromeStyles(STYLE_ID, CSS, doc);
         // A FIXED panel is its own bound — the resize bounds would otherwise silently rewrite a
         // declared width a host set from code (or restored) outside the resizable defaults.
         this.minWidth = opts.resizable ? (opts.minWidth ?? DEFAULT_PANEL_MIN_WIDTH) : 1;
@@ -251,16 +280,17 @@ export class SidePanel {
         header.className = 'vela-panel-header';
         this.heading = doc.createElement('span');
         this.heading.className = 'vela-panel-title';
-        this.heading.textContent = title;
+        this.heading.textContent = this.t(title);
         // The header SLOT — the space between the title and the close button, handed to a
         // contributed panel's `mount` so it can dock its own compact controls there
         // (script name, action icons) instead of spending a toolbar row on them.
         this.slot = doc.createElement('div');
         this.slot.className = 'vela-panel-header-slot';
         const close = doc.createElement('button');
+        this.closeButton = close;
         close.className = 'vela-panel-close';
         close.appendChild(iconEl('close', doc));
-        close.title = 'Close';
+        close.title = this.t(TEXT.close);
         close.addEventListener('click', () => this.toggle(false));
         // The pin exists only on a panel that can float: pressed, it docks the panel as a
         // column (the chart makes room); released, the panel floats again.
@@ -280,6 +310,7 @@ export class SidePanel {
             this.refreshMaxButton();
         }
         header.append(this.heading, this.slot, ...(this.pin ? [this.pin] : []), ...(this.maxButton ? [this.maxButton] : []), close);
+        if (opts.header === 'none') header.hidden = true;
         this.body = doc.createElement('div');
         this.body.className = 'vela-panel-body';
         this.el.append(header, this.body);
@@ -345,13 +376,14 @@ export class SidePanel {
         if (maximized) this.el.dataset.maximized = '1';
         else delete this.el.dataset.maximized;
         this.refreshMaxButton();
+        this.onMaximizedChange?.(maximized);
     }
 
     private refreshMaxButton(): void {
         if (!this.maxButton) return;
         const doc = this.maxButton.ownerDocument;
         this.maxButton.replaceChildren(iconEl(this.maximizedOn ? 'restore' : 'maximize', doc));
-        this.maxButton.title = this.maximizedOn ? 'Restore' : 'Maximize';
+        this.maxButton.title = this.t(this.maximizedOn ? TEXT.restore : TEXT.maximize);
         this.maxButton.setAttribute('aria-label', this.maxButton.title);
         this.maxButton.setAttribute('aria-pressed', this.maximizedOn ? 'true' : 'false');
     }
@@ -370,8 +402,22 @@ export class SidePanel {
 
     /** Replace the header title. The topbar toggle keeps the DECLARED title as its
      *  tooltip — this only changes what the open column says about itself. */
-    setTitle(title: string): void {
-        this.heading.textContent = title;
+    setTitle(title: MessageLike): void {
+        this.title = title;
+        this.heading.textContent = this.t(title);
+    }
+
+    /** Text in the shell's language. */
+    protected t(text: MessageLike, values?: MessageArgs): string {
+        return textOf(this.i18n, text, values);
+    }
+
+    /** Re-read the header in the current language; a panel with its own text extends it. */
+    relocalize(): void {
+        this.heading.textContent = this.t(this.title);
+        this.closeButton.title = this.t(TEXT.close);
+        this.refreshPin();
+        this.refreshMaxButton();
     }
 
     /** Current width in px. */
@@ -408,7 +454,7 @@ export class SidePanel {
         const doc = this.pin.ownerDocument;
         this.pin.replaceChildren(iconEl(pinned ? 'pin-filled' : 'pin', doc));
         this.pin.dataset.on = pinned ? '1' : '0';
-        this.pin.title = pinned ? 'Unpin — float over the chart' : 'Pin beside the chart';
+        this.pin.title = this.t(pinned ? TEXT.unpin : TEXT.pin);
         this.pin.setAttribute('aria-label', this.pin.title);
         this.pin.setAttribute('aria-pressed', pinned ? 'true' : 'false');
     }

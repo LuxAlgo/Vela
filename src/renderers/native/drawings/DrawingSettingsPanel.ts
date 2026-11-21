@@ -1,4 +1,7 @@
 import type { VelaTheme } from '../../../core/options';
+import { msg } from '../../../core/i18n/message';
+import { textOf } from '../../../core/i18n/text';
+import type { MessageLike, Translator } from '../../../core/i18n/types';
 import type { Drawing, DrawingToolDefaults, DrawingToolTemplate, SerializedDrawing, SettingsField } from '../../../core/drawings';
 import {
     DEFAULT_DRAWING_COLOR,
@@ -20,13 +23,100 @@ import {
     timeframeBandOf,
 } from '../../../core/drawings';
 import { applyChromeTokens } from '../../shared/theme-tokens';
-import { Dialog } from '../../../ui/components/dialog';
-import { Popover, closeOpenPopovers } from '../../../ui/components/popover';
-import { buildFieldControl, fieldGrid } from '../../../ui/components/field';
-import { TextArea } from '../../../ui/components/text-area';
+import { Dialog } from '@luxalgo/vela-ui/dialog';
+import { createButton } from '@luxalgo/vela-ui/button';
+import { Popover, closeOpenPopovers } from '@luxalgo/vela-ui/popover';
+import { buildFieldControl, fieldGrid } from '@luxalgo/vela-ui/field';
+import { TextArea } from '@luxalgo/vela-ui/text-area';
 import { formatTimeStamp, valueDecimals } from '../chrome/ticks';
 import { buildPositionSection, buildProfileSection } from './DrawingSettingsSections';
 import type { PopupAnchor, SettingsActions, SettingsPatch } from './DrawingSettingsPopup';
+import { withKitTranslator } from '@luxalgo/vela-ui/kit-text';
+import { css } from '@luxalgo/vela-ui/css';
+import { disposeWithin } from '@luxalgo/vela-ui/dispose';
+import { t } from '@luxalgo/vela-ui/t';
+
+
+const TEXT = {
+    settings: msg('drawing.settings.settings', 'Settings'),
+    cancel: msg('drawing.settings.cancel', 'Cancel'),
+    ok: msg('drawing.settings.ok', 'OK'),
+    position: msg('drawing.settings.position', 'Position'),
+    profile: msg('drawing.settings.profile', 'Profile'),
+    lineColor: msg('drawing.settings.lineColor', 'Line color'),
+    lineWidth: msg('drawing.settings.lineWidth', 'Line width'),
+    line: msg('drawing.settings.line', 'Line'),
+    style: msg('drawing.settings.style', 'Style'),
+    lineStyle: msg('drawing.settings.lineStyle', 'Line style'),
+    dontExtend: msg('drawing.settings.dontExtend', "Don't extend"),
+    extendLeft: msg('drawing.settings.extendLeft', 'Extend left'),
+    extendRight: msg('drawing.settings.extendRight', 'Extend right'),
+    extendBothWays: msg('drawing.settings.extendBothWays', 'Extend both ways'),
+    extend: msg('drawing.settings.extend', 'Extend'),
+    startArrow: msg('drawing.settings.startArrow', 'Start arrow'),
+    endArrow: msg('drawing.settings.endArrow', 'End arrow'),
+    arrow: msg('drawing.settings.arrow', 'Arrow'),
+    ends: msg('drawing.settings.ends', 'Ends'),
+    fill: msg('drawing.settings.fill', 'Fill'),
+    text: msg('drawing.settings.text', 'Text'),
+    numbers: msg('drawing.settings.numbers', 'Numbers'),
+    numbersSize: msg('drawing.settings.numbersSize', 'Numbers size'),
+    labels: msg('drawing.settings.labels', 'Labels'),
+    labelsSize: msg('drawing.settings.labelsSize', 'Labels size'),
+    levelSet: msg('drawing.settings.levelSet', 'Level set'),
+    ratios: msg('drawing.settings.ratios', 'Ratios'),
+    prices: msg('drawing.settings.prices', 'Prices'),
+    background: msg('drawing.settings.background', 'Background'),
+    reverse: msg('drawing.settings.reverse', 'Reverse'),
+    show: msg('drawing.settings.show', 'Show'),
+    labelSide: msg('drawing.settings.labelSide', 'Label side'),
+    left: msg('drawing.settings.left', 'Left'),
+    right: msg('drawing.settings.right', 'Right'),
+    levels: msg('drawing.settings.levels', 'Levels'),
+    none: msg('drawing.settings.none', 'None'),
+    label: msg('drawing.settings.label', 'Label'),
+    addALabel: msg('drawing.settings.addALabel', 'Add a label'),
+    place: msg('drawing.settings.place', 'Position'),
+    positionAlongTheLine: msg('drawing.settings.positionAlongTheLine', 'Position along the line'),
+    start: msg('drawing.settings.start', 'Start'),
+    middle: msg('drawing.settings.middle', 'Middle'),
+    end: msg('drawing.settings.end', 'End'),
+    side: msg('drawing.settings.side', 'Side'),
+    sideOfTheLine: msg('drawing.settings.sideOfTheLine', 'Side of the line'),
+    above: msg('drawing.settings.above', 'Above'),
+    below: msg('drawing.settings.below', 'Below'),
+    textColor: msg('drawing.settings.textColor', 'Text color'),
+    bold: msg('drawing.settings.bold', 'Bold'),
+    italic: msg('drawing.settings.italic', 'Italic'),
+    points: msg('drawing.settings.points', 'Points'),
+    allTimeframes: msg('drawing.settings.allTimeframes', 'All timeframes'),
+    intraday: msg('drawing.settings.intraday', 'Intraday'),
+    n1HAndUp: msg('drawing.settings.n1HAndUp', '1H and up'),
+    nowhere: msg('drawing.settings.nowhere', 'Nowhere'),
+    showOn: msg('drawing.settings.showOn', 'Show on'),
+    all: msg('drawing.settings.all', 'All'),
+    custom: msg('drawing.settings.custom', 'Custom'),
+    chartTimeframe: msg('drawing.settings.chartTimeframe', "The chart's timeframe"),
+    hiddenOnEveryTimeframe: msg('drawing.settings.hiddenOnEveryTimeframe', 'Hidden on every timeframe.'),
+    hiddenOnThisTimeframe: msg('drawing.settings.hiddenOnThisTimeframe', "Hidden on this chart's timeframe."),
+    styles: msg('drawing.settings.styles', 'Styles'),
+    presets: msg('drawing.settings.presets', 'Presets'),
+    saved: msg('drawing.settings.saved', 'Saved'),
+    resetToDefault: msg('drawing.settings.resetToDefault', 'Reset to default'),
+    saveAsStyle: msg('drawing.settings.saveAsStyle', 'Save as style…'),
+    pointCount: msg('drawing.settings.pointCount', '{count, plural, one {# point} other {# points}}'),
+    pointTime: msg('drawing.settings.pointTime', 'Time'),
+    pointPrice: msg('drawing.settings.pointPrice', 'Price'),
+    pointPriceTitle: msg('drawing.settings.pointPriceTitle', 'Point {point} price'),
+    level: msg('drawing.settings.level', 'Level {n}'),
+    levelColor: msg('drawing.settings.levelColor', 'Level {n} color'),
+    styleTitle: msg('drawing.settings.styleTitle', 'Style: {name}'),
+    deleteStyle: msg('drawing.settings.deleteStyle', 'Delete {name}'),
+    styleName: msg('drawing.settings.styleName', 'Style name'),
+    save: msg('drawing.settings.save', 'Save'),
+    normal: msg('drawing.settings.normal', 'Normal'),
+};
+
 
 /** What the panel needs from the chart beyond the drawing itself. */
 export interface DrawingPanelEnv {
@@ -36,6 +126,8 @@ export interface DrawingPanelEnv {
     timeZone(): string;
     /** Decimals of the symbol's price increment, or null when unknown. */
     priceDecimals(): number | null;
+    /** The chart's translator (labels, hints and menus read in its language). Absent: English. */
+    i18n?(): Translator;
 }
 
 /** The tools whose label can slide along the line and sit under it. */
@@ -44,6 +136,8 @@ const LINE_LABEL_TYPES = new Set(['trendline', 'ray', 'extendedline', 'infoline'
  *  position (its own section edits entry, stop and target). */
 const NO_POINTS = new Set(['freehand', 'highlighter', 'vline', 'position']);
 const MAX_POINTS = 8;
+/** The least height (px) the panel takes beside the toolbar; with less it sits over it. */
+const MIN_ROOM = 200;
 /** Paths the rich sections own, kept out of the generic rows. */
 const POSITION_PATHS = new Set(['riskPercent', 'accountBalance', 'quantity', 'direction', 'entryPrice', 'stopPrice', 'targetPrice', 'showText', 'showHeader', 'showLossSize', 'showTargetLabel', 'showStopLabel', 'showPrices']);
 const LEVEL_PATHS = new Set(['showRatios']);
@@ -79,76 +173,77 @@ function ensureStyles(): void {
     const s = existing ?? document.createElement('style');
     s.id = STYLE_ID;
     s.dataset.rev = STYLE_REV;
-    s.textContent = `
+    s.textContent = css`@layer vela.chrome {
+
 .vela-dsp-pass { pointer-events: none !important; }
 .vela-dialog.vela-dsp { pointer-events: auto; width: 360px; min-width: 0; max-width: calc(100% - 24px); max-height: calc(100% - 24px); font-size: 13px; }
 .vela-dsp .vela-dialog-header { padding: 8px 8px 8px 16px; gap: 6px; }
 .vela-dsp .vela-dialog-title { font-size: 15px; line-height: 22px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.vela-dsp .vela-dialog-footer { padding: 10px 12px; display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--vela-border); }
-.vela-dsp .vela-dialog-btn { height: 30px; font-size: 13px; }
+.vela-dsp .vela-dialog-footer { padding: 10px 12px; display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid ${t.border}; }
 .vela-dsp-scroll { overflow-y: auto; overflow-x: hidden; flex: 1 1 auto; min-height: 0; }
 .vela-dsp-block { padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
-.vela-dsp-block + .vela-dsp-block, .vela-dsp-fold { border-top: 1px solid var(--vela-border); }
-.vela-dsp-h { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--vela-fg-muted); }
+.vela-dsp-block + .vela-dsp-block, .vela-dsp-fold { border-top: 1px solid ${t.border}; }
+.vela-dsp-h { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: ${t.fg.muted}; }
 .vela-dsp-row { display: flex; align-items: center; gap: 8px; min-height: 30px; }
 .vela-dsp-row[hidden] { display: none; }
-.vela-dsp-lab { flex: 0 0 96px; color: var(--vela-fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vela-dsp-lab { flex: 0 0 96px; color: ${t.fg.muted}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .vela-dsp-row > .vela-dsp-lab + * { min-width: 0; }
 .vela-dsp-spacer { flex: 1; }
 .vela-dsp-fold-h { all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 8px; padding: 11px 16px; cursor: pointer; }
-.vela-dsp-fold-h:hover { background: var(--vela-hover); }
-.vela-dsp-fold-h:focus-visible { outline: 2px solid var(--vela-selected-bg); outline-offset: -2px; }
-.vela-dsp-fold-t { font-weight: 600; color: var(--vela-fg-bright); white-space: nowrap; }
-.vela-dsp-fold-s { flex: 1; min-width: 0; text-align: right; color: var(--vela-fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
-.vela-dsp-chev { display: flex; color: var(--vela-fg-muted); transition: transform var(--vela-dur-fast) ease; }
+.vela-dsp-fold-h:hover { background: ${t.hover}; }
+.vela-dsp-fold-h:focus-visible { outline: 2px solid ${t.selected.bg}; outline-offset: -2px; }
+.vela-dsp-fold-t { font-weight: 600; color: ${t.fg.bright}; white-space: nowrap; }
+.vela-dsp-fold-s { flex: 1; min-width: 0; text-align: end; color: ${t.fg.muted}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.vela-dsp-chev { display: flex; color: ${t.fg.muted}; transition: transform ${t.dur.fast} ease; }
 .vela-dsp-fold[data-open] .vela-dsp-chev { transform: rotate(90deg); }
 .vela-dsp-fold-b { padding: 0 16px 12px; display: flex; flex-direction: column; gap: 8px; }
 .vela-dsp-fold:not([data-open]) .vela-dsp-fold-b { display: none; }
-.vela-dsp-seg { display: inline-flex; flex: none; border: 1px solid var(--vela-border-strong); border-radius: 6px; overflow: hidden; }
+.vela-dsp-seg { display: inline-flex; flex: none; border: 1px solid ${t.border.strong}; border-radius: ${t.radius.md}; overflow: hidden; }
 .vela-dsp-seg[data-full] { display: flex; flex: 1; }
-.vela-dsp-seg > button { all: unset; box-sizing: border-box; cursor: pointer; height: 28px; min-width: 32px; padding: 0 8px; display: flex; align-items: center; justify-content: center; color: var(--vela-fg-muted); white-space: nowrap; }
+.vela-dsp-seg > button { all: unset; box-sizing: border-box; cursor: pointer; height: 28px; min-width: 32px; padding: 0 8px; display: flex; align-items: center; justify-content: center; color: ${t.fg.muted}; white-space: nowrap; }
 .vela-dsp-seg[data-full] > button { flex: 1 1 0; min-width: 0; }
-.vela-dsp-seg > button + button { border-left: 1px solid var(--vela-border); }
-.vela-dsp-seg > button:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
-.vela-dsp-seg > button[aria-pressed='true'] { background: var(--vela-active); color: var(--vela-fg-bright); }
-.vela-dsp-seg > button:focus-visible { outline: 2px solid var(--vela-selected-bg); outline-offset: -2px; }
+.vela-dsp-seg > button + button { border-inline-start: 1px solid ${t.border}; }
+.vela-dsp-seg > button:hover { background: ${t.hover}; color: ${t.fg.bright}; }
+.vela-dsp-seg > button[aria-pressed='true'] { background: ${t.active}; color: ${t.fg.bright}; }
+.vela-dsp-seg > button:focus-visible { outline: 2px solid ${t.selected.bg}; outline-offset: -2px; }
 .vela-dsp-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.vela-dsp-chip { all: unset; box-sizing: border-box; cursor: pointer; height: 26px; padding: 0 10px; border-radius: 13px; border: 1px solid var(--vela-border-strong); color: var(--vela-fg-muted); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-.vela-dsp-chip:hover { color: var(--vela-fg-bright); border-color: var(--vela-fg-muted); }
-.vela-dsp-chip[aria-pressed='true'] { background: var(--vela-active); border-color: transparent; color: var(--vela-fg-bright); }
-.vela-dsp-chip:focus-visible { outline: 2px solid var(--vela-selected-bg); outline-offset: 1px; }
-.vela-dsp-note { font-size: 12px; color: var(--vela-fg-muted); line-height: 1.45; }
+.vela-dsp-chip { all: unset; box-sizing: border-box; cursor: pointer; height: 26px; padding: 0 10px; border-radius: 13px; border: 1px solid ${t.border.strong}; color: ${t.fg.muted}; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.vela-dsp-chip:hover { color: ${t.fg.bright}; border-color: ${t.fg.muted}; }
+.vela-dsp-chip[aria-pressed='true'] { background: ${t.active}; border-color: transparent; color: ${t.fg.bright}; }
+.vela-dsp-chip:focus-visible { outline: 2px solid ${t.selected.bg}; outline-offset: 1px; }
+.vela-dsp-note { font-size: 12px; color: ${t.fg.muted}; line-height: 1.45; }
 .vela-dsp-pt { display: grid; grid-template-columns: 34px minmax(0, 120px) minmax(0, 1fr); align-items: center; gap: 8px; min-height: 30px; }
-.vela-dsp-pt-k { font-weight: 600; color: var(--vela-fg-muted); }
-.vela-dsp-pt-t { color: var(--vela-fg-muted); font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vela-dsp-pt-k { font-weight: 600; color: ${t.fg.muted}; }
+.vela-dsp-pt-t { color: ${t.fg.muted}; font-size: 12px; text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .vela-dsp-tf[hidden], .vela-dsp-note[hidden] { display: none; }
 .vela-dsp-tf { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
-.vela-dsp-tf > button { all: unset; box-sizing: border-box; cursor: pointer; position: relative; height: 28px; border-radius: 6px; border: 1px solid var(--vela-border-strong); color: var(--vela-fg-muted); display: flex; align-items: center; justify-content: center; font-variant-numeric: tabular-nums; }
-.vela-dsp-tf > button:hover { color: var(--vela-fg-bright); border-color: var(--vela-fg-muted); }
-.vela-dsp-tf > button[aria-pressed='true'] { background: var(--vela-active); border-color: transparent; color: var(--vela-fg-bright); }
-.vela-dsp-tf > button[data-here]::after { content: ''; position: absolute; top: 3px; right: 3px; width: 5px; height: 5px; border-radius: 50%; background: var(--vela-selected-bg); }
+.vela-dsp-tf > button { all: unset; box-sizing: border-box; cursor: pointer; position: relative; height: 28px; border-radius: ${t.radius.md}; border: 1px solid ${t.border.strong}; color: ${t.fg.muted}; display: flex; align-items: center; justify-content: center; font-variant-numeric: tabular-nums; }
+.vela-dsp-tf > button:hover { color: ${t.fg.bright}; border-color: ${t.fg.muted}; }
+.vela-dsp-tf > button[aria-pressed='true'] { background: ${t.active}; border-color: transparent; color: ${t.fg.bright}; }
+.vela-dsp-tf > button[data-here]::after { content: ''; position: absolute; top: 3px; inset-inline-end: 3px; width: 5px; height: 5px; border-radius: 50%; background: ${t.selected.bg}; }
 .vela-dsp-grid { padding: 0; }
 .vela-dsp-lv { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; }
 .vela-dsp-lv-c { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .vela-dsp-lv-c .vela-num:not([data-fill])[data-compact] { width: 76px; }
 .vela-dsp-lv-c .vela-num input { height: 28px; }
-.vela-dsp-lv-c[data-off] .vela-num input { color: var(--vela-fg-muted); }
-.vela-dsp-style { all: unset; box-sizing: border-box; cursor: pointer; flex: none; height: 28px; max-width: 150px; padding: 0 6px 0 10px; border-radius: 6px; border: 1px solid var(--vela-border-strong); display: inline-flex; align-items: center; gap: 4px; color: var(--vela-fg); font-size: 12px; }
+.vela-dsp-lv-c[data-off] .vela-num input { color: ${t.fg.muted}; }
+.vela-dsp-style { all: unset; box-sizing: border-box; cursor: pointer; flex: none; height: 28px; max-width: 150px; padding: 0 6px 0 10px; border-radius: ${t.radius.md}; border: 1px solid ${t.border.strong}; display: inline-flex; align-items: center; gap: 4px; color: ${t.fg}; font-size: 12px; }
 .vela-dsp-style > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.vela-dsp-style:hover, .vela-dsp-style[aria-expanded='true'] { background: var(--vela-hover); color: var(--vela-fg-bright); }
+.vela-dsp-style:hover, .vela-dsp-style[aria-expanded='true'] { background: ${t.hover}; color: ${t.fg.bright}; }
 .vela-dsp-menu { min-width: 220px; max-height: 320px; overflow-y: auto; padding: 4px; display: flex; flex-direction: column; gap: 1px; }
-.vela-dsp-mh { padding: 6px 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--vela-fg-muted); }
+.vela-dsp-mh { padding: 6px 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: ${t.fg.muted}; }
 .vela-dsp-mi { all: unset; box-sizing: border-box; cursor: pointer; display: flex; align-items: center; gap: 8px; padding: 0 4px 0 8px; height: 30px; border-radius: 5px; color: inherit; }
-.vela-dsp-mi:hover, .vela-dsp-mi:focus-visible { background: var(--vela-hover-strong); }
-.vela-dsp-mi[data-current] { color: var(--vela-fg-bright); font-weight: 600; }
+.vela-dsp-mi:hover, .vela-dsp-mi:focus-visible { background: ${t.hover.strong}; }
+.vela-dsp-mi[data-current] { color: ${t.fg.bright}; font-weight: 600; }
 .vela-dsp-mi > .vela-dsp-mi-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.vela-dsp-mi-dot { flex: none; width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--vela-border-strong); }
-.vela-dsp-mi-x { all: unset; cursor: pointer; flex: none; width: 24px; height: 24px; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: var(--vela-fg-muted); }
-.vela-dsp-mi-x:hover { background: var(--vela-hover); color: var(--vela-danger); }
-.vela-dsp-msep { height: 1px; background: var(--vela-border); margin: 4px 0; }
+.vela-dsp-mi-dot { flex: none; width: 14px; height: 14px; border-radius: ${t.radius.sm}; border: 1px solid ${t.border.strong}; }
+.vela-dsp-mi-x { all: unset; cursor: pointer; flex: none; width: 24px; height: 24px; border-radius: ${t.radius.sm}; display: flex; align-items: center; justify-content: center; color: ${t.fg.muted}; }
+.vela-dsp-mi-x:hover { background: ${t.hover}; color: ${t.danger}; }
+.vela-dsp-msep { height: 1px; background: ${t.border}; margin: 4px 0; }
 .vela-dsp-mname { display: flex; gap: 6px; padding: 4px; }
-.vela-dsp-mname > input { flex: 1; min-width: 0; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 6px; border: 1px solid var(--vela-border-strong); background: transparent; color: inherit; font: inherit; outline: none; }
-.vela-dsp-mname > input:focus { border-color: var(--vela-selected-bg); }`;
+.vela-dsp-mname > input { flex: 1; min-width: 0; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: ${t.radius.md}; border: 1px solid ${t.border.strong}; background: transparent; color: inherit; font: inherit; outline: none; }
+.vela-dsp-mname > input:focus { border-color: ${t.selected.bg}; }
+}`;
     if (!existing) document.head.appendChild(s);
 }
 
@@ -195,6 +290,11 @@ export class DrawingSettingsPanel {
         this.theme = theme;
     }
 
+    /** Display text in the chart's language. */
+    private t(m: MessageLike, values?: Record<string, string | number>): string {
+        return textOf(this.env.i18n?.() ?? null, m, values);
+    }
+
     isOpen(): boolean {
         return this.ui != null;
     }
@@ -205,10 +305,16 @@ export class DrawingSettingsPanel {
 
     /** Re-read the drawing after a change made outside the panel (a drag, an undo). */
     sync(): void {
-        this.refresh?.();
+        withKitTranslator(this.env.i18n?.(), () => this.refresh?.());
     }
 
-    open(drawing: Drawing, actions: SettingsActions, anchor: PopupAnchor | null): void {
+    /** `anchor` is the drawing's box; `toolbar`, the quick toolbar's, which the panel opens beside. */
+    open(drawing: Drawing, actions: SettingsActions, anchor: PopupAnchor | null, toolbar: PopupAnchor | null = null): void {
+        // Kit controls built here (steppers, color pickers) speak the chart's language too.
+        withKitTranslator(this.env.i18n?.(), () => this.build(drawing, actions, anchor, toolbar));
+    }
+
+    private build(drawing: Drawing, actions: SettingsActions, anchor: PopupAnchor | null, toolbar: PopupAnchor | null): void {
         this.close();
         ensureStyles();
         const first = actions.resolve() ?? drawing;
@@ -235,7 +341,9 @@ export class DrawingSettingsPanel {
             rebuild: () => {
                 const top = scroll.scrollTop;
                 watchers = [];
-                scroll.replaceChildren(...this.sections(build));
+                const next = this.sections(build);
+                disposeWithin(scroll);
+                scroll.replaceChildren(...next);
                 scroll.scrollTop = top;
                 styleBtn.refresh();
             },
@@ -247,9 +355,11 @@ export class DrawingSettingsPanel {
             actions.restore?.(snapshot);
             this.close();
         };
+        const i18n = this.env.i18n?.();
         const ui = new Dialog({
             host: this.host,
-            title: meta?.label ?? 'Settings',
+            title: meta?.label ?? this.t(TEXT.settings),
+            ...(i18n ? { i18n } : {}),
             modal: false,
             contained: true,
             align: 'center',
@@ -257,7 +367,18 @@ export class DrawingSettingsPanel {
             flush: true,
             className: 'vela-dsp',
             closeOnEscape: false,
-            footer: (foot) => foot.append(button('Cancel', false, cancel), button('Ok', true, () => this.close())),
+            footer: (foot) => {
+                // Host-contributed actions lead the footer, apart from Cancel / Ok.
+                const extras = (actions.extras?.() ?? []).filter((x) => x.settings);
+                for (const extra of extras) {
+                    const b = createButton({ text: extra.label, icon: extra.icon, variant: 'ghost', size: 'sm', onClick: () => extra.run() }).el;
+                    b.dataset.drawingAction = extra.id;
+                    foot.append(b);
+                }
+                const cancelBtn = button(this.t(TEXT.cancel), false, cancel);
+                if (extras.length > 0) cancelBtn.style.marginInlineStart = 'auto';
+                foot.append(cancelBtn, button(this.t(TEXT.ok), true, () => this.close()));
+            },
             onOpenChange: (open) => {
                 if (!open) this.close();
             },
@@ -265,7 +386,7 @@ export class DrawingSettingsPanel {
         applyChromeTokens(ui.panel, this.theme);
         ui.backdrop.classList.add('vela-dsp-pass');
         ui.positioner.classList.add('vela-dsp-pass');
-        // Open on the side of the chart away from the drawing, so the drawing stays in view.
+        // Without the toolbar to hang off: the side of the chart away from the drawing.
         const hostW = this.host.clientWidth;
         const leftHalf = anchor != null && hostW > 0 && anchor.x + anchor.w / 2 < hostW / 2;
         ui.positioner.style.justifyContent = leftHalf ? 'flex-end' : 'flex-start';
@@ -292,6 +413,44 @@ export class DrawingSettingsPanel {
         };
         build.rebuild();
         ui.show();
+        if (toolbar) this.placeBeside(ui, toolbar, anchor);
+    }
+
+    /** Hang the panel off the quick toolbar, like a menu from its gear: on the toolbar's side away
+     *  from the drawing when it fits there, else the side with more room (it scrolls inside), its
+     *  left edge in line with the toolbar's. Opening folds grow it away from the toolbar. On the
+     *  mobile layout the panel fills the shell instead. */
+    private placeBeside(ui: Dialog, bar: PopupAnchor, drawing: PopupAnchor | null): void {
+        if (ui.positioner.closest('[data-layout="mobile"]')) return;
+        const W = this.host.clientWidth;
+        const H = this.host.clientHeight;
+        if (W === 0 || H === 0) return;
+        const p = ui.panel;
+        const gap = 8;
+        const edge = 12;
+        ui.positioner.style.padding = '0';
+        p.style.position = 'absolute';
+        p.style.margin = '0';
+        // The dialog shows itself a tick after `show()`; lay its layer out now to measure the panel.
+        const shown = ui.positioner.style.display;
+        ui.positioner.style.display = '';
+        const w = p.offsetWidth;
+        const h = p.offsetHeight;
+        ui.positioner.style.display = shown;
+
+        const room = { above: bar.y - gap - edge, below: H - (bar.y + bar.h) - gap - edge };
+        const awayAbove = drawing != null && drawing.y + drawing.h / 2 > bar.y + bar.h / 2;
+        const order: Array<'above' | 'below'> = awayAbove ? ['above', 'below'] : ['below', 'above'];
+        const side = order.find((s) => room[s] >= h) ?? (room.above > room.below ? 'above' : 'below');
+        p.style.left = `${Math.max(4, Math.min(bar.x, W - w - 4))}px`; // the toolbar's own side margin
+        if (room[side] < MIN_ROOM) {
+            // Too little room either side (a short chart): over the toolbar, kept in view.
+            p.style.top = `${Math.max(edge, Math.min(bar.y, H - h - edge))}px`;
+            return;
+        }
+        p.style.maxHeight = `${room[side]}px`;
+        if (side === 'below') p.style.top = `${bar.y + bar.h + gap}px`;
+        else p.style.bottom = `${H - bar.y + gap}px`;
     }
 
     close(): void {
@@ -320,8 +479,8 @@ export class DrawingSettingsPanel {
         const style = this.styleBlock(b, fields, has);
         if (style) out.push(style);
         if (d.editableLevels()) out.push(this.levelsBlock(b));
-        if (d instanceof PositionTool) out.push(this.richBlock('Position', (grid) => buildPositionSection(grid, d, b.actions, this.theme)));
-        if (d instanceof FixedRangeVolumeProfile) out.push(this.richBlock('Profile', (grid) => buildProfileSection(grid, d, b.actions, this.theme)));
+        if (d instanceof PositionTool) out.push(this.richBlock(this.t(TEXT.position), (grid) => buildPositionSection(grid, d, b.actions, this.theme, (m, v) => this.t(m, v))));
+        if (d instanceof FixedRangeVolumeProfile) out.push(this.richBlock(this.t(TEXT.profile), (grid) => buildProfileSection(grid, d, b.actions, this.theme, (m, v) => this.t(m, v))));
         const own = this.optionsBlock(b, fields, d);
         if (own) out.push(own);
         if (!schema.textIsContent && fields.some((f) => f.path.startsWith('text.'))) out.push(this.textFold(b, has));
@@ -336,40 +495,40 @@ export class DrawingSettingsPanel {
         const rows: HTMLElement[] = [];
         if (has('style.lineColor') || has('style.lineWidth')) {
             const ctrls: HTMLElement[] = [];
-            if (has('style.lineColor')) ctrls.push(this.swatch(b, 'Line color', () => b.live().style.lineColor || DEFAULT_DRAWING_COLOR, 'style.lineColor'));
+            if (has('style.lineColor')) ctrls.push(this.swatch(b, this.t(TEXT.lineColor), () => b.live().style.lineColor || DEFAULT_DRAWING_COLOR, 'style.lineColor'));
             const wf = fields.find((f) => f.path === 'style.lineWidth');
             if (wf) {
                 // A marker's broad stroke (the highlighter's 4–60) outgrows the 1–4 ladder.
-                if ((wf.min ?? 1) > 1) ctrls.push(this.number(b, 'Line width', () => b.live().style.lineWidth, 'style.lineWidth', wf));
-                else ctrls.push(this.seg(b, 'Line width', [1, 2, 3, 4].map((w) => ({ value: w, html: widthIcon(w), title: `${w}px` })), () => b.live().style.lineWidth, (v) => b.edit({ 'style.lineWidth': v })));
+                if ((wf.min ?? 1) > 1) ctrls.push(this.number(b, this.t(TEXT.lineWidth), () => b.live().style.lineWidth, 'style.lineWidth', wf));
+                else ctrls.push(this.seg(b, this.t(TEXT.lineWidth), [1, 2, 3, 4].map((w) => ({ value: w, html: widthIcon(w), title: `${w}px` })), () => b.live().style.lineWidth, (v) => b.edit({ 'style.lineWidth': v })));
             }
-            rows.push(row('Line', ...ctrls));
+            rows.push(row(this.t(TEXT.line), ...ctrls));
         }
         if (has('style.lineStyle')) {
-            rows.push(row('Style', this.seg(b, 'Line style', LINE_STYLE_OPTIONS.map((o) => ({ value: o.value, html: dashIcon(o.value), title: o.label })), () => b.live().style.lineStyle, (v) => b.edit({ 'style.lineStyle': v }))));
+            rows.push(row(this.t(TEXT.style), this.seg(b, this.t(TEXT.lineStyle), LINE_STYLE_OPTIONS.map((o) => ({ value: o.value, html: dashIcon(o.value), title: this.t(o.label) })), () => b.live().style.lineStyle, (v) => b.edit({ 'style.lineStyle': v }))));
         }
         if (has('style.extendLeft') && has('style.extendRight')) {
             const opts = [
-                { value: 'none', html: EXTEND_ICONS.none!, title: "Don't extend" },
-                { value: 'left', html: EXTEND_ICONS.left!, title: 'Extend left' },
-                { value: 'right', html: EXTEND_ICONS.right!, title: 'Extend right' },
-                { value: 'both', html: EXTEND_ICONS.both!, title: 'Extend both ways' },
+                { value: 'none', html: EXTEND_ICONS.none!, title: this.t(TEXT.dontExtend) },
+                { value: 'left', html: EXTEND_ICONS.left!, title: this.t(TEXT.extendLeft) },
+                { value: 'right', html: EXTEND_ICONS.right!, title: this.t(TEXT.extendRight) },
+                { value: 'both', html: EXTEND_ICONS.both!, title: this.t(TEXT.extendBothWays) },
             ];
             const read = (): string => {
                 const { extendLeft: l, extendRight: r } = b.live().style;
                 return l && r ? 'both' : l ? 'left' : r ? 'right' : 'none';
             };
-            rows.push(row('Extend', this.seg(b, 'Extend', opts, read, (v) => b.edit({ 'style.extendLeft': v === 'left' || v === 'both', 'style.extendRight': v === 'right' || v === 'both' }))));
+            rows.push(row(this.t(TEXT.extend), this.seg(b, this.t(TEXT.extend), opts, read, (v) => b.edit({ 'style.extendLeft': v === 'left' || v === 'both', 'style.extendRight': v === 'right' || v === 'both' }))));
         }
         const arrows: HTMLElement[] = [];
-        if (has('style.arrowLeft')) arrows.push(this.chip(b, 'Start arrow', () => !!b.live().style.arrowLeft, (on) => b.edit({ 'style.arrowLeft': on })));
-        if (has('style.arrowRight')) arrows.push(this.chip(b, has('style.arrowLeft') ? 'End arrow' : 'Arrow', () => !!b.live().style.arrowRight, (on) => b.edit({ 'style.arrowRight': on })));
-        if (arrows.length) rows.push(row('Ends', chips(...arrows)));
+        if (has('style.arrowLeft')) arrows.push(this.chip(b, this.t(TEXT.startArrow), () => !!b.live().style.arrowLeft, (on) => b.edit({ 'style.arrowLeft': on })));
+        if (has('style.arrowRight')) arrows.push(this.chip(b, has('style.arrowLeft') ? this.t(TEXT.endArrow) : this.t(TEXT.arrow), () => !!b.live().style.arrowRight, (on) => b.edit({ 'style.arrowRight': on })));
+        if (arrows.length) rows.push(row(this.t(TEXT.ends), chips(...arrows)));
         if (has('style.fillColor')) {
-            rows.push(row('Fill', this.swatch(b, 'Fill', () => effectiveFillColor(b.live(), this.theme) ?? b.live().style.fillColor ?? DEFAULT_DRAWING_COLOR, 'style.fillColor')));
+            rows.push(row(this.t(TEXT.fill), this.swatch(b, this.t(TEXT.fill), () => effectiveFillColor(b.live(), this.theme) ?? b.live().style.fillColor ?? DEFAULT_DRAWING_COLOR, 'style.fillColor')));
         }
         // A computed label (no typed words) keeps its text styling with the look.
-        if (!has('text.value') && has('text.color')) rows.push(row('Text', ...this.textStyling(b, has)));
+        if (!has('text.value') && has('text.color')) rows.push(row(this.t(TEXT.text), ...this.textStyling(b, has)));
         return rows.length ? block(null, ...rows) : null;
     }
 
@@ -389,10 +548,7 @@ export class DrawingSettingsPanel {
             const next = own[i + 1];
             // "Upper line color" + "Upper line style" read as one "Upper line" row, and an upper /
             // lower color pair ("Upper band color", "Lower band color") as one "Bands" row.
-            const base =
-                f.kind === 'color' && next?.kind === 'lineStyle' ? pairBase(f.label, next.label)
-                : f.kind === 'color' && next?.kind === 'color' ? upperLowerBase(f.label, next.label)
-                : null;
+            const base = this.pairLabel(f, next);
             if (base) {
                 const color = this.fieldControl(b, f);
                 const style = this.fieldControl(b, next!);
@@ -402,7 +558,7 @@ export class DrawingSettingsPanel {
             }
             const ctrl = this.fieldControl(b, f);
             if (!ctrl) continue;
-            const r = row(f.label, ctrl);
+            const r = row(this.t(f.label), ctrl);
             // An option that matters only in some modes comes and goes with them.
             const cond = f.when;
             if (cond) b.watch(() => (r.hidden = !cond.in.includes(readPath(b.live(), cond.path))));
@@ -410,28 +566,39 @@ export class DrawingSettingsPanel {
         }
         // Level numbers and their labels have their own sizes (fib-family tools).
         const props = d.serialize().props ?? {};
-        const sizes = TEXT_SIZE_OPTIONS.map((o) => ({ value: o.value, html: o.label }));
-        if ('numbersSize' in props) rows.push(row('Numbers', this.seg(b, 'Numbers size', sizes, () => (b.live().serialize().props?.numbersSize as string) ?? 'small', (v) => b.edit({ numbersSize: v }), true)));
-        if ('labelsSize' in props) rows.push(row('Labels', this.seg(b, 'Labels size', sizes, () => (b.live().serialize().props?.labelsSize as string) ?? 'normal', (v) => b.edit({ labelsSize: v }), true)));
+        const sizes = TEXT_SIZE_OPTIONS.map((o) => ({ value: o.value, html: this.t(o.label) }));
+        if ('numbersSize' in props) rows.push(row(this.t(TEXT.numbers), this.seg(b, this.t(TEXT.numbersSize), sizes, () => (b.live().serialize().props?.numbersSize as string) ?? 'small', (v) => b.edit({ numbersSize: v }), true)));
+        if ('labelsSize' in props) rows.push(row(this.t(TEXT.labels), this.seg(b, this.t(TEXT.labelsSize), sizes, () => (b.live().serialize().props?.labelsSize as string) ?? 'normal', (v) => b.edit({ labelsSize: v }), true)));
         return rows.length ? block(null, ...rows) : null;
+    }
+
+    /** The label of the one row a field shares with the next: a color and its line style, or
+     *  an upper and a lower color. A field declares it (`rowLabel`); plain English labels
+     *  from older schemas still pair by their wording. Null when the two keep their own rows. */
+    private pairLabel(f: SettingsField, next: SettingsField | undefined): string | null {
+        if (f.kind !== 'color' || (next?.kind !== 'lineStyle' && next?.kind !== 'color')) return null;
+        if (f.rowLabel) return this.t(f.rowLabel);
+        if (typeof f.label !== 'string' || typeof next.label !== 'string') return null;
+        return next.kind === 'lineStyle' ? pairBase(f.label, next.label) : upperLowerBase(f.label, next.label);
     }
 
     private fieldControl(b: Build, f: SettingsField): HTMLElement | null {
         const read = (): unknown => readPath(b.live(), f.path);
         switch (f.kind) {
             case 'color':
-                return this.swatch(b, f.label, () => (read() as string | undefined) || DEFAULT_DRAWING_COLOR, f.path);
+                return this.swatch(b, this.t(f.label), () => (read() as string | undefined) || (f.fallback ? (readPath(b.live(), f.fallback) as string | undefined) : undefined) || DEFAULT_DRAWING_COLOR, f.path);
             case 'lineStyle':
-                return this.seg(b, f.label, LINE_STYLE_OPTIONS.map((o) => ({ value: o.value, html: dashIcon(o.value), title: o.label })), () => read() as string, (v) => b.edit({ [f.path]: v }));
+                return this.seg(b, this.t(f.label), LINE_STYLE_OPTIONS.map((o) => ({ value: o.value, html: dashIcon(o.value), title: this.t(o.label) })), () => read() as string, (v) => b.edit({ [f.path]: v }));
             case 'boolean':
                 return this.switch(b, () => read() !== false && read() != null, (v) => b.edit({ [f.path]: v }));
             case 'number':
             case 'opacity':
-                return this.number(b, f.label, () => Number(read() ?? 0), f.path, f);
+                return this.number(b, this.t(f.label), () => Number(read() ?? 0), f.path, f);
             case 'select': {
                 // Only timeframes below the chart's own make sense for a lower-timeframe inset.
-                const options = f.path === 'magnifier.timeframe' ? magnifierTimeframesBelow(this.env.chartBarMs()) : (f.options ?? []);
-                if (options.length === 0) return null;
+                const choices = f.path === 'magnifier.timeframe' ? magnifierTimeframesBelow(this.env.chartBarMs()) : (f.options ?? []);
+                if (choices.length === 0) return null;
+                const options = choices.map((o) => ({ value: o.value, label: this.t(o.label) }));
                 const sel = buildFieldControl({ kind: 'select', options, value: String(read() ?? options[0]!.value), fill: false, theme: this.theme, onChange: (v) => b.edit({ [f.path]: v }) });
                 b.watch(() => sel.setValue?.(String(read() ?? '')));
                 return sel.el;
@@ -470,6 +637,7 @@ export class DrawingSettingsPanel {
         };
         const fill = (): void => {
             last = key();
+            disposeWithin(grid);
             grid.replaceChildren();
             const free = b.live() instanceof FibLevels; // horizontal levels may sit at or beyond either anchor
             (b.live().editableLevels() ?? []).forEach((lv, i) => {
@@ -493,7 +661,7 @@ export class DrawingSettingsPanel {
                     compact: true,
                     fill: false,
                     commit: 'blur',
-                    title: `Level ${i + 1}`,
+                    title: this.t(TEXT.level, { n: i + 1 }),
                     onChange: (n) => {
                         if (!Number.isFinite(n) || (!free && n <= 0)) {
                             num.setValue?.(ratio);
@@ -507,7 +675,7 @@ export class DrawingSettingsPanel {
                 const swatch = buildFieldControl({
                     kind: 'color',
                     theme: this.theme,
-                    title: `Level ${i + 1} color`,
+                    title: this.t(TEXT.levelColor, { n: i + 1 }),
                     get: () => color,
                     onChange: (v) => {
                         color = v;
@@ -526,8 +694,8 @@ export class DrawingSettingsPanel {
             rows.push(
                 this.seg(
                     b,
-                    'Level set',
-                    FIB_PRESETS.map((p) => ({ value: p.key, html: p.label })),
+                    this.t(TEXT.levelSet),
+                    FIB_PRESETS.map((p) => ({ value: p.key, html: this.t(p.label) })),
                     () => {
                         const f = b.live() as FibRetracement;
                         return matchFibPreset(f.levels, f.reverse) ?? undefined;
@@ -540,28 +708,28 @@ export class DrawingSettingsPanel {
                 ),
             );
         }
-        if (d instanceof MachFigure) rows.push(row('Ratios', this.switch(b, () => (b.live() as MachFigure).showRatios !== false, (v) => b.edit({ showRatios: v }))));
+        if (d instanceof MachFigure) rows.push(row(this.t(TEXT.ratios), this.switch(b, () => (b.live() as MachFigure).showRatios !== false, (v) => b.edit({ showRatios: v }))));
         rows.push(grid);
         if (d instanceof FibLevels) {
             const fib = (): FibLevels => b.live() as FibLevels;
             const flags = [
-                this.chip(b, 'Ratios', () => fib().showRatios, (on) => b.edit({ showRatios: on })),
-                this.chip(b, 'Prices', () => fib().showPrices, (on) => b.edit({ showPrices: on })),
-                this.chip(b, 'Background', () => fib().background, (on) => b.edit({ background: on })),
+                this.chip(b, this.t(TEXT.ratios), () => fib().showRatios, (on) => b.edit({ showRatios: on })),
+                this.chip(b, this.t(TEXT.prices), () => fib().showPrices, (on) => b.edit({ showPrices: on })),
+                this.chip(b, this.t(TEXT.background), () => fib().background, (on) => b.edit({ background: on })),
             ];
-            if (d instanceof FibRetracement) flags.push(this.chip(b, 'Reverse', () => (b.live() as FibRetracement).reverse, (on) => b.edit({ reverse: on })));
-            rows.push(row('Show', chips(...flags)));
+            if (d instanceof FibRetracement) flags.push(this.chip(b, this.t(TEXT.reverse), () => (b.live() as FibRetracement).reverse, (on) => b.edit({ reverse: on })));
+            rows.push(row(this.t(TEXT.show), chips(...flags)));
             rows.push(
                 row(
-                    'Label side',
-                    this.seg(b, 'Label side', [
-                        { value: 'left', html: 'Left' },
-                        { value: 'right', html: 'Right' },
+                    this.t(TEXT.labelSide),
+                    this.seg(b, this.t(TEXT.labelSide), [
+                        { value: 'left', html: this.t(TEXT.left) },
+                        { value: 'right', html: this.t(TEXT.right) },
                     ], () => fib().labelSide, (v) => b.edit({ labelSide: v })),
                 ),
             );
         }
-        return block('Levels', ...rows);
+        return block(this.t(TEXT.levels), ...rows);
     }
 
     /** A rich per-type section on the shared field grid. */
@@ -574,7 +742,7 @@ export class DrawingSettingsPanel {
 
     /** A note, a callout, a text label: the words lead the panel. */
     private textContentBlock(b: Build, has: (p: string) => boolean): HTMLElement {
-        return block(null, this.textArea(b, 'Text', 3), row('Style', ...this.textStyling(b, has)));
+        return block(null, this.textArea(b, this.t(TEXT.text), 3), row(this.t(TEXT.style), ...this.textStyling(b, has)));
     }
 
     /** A shape's optional label: folded to one line saying what it reads. */
@@ -582,28 +750,28 @@ export class DrawingSettingsPanel {
         const type = b.live().type;
         const words = (): string => b.live().text?.value?.trim() ?? '';
         const summary = (): string => {
-            if (!has('text.value')) return sizeLabel(b.live().text?.size);
+            if (!has('text.value')) return this.t(sizeLabel(b.live().text?.size));
             const w = words();
-            return w ? `“${w.split('\n')[0]}”` : 'None';
+            return w ? `“${w.split('\n')[0]}”` : this.t(TEXT.none);
         };
-        return this.fold(b, 'text', has('text.value') ? 'Label' : 'Text', summary, () => {
+        return this.fold(b, 'text', has('text.value') ? this.t(TEXT.label) : this.t(TEXT.text), summary, () => {
             const rows: HTMLElement[] = [];
-            if (has('text.value')) rows.push(this.textArea(b, 'Add a label', 1));
-            rows.push(row('Style', ...this.textStyling(b, has)));
+            if (has('text.value')) rows.push(this.textArea(b, this.t(TEXT.addALabel), 1));
+            rows.push(row(this.t(TEXT.style), ...this.textStyling(b, has)));
             if (LINE_LABEL_TYPES.has(type) && has('text.value')) {
                 const place = row(
-                    'Place',
-                    this.seg(b, 'Position along the line', [
-                        { value: 'start', html: 'Start' },
-                        { value: 'middle', html: 'Middle' },
-                        { value: 'end', html: 'End' },
+                    this.t(TEXT.place),
+                    this.seg(b, this.t(TEXT.positionAlongTheLine), [
+                        { value: 'start', html: this.t(TEXT.start) },
+                        { value: 'middle', html: this.t(TEXT.middle) },
+                        { value: 'end', html: this.t(TEXT.end) },
                     ], () => b.live().text?.place ?? 'middle', (v) => b.edit({ 'text.place': v }), true),
                 );
                 const side = row(
-                    'Side',
-                    this.seg(b, 'Side of the line', [
-                        { value: 'above', html: 'Above' },
-                        { value: 'below', html: 'Below' },
+                    this.t(TEXT.side),
+                    this.seg(b, this.t(TEXT.sideOfTheLine), [
+                        { value: 'above', html: this.t(TEXT.above) },
+                        { value: 'below', html: this.t(TEXT.below) },
                     ], () => b.live().text?.side ?? 'above', (v) => b.edit({ 'text.side': v }), true),
                 );
                 // Where the label sits only matters once there is one.
@@ -637,11 +805,11 @@ export class DrawingSettingsPanel {
 
     private textStyling(b: Build, has: (p: string) => boolean): HTMLElement[] {
         const out: HTMLElement[] = [];
-        if (has('text.color')) out.push(this.swatch(b, 'Text color', () => b.live().text?.color || this.theme.textColor, 'text.color'));
+        if (has('text.color')) out.push(this.swatch(b, this.t(TEXT.textColor), () => b.live().text?.color || this.theme.textColor, 'text.color'));
         if (has('text.size')) {
             const sel = buildFieldControl({
                 kind: 'select',
-                options: TEXT_SIZE_OPTIONS,
+                options: TEXT_SIZE_OPTIONS.map((o) => ({ value: o.value, label: this.t(o.label) })),
                 value: b.live().text?.size ?? 'normal',
                 fill: false,
                 theme: this.theme,
@@ -651,8 +819,8 @@ export class DrawingSettingsPanel {
             out.push(sel.el);
         }
         const flags: HTMLElement[] = [];
-        if (has('text.bold')) flags.push(this.chip(b, 'B', () => !!b.live().text?.bold, (on) => b.edit({ 'text.bold': on }), 'Bold'));
-        if (has('text.italic')) flags.push(this.chip(b, 'I', () => !!b.live().text?.italic, (on) => b.edit({ 'text.italic': on }), 'Italic'));
+        if (has('text.bold')) flags.push(this.chip(b, 'B', () => !!b.live().text?.bold, (on) => b.edit({ 'text.bold': on }), this.t(TEXT.bold)));
+        if (has('text.italic')) flags.push(this.chip(b, 'I', () => !!b.live().text?.italic, (on) => b.edit({ 'text.italic': on }), this.t(TEXT.italic)));
         if (flags.length) out.push(chips(...flags));
         return out;
     }
@@ -676,11 +844,11 @@ export class DrawingSettingsPanel {
             const a = b.live().anchors;
             if (priced.length) return priced.map((i) => fmt(a[i]?.price ?? 0)).join(' → ');
             const t = a[shown[0]!]?.time;
-            return shown.length === 1 && t != null ? formatTimeStamp(t, this.env.timeZone(), this.env.chartBarMs()) : `${shown.length} points`;
+            return shown.length === 1 && t != null ? formatTimeStamp(t, this.env.timeZone(), this.env.chartBarMs()) : this.t(TEXT.pointCount, { count: shown.length });
         };
-        return this.fold(b, 'points', 'Points', summary, () =>
+        return this.fold(b, 'points', this.t(TEXT.points), summary, () =>
             shown.map((i, n) => {
-                const key = shown.length === 1 ? (free(i) === 'x' ? 'Time' : 'Price') : String.fromCharCode(65 + n);
+                const key = shown.length === 1 ? this.t(free(i) === 'x' ? TEXT.pointTime : TEXT.pointPrice) : String.fromCharCode(65 + n);
                 const line = document.createElement('div');
                 line.className = 'vela-dsp-pt';
                 const k = document.createElement('span');
@@ -693,7 +861,7 @@ export class DrawingSettingsPanel {
                         value: shownPrice(d.anchors[i]!.price),
                         fill: true,
                         commit: 'blur',
-                        title: `Point ${key} price`,
+                        title: this.t(TEXT.pointPriceTitle, { point: key }),
                         onChange: (v) => b.edit({ [`anchors.${i}.price`]: v }),
                     });
                     const input = ni.el.querySelector('input');
@@ -727,22 +895,25 @@ export class DrawingSettingsPanel {
         const here = timeframeBandOf(this.env.chartBarMs());
         const summary = (): string => {
             const s = bands();
-            if (!s) return 'All timeframes';
-            if (mode() === 'intraday') return 'Intraday';
-            if (mode() === 'higher') return '1H and up';
-            if (s.length === 0) return 'Nowhere';
-            return s.map((k) => TIMEFRAME_BANDS.find((t) => t.key === k)?.label ?? k).join(', ');
+            if (!s) return this.t(TEXT.allTimeframes);
+            if (mode() === 'intraday') return this.t(TEXT.intraday);
+            if (mode() === 'higher') return this.t(TEXT.n1HAndUp);
+            if (s.length === 0) return this.t(TEXT.nowhere);
+            return s.map((k) => {
+                const band = TIMEFRAME_BANDS.find((t) => t.key === k);
+                return band ? this.t(band.label) : k;
+            }).join(', ');
         };
-        return this.fold(b, 'show', 'Show on', summary, () => {
+        return this.fold(b, 'show', this.t(TEXT.showOn), summary, () => {
             const set = (next: string[] | undefined): void => b.edit({ showOn: next });
             const pick = this.seg(
                 b,
-                'Show on',
+                this.t(TEXT.showOn),
                 [
-                    { value: 'all', html: 'All' },
-                    { value: 'intraday', html: 'Intraday' },
-                    { value: 'higher', html: '1H and up' },
-                    { value: 'custom', html: 'Custom' },
+                    { value: 'all', html: this.t(TEXT.all) },
+                    { value: 'intraday', html: this.t(TEXT.intraday) },
+                    { value: 'higher', html: this.t(TEXT.n1HAndUp) },
+                    { value: 'custom', html: this.t(TEXT.custom) },
                 ],
                 mode,
                 (v) => {
@@ -759,10 +930,10 @@ export class DrawingSettingsPanel {
             for (const band of TIMEFRAME_BANDS) {
                 const btn = document.createElement('button');
                 btn.type = 'button';
-                btn.textContent = band.label;
+                btn.textContent = this.t(band.label);
                 if (band.key === here) {
                     btn.dataset.here = '';
-                    btn.title = "The chart's timeframe";
+                    btn.title = this.t(TEXT.chartTimeframe);
                 }
                 btn.addEventListener('click', () => {
                     const cur = new Set(bands() ?? []);
@@ -780,7 +951,7 @@ export class DrawingSettingsPanel {
                 const s = bands();
                 const hidden = s != null && here != null && !s.includes(here);
                 note.hidden = !hidden;
-                note.textContent = s?.length === 0 ? 'Hidden on every timeframe.' : "Hidden on this chart's timeframe.";
+                note.textContent = s?.length === 0 ? this.t(TEXT.hiddenOnEveryTimeframe) : this.t(TEXT.hiddenOnThisTimeframe);
             });
             return [pick, grid, note];
         });
@@ -804,8 +975,8 @@ export class DrawingSettingsPanel {
         const all = (): DrawingToolTemplate[] => [...builtinToolTemplates(b.live().type), ...(b.actions.templates?.() ?? [])];
         const refresh = (): void => {
             const match = all().filter((t) => matchesTemplate(b.live(), t.settings)).pop();
-            label.textContent = match?.name ?? 'Style';
-            btn.title = match ? `Style: ${match.name}` : 'Styles';
+            label.textContent = match ? this.templateName(match) : this.t(TEXT.style);
+            btn.title = match ? this.t(TEXT.styleTitle, { name: this.templateName(match) }) : this.t(TEXT.styles);
         };
         btn.addEventListener('pointerdown', (e) => e.stopPropagation());
         btn.addEventListener('click', (e) => {
@@ -828,10 +999,10 @@ export class DrawingSettingsPanel {
             host: this.host,
             theme: t,
             position: 'absolute',
-            boundary: this.host,
+            collisionBoundary: this.host,
             boundaryInset: 4,
             viewportInset: 0,
-            gap: 6,
+            sideOffset: 6,
             align: 'end',
             zIndex: 6000,
             onClose: () => {
@@ -861,13 +1032,13 @@ export class DrawingSettingsPanel {
                 dot.style.background = templateColor(tpl.settings) ?? 'transparent';
                 const name = document.createElement('span');
                 name.className = 'vela-dsp-mi-t';
-                name.textContent = tpl.name;
+                name.textContent = this.templateName(tpl);
                 row.append(dot, name);
                 if (removable) {
                     const x = document.createElement('span');
                     x.className = 'vela-dsp-mi-x';
                     x.setAttribute('role', 'button');
-                    x.setAttribute('aria-label', `Delete ${tpl.name}`);
+                    x.setAttribute('aria-label', this.t(TEXT.deleteStyle, { name: this.templateName(tpl) }));
                     x.innerHTML = CROSS;
                     x.addEventListener('click', (e) => {
                         e.stopPropagation();
@@ -889,11 +1060,11 @@ export class DrawingSettingsPanel {
                 return row;
             };
             if (builtins.length) {
-                el.appendChild(menuHeading('Presets'));
+                el.appendChild(menuHeading(this.t(TEXT.presets)));
                 for (const tpl of builtins) el.appendChild(item(tpl, false));
             }
             if (saved.length) {
-                el.appendChild(menuHeading('Saved'));
+                el.appendChild(menuHeading(this.t(TEXT.saved)));
                 for (const tpl of saved) el.appendChild(item(tpl, true));
             }
             if (builtins.length || saved.length) el.appendChild(separator());
@@ -902,7 +1073,7 @@ export class DrawingSettingsPanel {
             reset.type = 'button';
             reset.className = 'vela-dsp-mi';
             reset.setAttribute('role', 'menuitem');
-            reset.innerHTML = '<span class="vela-dsp-mi-t">Reset to default</span>';
+            reset.appendChild(menuText(this.t(TEXT.resetToDefault)));
             reset.addEventListener('click', () => {
                 b.actions.resetSettings();
                 pop.hide();
@@ -916,6 +1087,11 @@ export class DrawingSettingsPanel {
         pop.show();
     }
 
+    /** A style's name as the menu shows it: a built-in reads translated, a saved one as typed. */
+    private templateName(tpl: DrawingToolTemplate): string {
+        return tpl.label ? this.t(tpl.label) : tpl.name;
+    }
+
     /** "Save as style…": a menu row that turns into a name field. */
     private saveRow(b: Build, refill: () => void, refresh: () => void): HTMLElement {
         const wrap = document.createElement('div');
@@ -923,17 +1099,17 @@ export class DrawingSettingsPanel {
         start.type = 'button';
         start.className = 'vela-dsp-mi';
         start.setAttribute('role', 'menuitem');
-        start.innerHTML = '<span class="vela-dsp-mi-t">Save as style…</span>';
+        start.appendChild(menuText(this.t(TEXT.saveAsStyle)));
         start.addEventListener('click', (e) => {
             e.stopPropagation();
             const form = document.createElement('div');
             form.className = 'vela-dsp-mname';
             const input = document.createElement('input');
             input.type = 'text';
-            input.placeholder = 'Style name';
+            input.placeholder = this.t(TEXT.styleName);
             input.maxLength = 60;
-            input.setAttribute('aria-label', 'Style name');
-            const save = button('Save', true, () => commit());
+            input.setAttribute('aria-label', this.t(TEXT.styleName));
+            const save = button(this.t(TEXT.save), true, () => commit());
             save.style.height = '28px';
             const commit = (): void => {
                 const name = input.value.trim();
@@ -1131,16 +1307,19 @@ function separator(): HTMLElement {
 }
 
 function button(label: string, primary: boolean, onClick: () => void): HTMLButtonElement {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = label;
-    b.className = primary ? 'vela-dialog-btn vela-dialog-btn-primary' : 'vela-dialog-btn';
-    b.addEventListener('click', onClick);
-    return b;
+    return createButton({ text: label, variant: primary ? 'default' : 'outline', size: 'sm', onClick }).el;
 }
 
-function sizeLabel(size: string | undefined): string {
-    return TEXT_SIZE_OPTIONS.find((o) => o.value === (size ?? 'normal'))?.label ?? 'Normal';
+/** A menu row's text, in the row's text slot. */
+function menuText(text: string): HTMLElement {
+    const span = document.createElement('span');
+    span.className = 'vela-dsp-mi-t';
+    span.textContent = text;
+    return span;
+}
+
+function sizeLabel(size: string | undefined): MessageLike {
+    return TEXT_SIZE_OPTIONS.find((o) => o.value === (size ?? 'normal'))?.label ?? TEXT.normal;
 }
 
 /** Read a dotted settings path off a drawing (the read side of `applySettings`). */

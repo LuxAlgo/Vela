@@ -1,13 +1,16 @@
 // Price-scale drawer (mobile) — opened by a long-press on the price axis. Mirrors the
-// desktop right-click price-axis menu: auto / invert / scale modes / label & level
+// desktop right-click price-axis menu: auto / price only / invert / scale modes / label & level
 // toggles, plus a hop into the full Scales settings tab.
-import { Drawer } from '../ui/components/drawer';
-import { iconEl } from '../ui/icons';
-import { injectStyles } from '../ui/styles';
+import { msg } from '../core/i18n/message';
+import { textOf } from '../core/i18n/text';
+import { Drawer } from '@luxalgo/vela-ui/drawer';
+import { iconEl } from '@luxalgo/vela-ui/icons';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import {
     invertWrite,
     paneScaleAt,
     priceAxisItems,
+    priceOnlyState,
     scaleChoiceOf,
     scaleWrites,
     settingsSectionOf,
@@ -15,9 +18,12 @@ import {
     type ScaleChoice,
 } from './context-menu-model';
 import type { Vela } from '../Vela';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 const STYLE_ID = 'vela-widget-price-scale-drawer';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 .vela-psd-list { padding: 2px 0 4px; }
 .vela-psd-row {
     display: flex;
@@ -29,19 +35,24 @@ const CSS = `
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
 }
-.vela-psd-row:active { background: var(--vela-hover); }
-.vela-psd-row[data-sep='1'] { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--vela-border); border-radius: 0 0 8px 8px; }
-.vela-psd-row-label { flex: 1 1 auto; min-width: 0; font-size: 14px; color: var(--vela-fg-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.vela-psd-row .vela-icon { flex: none; color: var(--vela-fg-bright); }
+.vela-psd-row:active { background: ${t.hover}; }
+.vela-psd-row[data-sep='1'] { margin-top: 6px; padding-top: 6px; border-top: 1px solid ${t.border}; border-radius: 0 0 8px 8px; }
+.vela-psd-row-label { flex: 1 1 auto; min-width: 0; font-size: 14px; color: ${t.fg.bright}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vela-psd-row .vela-icon { flex: none; color: ${t.fg.bright}; }
 .vela-psd-section {
     padding: 12px 2px 4px;
     font-size: 12px;
     font-weight: 600;
     letter-spacing: 0.4px;
     text-transform: uppercase;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
 }
-`;
+
+}`;
+
+const TEXT = {
+    title: msg('widget.priceScaleDrawer.title', 'Price scale'),
+};
 
 export interface PriceScaleDrawerOptions {
     host: HTMLElement;
@@ -57,14 +68,15 @@ export class PriceScaleDrawer {
     private pane: PaneScaleInfo | null = null;
 
     constructor(private readonly opts: PriceScaleDrawerOptions) {
-        injectStyles(STYLE_ID, CSS, opts.host.ownerDocument);
-        this.drawer = new Drawer({ host: opts.host, title: 'Price scale', onOpenChange: opts.onOpenChange });
+        injectChromeStyles(STYLE_ID, CSS, opts.host.ownerDocument);
+        this.drawer = new Drawer({ host: opts.host, title: textOf(opts.chart()?.i18n, TEXT.title), onOpenChange: opts.onOpenChange });
     }
 
     open(): void {
         const chart = this.opts.chart();
         const panes = chart?.renderer.get('paneScales');
         this.pane = Array.isArray(panes) ? paneScaleAt(panes as PaneScaleInfo[], this.opts.pressY()) : null;
+        this.drawer.setTitle(textOf(chart?.i18n, TEXT.title));
         this.render();
         this.drawer.show();
     }
@@ -90,13 +102,14 @@ export class PriceScaleDrawer {
         const pane = this.pane;
         const items = priceAxisItems({
             auto: chart.renderer.get('autoScale') !== false,
+            priceOnly: priceOnlyState(pane, this.flag('scalePriceOnly')),
             invert: pane ? pane.invert : this.flag('invertScale'),
             choice: scaleChoiceOf(pane ?? { mode: String(chart.renderer.get('scaleMode') ?? 'price'), log: this.flag('logScale') }),
             axisLabels: this.flag('axisLabels'),
             priceLabel: this.flag('priceLabel'),
             countdown: this.flag('countdown'),
             priceLine: this.flag('currentPriceLine'),
-        });
+        }, chart.i18n);
 
         const list = doc.createElement('div');
         list.className = 'vela-psd-list';
@@ -122,7 +135,7 @@ export class PriceScaleDrawer {
 
         for (const item of items) {
             if (item.id === 'labels' && item.submenu) {
-                section('Labels');
+                section(item.label);
                 for (const sub of item.submenu) {
                     row(sub.label, {
                         checked: sub.checked,
@@ -136,7 +149,7 @@ export class PriceScaleDrawer {
                 continue;
             }
             if (item.id === 'levels' && item.submenu) {
-                section('Levels');
+                section(item.label);
                 for (const sub of item.submenu) {
                     row(sub.label, {
                         checked: sub.checked,
@@ -164,6 +177,16 @@ export class PriceScaleDrawer {
                     checked: item.checked,
                     onClick: () => {
                         chart.renderer.set('autoScale', chart.renderer.get('autoScale') === false);
+                        this.render();
+                    },
+                });
+                continue;
+            }
+            if (item.id === 'price-only') {
+                row(item.label, {
+                    checked: item.checked,
+                    onClick: () => {
+                        chart.renderer.set('scalePriceOnly', !this.flag('scalePriceOnly'));
                         this.render();
                     },
                 });

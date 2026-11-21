@@ -5,6 +5,10 @@ import type { Fill, FillGradientStop, PriceLine } from '../../model/scene';
 import type { DrawingPolyline } from '../../model/drawings';
 import { stableSeriesId } from '../../model/identity';
 import type { NativeIndicator, NativeIndicatorContext, NativeIndicatorDescriptor } from '../NativeIndicator';
+import type { MessageLike } from '../../i18n/types';
+import { sourceText } from '../../i18n/text';
+import { localizeInput, messageOnly, type LocalizableInput } from '../localize';
+import { CLASSIC_INPUT_LABELS } from './labels';
 
 /**
  * The classic-indicator adapter: each catalog entry is metadata plus a PURE
@@ -18,7 +22,12 @@ import type { NativeIndicator, NativeIndicatorContext, NativeIndicatorDescriptor
 export interface ClassicPlot {
     /** Stable identity of the plot within the indicator (drives the series id). */
     key: string;
-    title: string;
+    /** The plot's name. Its English text is the series' identity (its id, its output
+     *  key); a message shows translated wherever the chart names the plot. */
+    title: MessageLike;
+    /** Shown instead of {@link title} where the chart names the plot, for a plot whose
+     *  shown name differs from its English identity. */
+    displayTitle?: MessageLike;
     /** Series kind; default `'line'`. */
     kind?: LineLikeKind;
     values: readonly number[];
@@ -57,7 +66,7 @@ export interface ClassicLevel {
     price: number;
     color?: string;
     lineStyle?: LineStyle;
-    title?: string;
+    title?: MessageLike;
 }
 
 /** What one compute pass yields. */
@@ -70,14 +79,17 @@ export interface ClassicOutput {
     polylines?: Array<Omit<DrawingPolyline, 'id' | 'paneId'> & { key: string }>;
 }
 
+/** One input of a catalog entry: an input schema whose title and tooltip may be messages. */
+export type ClassicInput = LocalizableInput;
+
 /** A catalog entry: metadata + input schema + the pure compute. */
 export interface ClassicIndicatorSpec {
     type: string;
-    title: string;
-    shortTitle?: string;
+    title: MessageLike;
+    shortTitle?: MessageLike;
     /** true = draws over the price candles; false = its own pane below. */
     overlay: boolean;
-    inputs: InputSchema[];
+    inputs: ClassicInput[];
     compute(bars: readonly OHLCV[], inputs: Record<string, InputValue>): ClassicOutput;
 }
 
@@ -154,11 +166,14 @@ class ClassicIndicator implements NativeIndicator {
         const idsByKey = new Map<string, string>();
         out.plots.forEach((plot, ordinal) => {
             const kind = plot.kind ?? 'line';
-            const id = stableSeriesId({ instanceId, kind, title: plot.title, ordinal });
+            const title = sourceText(plot.title);
+            const id = stableSeriesId({ instanceId, kind, title, ordinal });
             idsByKey.set(plot.key, id);
+            const displayTitle = plot.displayTitle ?? messageOnly(plot.title);
             series.push({
                 id,
-                title: plot.title,
+                title,
+                ...(displayTitle ? { displayTitle } : {}),
                 paneId: '', // stamped by the orchestrator
                 kind,
                 points: toPoints(bars, plot.values, plot.colors),
@@ -173,9 +188,12 @@ class ClassicIndicator implements NativeIndicator {
             });
         });
         if (out.markers && out.markers.length > 0) {
+            const name = this.spec.shortTitle ?? this.spec.title;
+            const displayTitle = messageOnly(name);
             series.push({
                 id: stableSeriesId({ instanceId, kind: 'markers', title: 'markers', ordinal: 0 }),
-                title: this.spec.shortTitle ?? this.spec.title,
+                title: sourceText(name),
+                ...(displayTitle ? { displayTitle } : {}),
                 paneId: '',
                 kind: 'markers',
                 markers: out.markers,
@@ -204,7 +222,8 @@ class ClassicIndicator implements NativeIndicator {
             ...(level.color != null ? { color: level.color } : {}),
             lineStyle: level.lineStyle ?? 'dashed',
             width: 1,
-            ...(level.title != null ? { title: level.title } : {}),
+            ...(level.title != null ? { title: sourceText(level.title) } : {}),
+            ...(messageOnly(level.title) ? { displayTitle: level.title } : {}),
         }));
         const polylines: DrawingPolyline[] = (out.polylines ?? []).map((poly, ordinal) => {
             const { key, ...rest } = poly;
@@ -221,6 +240,8 @@ class ClassicIndicator implements NativeIndicator {
 
 /** Wrap a catalog entry into a registrable native-indicator descriptor. */
 export function classicDescriptor(spec: ClassicIndicatorSpec): NativeIndicatorDescriptor {
+    let schema: InputSchema[] | null = null;
+    const inputs = (): InputSchema[] => (schema ??= spec.inputs.map((i) => localizeInput(i, CLASSIC_INPUT_LABELS)));
     return {
         type: spec.type,
         title: spec.title,
@@ -232,7 +253,7 @@ export function classicDescriptor(spec: ClassicIndicatorSpec): NativeIndicatorDe
         // A study's values depend on every bar before them (an EMA's seed, an RSI's
         // smoothing), so it computes once over the whole history, as script indicators do.
         waitsForHistory: true,
-        inputsSchema: () => spec.inputs,
+        inputsSchema: () => inputs(),
         defaultInputs: () => Object.fromEntries(spec.inputs.map((i) => [i.key, i.defval])),
         create: () => new ClassicIndicator(spec),
     };

@@ -3,10 +3,13 @@ import type { ScriptRun } from "../script-run";
 import type { OHLCV } from "../model/ohlcv";
 import type { DrawingTypeKey, SerializedDrawing } from "../drawings/Drawing";
 import type { VelaTheme } from "../options";
+import type { LocaleChangedEvent } from "../i18n/types";
 import type { SnapMode } from "../drawings/geometry";
 import type { DrawingMode } from "../drawings/port";
 import type { MarkClickEvent } from "../marks/types";
 import type { ReplayEndReason } from "../ReplayControl";
+import type { DataUnavailableReason } from "../data-unavailable";
+import type { SymbolFacts } from "../ports/MarketDataFeed";
 
 /** Chart-level events emitted on `chart.on(...)`. */
 export interface VelaEventMap extends Record<string, unknown> {
@@ -47,6 +50,29 @@ export interface VelaEventMap extends Record<string, unknown> {
   /** No registered provider can serve the chart symbol — the load is PARKED, not failed:
    *  it resumes by itself if a capable provider registers later. */
   "data:unresolved": { symbol: string; providers: string[] };
+  /**
+   * The source refused the chart's own series for good (a provider threw a
+   * `DataUnavailableError` — e.g. a monthly series asked for hourly bars). The load has
+   * ended (`load:end` with what was painted, `history:complete` with `'aborted'`) and
+   * nothing streams or polls for this market. `symbol`/`timeframe` are the chart's market
+   * as set; `finest`/`default` are the source's hints, in its own timeframe notation. The
+   * chart never changes its timeframe by itself: falling back is the host's call. A
+   * secondary fetch (`request.security`) never fires it — its promise rejects instead.
+   */
+  "data:unavailable": {
+    symbol: string;
+    timeframe: string;
+    reason: DataUnavailableReason;
+    finest?: string;
+    default?: string;
+  };
+  /**
+   * The facts the chart applies about its symbol changed (`chart.symbolFacts()`): they
+   * landed for the symbol on screen (`facts`), or a symbol switch reset them to unknown
+   * (`null`) until the new symbol's land. The renderer has already received the new
+   * tick size and applied the fallback for any style these facts rule out.
+   */
+  "symbol:facts": { symbol: string; facts: SymbolFacts | null };
   /** An indicator was moved/merged to another pane (`chart.panes` / legend / object tree). */
   "indicator:moved": { id: string; paneId: string };
   /** An indicator was shown/hidden (legend eye, `handle.setVisible`, or object tree). */
@@ -61,6 +87,12 @@ export interface VelaEventMap extends Record<string, unknown> {
    * leave the app theme alone.
    */
   "theme:changed": VelaTheme;
+  /**
+   * The chart's localization changed through `chart.setLocale(...)` — after the chart has
+   * re-rendered its text and numbers. Carries the resolved locale and chrome direction so
+   * host chrome around the chart can follow.
+   */
+  "locale:changed": LocaleChangedEvent;
   /**
    * The base price style is switching `from` → `to` (candles, line, area, a chart-type
    * id, …). Fires synchronously BEFORE the chart repaints in the new style, whatever
@@ -109,6 +141,19 @@ export interface VelaEventMap extends Record<string, unknown> {
   "drawing:mode": { mode: DrawingMode };
   /** A user drawing was removed. */
   "drawing:removed": { id: string };
+  /** An undo or a redo put the drawings back to an earlier or a later state. It stands in
+   *  for the `drawing:created` / `edited` / `removed` events, which do not fire for the
+   *  drawings the step brought back, changed or took away: a host that mirrors or stores
+   *  the drawings reads them again (`drawings.all()`, `drawings.toJSON()`). */
+  "drawing:history": { action: "undo" | "redo" };
+  /** The drawings were replaced as a whole, and no `drawing:created` / `edited` /
+   *  `removed` follows: a document was put in place (`drawings.fromJSON`, a restored
+   *  state; `cause: "load"`), or the chart dropped them because its symbol changed
+   *  (`clearOnSymbolChange`; `cause: "symbol"`). Whatever lists, counts or mirrors the
+   *  drawings reads them again. A host that stores them keeps a loaded document as the
+   *  chart's own, and leaves the empty chart of a symbol change alone: the new symbol's
+   *  drawings are still to come. */
+  "drawing:replaced": { cause: "load" | "symbol" };
   /** The user requested a drawing's settings popup. */
   "drawing:settings": { id: string };
   /** A timeline-mark glyph was clicked — `ids` lists every mark under it (a cluster). Fires

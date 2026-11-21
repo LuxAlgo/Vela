@@ -5,11 +5,14 @@
  * custom 3-minute or 2-hour one included) lands in exactly one band.
  */
 
+import { msg } from '../i18n/message';
+import type { MessageLike } from '../i18n/types';
+
 export interface TimeframeBand {
     /** Stable key persisted on the drawing. */
     key: string;
     /** Short label for a picker. */
-    label: string;
+    label: MessageLike;
     /** The shortest bar duration (ms) in the band; it runs up to the next band's. */
     fromMs: number;
 }
@@ -19,15 +22,15 @@ const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 
 export const TIMEFRAME_BANDS: readonly TimeframeBand[] = [
-    { key: 's', label: 'Sec', fromMs: 0 },
-    { key: '1', label: '1m', fromMs: MIN },
-    { key: '5', label: '5m', fromMs: 5 * MIN },
-    { key: '15', label: '15m', fromMs: 15 * MIN },
-    { key: '60', label: '1H', fromMs: HOUR },
-    { key: '240', label: '4H', fromMs: 4 * HOUR },
-    { key: 'D', label: 'D', fromMs: DAY },
-    { key: 'W', label: 'W', fromMs: 7 * DAY },
-    { key: 'M', label: 'M', fromMs: 28 * DAY },
+    { key: 's', label: msg('drawing.showOn.seconds', 'Sec'), fromMs: 0 },
+    { key: '1', label: msg('drawing.showOn.minute1', '1m'), fromMs: MIN },
+    { key: '5', label: msg('drawing.showOn.minute5', '5m'), fromMs: 5 * MIN },
+    { key: '15', label: msg('drawing.showOn.minute15', '15m'), fromMs: 15 * MIN },
+    { key: '60', label: msg('drawing.showOn.hour1', '1H'), fromMs: HOUR },
+    { key: '240', label: msg('drawing.showOn.hour4', '4H'), fromMs: 4 * HOUR },
+    { key: 'D', label: msg('drawing.showOn.day', 'D'), fromMs: DAY },
+    { key: 'W', label: msg('drawing.showOn.week', 'W'), fromMs: 7 * DAY },
+    { key: 'M', label: msg('drawing.showOn.month', 'M'), fromMs: 28 * DAY },
 ];
 
 const BAND_KEYS = new Set(TIMEFRAME_BANDS.map((b) => b.key));

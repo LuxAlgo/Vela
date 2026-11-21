@@ -1,0 +1,250 @@
+# Writing a component
+
+Each component is **one file**, `src/components/<name>.ts`, published at
+`@luxalgo/vela-ui/<name>`, holding its declaration, its variants, its CSS and its
+`create<Name>` function. Overlays (menu, dialog, drawer, tooltip) and composite controls (tabs,
+toggle group) run a [Zag.js](https://zagjs.com) state machine, which owns their keyboard
+behavior and accessibility; form controls keep small vanilla state objects.
+
+## One file per component
+
+Start one with `npm run new-component -- gauge` at the repo root: it writes the file in the
+shape below, adds its declaration to the theme, and writes its test. A component file reads
+top to bottom:
+
+```ts
+// Gauge: … what it is and how it behaves, for the reader of the file.
+import { css, defineStyles } from '../lib/css';
+import { defineComponent } from '../lib/define';
+import { h } from '../lib/h';
+import { t } from '../lib/t';
+import { variants, type VariantProps } from '../lib/variants';
+
+// Its name, its parts (each part's data-slot) and its settings (custom properties a theme
+// or a host's CSS can set, with their defaults).
+export const gaugeDef = defineComponent({ name: 'gauge', parts: ['root', 'needle'], settings: { radius: t.radius.lg } });
+
+// Its variants: the names type the props, the first value is the default.
+export const gaugeVariants = variants({ size: ['md', 'sm'] });
+
+export interface GaugeProps extends VariantProps<typeof gaugeVariants> {
+    value: number;
+}
+
+export interface GaugeHandle {
+    readonly el: HTMLElement;
+    setValue(value: number): void;
+    destroy(): void;
+}
+
+const injectStyles = defineStyles(
+    'vela-ui-gauge',
+    css`
+        @layer vela.ui {
+            [data-slot='gauge'] {
+                border-radius: ${gaugeDef.vars.radius};
+                background: ${t.surface.sunken};
+
+                &[data-size='sm'] { … }
+                & > [data-slot='gauge-needle'] { color: ${t.accent}; }
+            }
+        }
+    `,
+);
+
+class GaugeImpl implements GaugeHandle { … }   // methods shared across instances
+
+export function createGauge(props: GaugeProps): GaugeHandle {
+    return new GaugeImpl(props);
+}
+```
+
+Then add the declaration to `ComponentDefs` in `src/lib/theme.ts`
+(`gauge: typeof gaugeDef;`), which types the component's settings and parts in a theme. The
+build fails while one is missing. The manifest (`dist/manifest.json`), the theme's JSON
+Schema and `llms.txt` are generated from the file at build time, so there is nothing else to
+list.
+
+Released components keep their class (`new Checkbox(…)`, `new Tooltip(trigger, …)`) and their
+controller (`checkboxController`, `tooltipController`) next to the `create…` function; the
+class is the instance the function returns. New components start from the shape above.
+
+## A component of your own
+
+The same shape works outside the kit, for a component a project writes: import the helpers
+from the package root (`import { css, defineComponent, defineStyles, h, t, variants } from
+'@luxalgo/vela-ui'`) and keep the rules below. Three things make it a full citizen:
+
+- **Its CSS goes in `@layer vela.ui`**, like the kit's, not in `vela.custom`: a theme's part
+  CSS sits in `vela.custom`, and only from a later layer does it restyle the component.
+- **Declare it before creating a theme that names it.** `defineComponent` records the
+  component for the page, and `checkTheme` (and `createTheme`'s warnings) then check the
+  theme's settings and parts for it, as they do the kit's.
+- **Type it in themes** by merging its declaration into `ComponentDefs`, so a wrong setting
+  or part fails the typecheck:
+
+```ts
+export const gaugeDef = defineComponent({ name: 'gauge', parts: ['root', 'needle'], settings: { radius: t.radius.lg } });
+
+declare module '@luxalgo/vela-ui/theme' {
+    interface ComponentDefs {
+        gauge: typeof gaugeDef;
+    }
+}
+
+createTheme({ components: { gauge: { radius: '2px', css: { needle: css`color: ${t.accent};` } } } });
+```
+
+## Changing a component
+
+A component's public contract is what hosts and themes build on: its props and its handle's
+methods, its part names (the `data-slot` values), its variant and size values, the state
+attributes its CSS keys on, and its settings. Inside the file, everything else is free to
+change.
+
+- **Keep the contract.** A change to how a component looks or behaves keeps those names. Add
+  a prop, a variant or a setting freely; give a new setting a default that keeps today's look,
+  so a theme that sets nothing renders as before.
+- **Rename in two steps.** A renamed prop, part, variant or component keeps its old name
+  working for one release: the component accepts both (and says which is deprecated in the
+  prop's comment), and Vela's `src/ui/renamed.ts` keeps the old export names on
+  `@luxalgo/vela/ui`. The changelog names the old and the new, and the release after removes
+  the old one.
+- **Prove it.** The component's test covers the change; `npm run lint` checks its CSS; the
+  gallery (`npm run playground`, then `/primitives.html`) shows every component in every
+  variant, beside the theme editor, so compare it before and after. The build regenerates the
+  manifest, the theme's JSON Schema and `llms.txt` from the file, so they follow on their
+  own.
+- **Write it down.** A change users notice gets an entry in Vela's `CHANGELOG.md`, and a
+  breaking one says what to do instead.
+
+## The helpers (`src/lib/`)
+
+- **`h(tag, props, ...children)`** builds an element, typed by its tag. `slot` writes the
+  `data-slot`, `data` the `data-*` attributes (`true` writes an empty value, `false` and
+  `null` nothing), `attrs`, `on` and `text` the rest. Class names are layout hooks, never the
+  styling contract.
+- **`css`** marks a template as CSS (editors highlight it, stylelint checks it) and
+  **`defineStyles(id, text)`** returns the injector a component calls at creation, never at
+  import: it declares the layer order once per document or shadow root, then injects the
+  sheet, id-guarded. The sheet applies inside kit hosts, their floating layers and themed
+  hosts only: a `:where()` joins the first compound of each top-level selector, adding no
+  weight, so a page's own elements that carry the same `data-slot` names are never restyled.
+  Inject a component's CSS through it, never by hand.
+- **`t`** reads the design tokens: `${t.radius.md}` prints `var(--vela-radius-md)`, and a
+  name that does not exist fails the typecheck. A test checks that `t` and the tokens the
+  theme writes match in both directions.
+- **`variants(spec)`** turns `{ variant: [...], size: [...] }` into the `data-*` attributes
+  the CSS keys on, and types the props through `VariantProps`.
+- **`defineComponent({ name, parts, settings })`** links a name to its CSS: `slot(part)` is
+  the part's `data-slot` (`name` for `root`, `name-part` otherwise), and `vars.<setting>`
+  prints `var(--vela-<name>-<setting>, <default>)`.
+- **`addSlot(el, part)`** adds a part to an element's slot. A shell one component owns and
+  another builds on carries both, `data-slot="popover-content select-content"`, and CSS
+  matches either with `[data-slot~='…']`.
+
+## CSS rules
+
+- Everything sits in **`@layer vela.ui`**, below unlayered CSS, so a page's own rule wins
+  without `!important` or a more specific selector. Selectors start with one of the
+  component's own parts (`[data-slot='gauge-needle']`), nest with `&`, and key on state
+  attributes (`data-state`, `data-selected`, `aria-expanded`), never on classes.
+- A root that can be `hidden` takes its `display` under `:where(:not([hidden]))`: any
+  authored `display` beats the browser's `[hidden]` rule. A rule that depends on an ancestor
+  (the mobile layout) reads `&:is([data-layout='mobile'] *)`, which keeps the selector's
+  weight.
+- Values come from `t` or the component's settings; durations from `t.dur`; directions are
+  logical (`padding-inline`, `inset-inline-end`, `text-align: start`).
+- `npm run lint` (at the repo root) checks every template with stylelint and the postcss-lit
+  syntax, through the package's shared config (`@luxalgo/vela-ui/stylelint`, which Vela's
+  chrome, Pro and a host's own components extend with their own layer): the `vela/layer`,
+  `vela/slot-scope`, `vela/token-values` and `vela/no-raw-token-var` rules, no hex or named
+  colors, no class or id selectors, no `!important`, no
+  `box-sizing: content-box` (the kit's border-box reset is unlayered: size the full box
+  instead). A template the parser cannot read fails the run instead of going unchecked.
+- The kit supports the browsers that brought `color-mix()`, which its tints use: Chrome and
+  Edge 111, Firefox 113, Safari 16.2. The build flattens the nesting for them (Lightning CSS),
+  as nesting came later; the tests and the playground run the nested source.
+- Three rules stay outside the layer on purpose, each next to a comment saying why: the
+  kit's border-box reset, the field rows' dimmed state, and the reset of a dragged dialog's
+  offset in the mobile layout.
+
+## Zag machines
+
+Wrap the machine in a controller function that maps the component's options to machine
+props, with an explicit return interface (TypeScript cannot name Zag's inferred types
+portably), then start it with `runMachine` and re-project the api's props on every
+notification with `spreadProps`:
+
+```ts
+export function tooltipController(opts: TooltipControllerOptions = {}): TooltipController {
+    return {
+        machine: tooltip.machine,
+        props: { id: nextUid('vela-tooltip'), /* map opts */ },
+        connect: (service) => tooltip.connect(service, normalizeProps),
+    };
+}
+
+// in the component class:
+this.handle = runMachine(ctrl.machine, ctrl.props, (service) => {
+    const api = ctrl.connect(service);
+    spreadProps(trigger, api.getTriggerProps(), mid);
+    // …spread the other parts onto their elements
+});
+this.release = ownTeardown(trigger, () => this.handle.stop());
+
+destroy(): void {
+    this.release();
+}
+```
+
+Tie the machine's teardown to the element with `ownTeardown`, and have `destroy()` call the
+release: a host that discards a subtree with `disposeWithin` reaches controls whose handles it
+never kept, and the release runs once whichever comes first. A component whose content holds
+other controls (a dialog's panel, a popover's content) calls `disposeWithin` on it when it is
+destroyed.
+
+Form controls keep the value they show in a small state of their own (getters, `set*` /
+`sync` that do not emit, and the one method that does), so a host refresh rewrites the
+displayed value without firing `onChange`. The text fields are plain inputs; the checkbox, the
+switch, the number field and the select's list run Zag machines underneath, which that state
+drives (`setChecked`, `setValue`) without reporting.
+
+## Rules (learned the hard way)
+
+- **Always pass a `machineId` to `spreadProps`** (the `mid` above). Two machines sharing one
+  element under the default scope wipe each other's listeners.
+- **Zag trigger props overwrite the element's DOM `id`.** To compose several machines on one
+  trigger, share the id through the machines' `ids` prop (see the `triggerId` option on
+  Tooltip and DropdownMenu).
+- **Dialog-like machines expect conditional rendering**: their props carry no `hidden`;
+  toggle visibility from `api.open` in your render (tooltip and menu props do carry it).
+- **Never hard-code colors.** The tokens derive from the theme (`src/lib/tokens.ts`), and the
+  fixed brand and meaning colors live in `src/lib/palette.ts`. A test fails on a stray hex
+  literal.
+- **Take icons from the registry** (`src/lib/icons.ts`) rather than inlining SVG: 16×16 at
+  stroke 1.2 for UI chrome, 24×24 at stroke 1.8 for drawing tools, always `currentColor`.
+- **No imports from Vela.** The kit is used without the chart; what it needs lives in
+  `src/lib/`.
+- **A machine must be stopped, not only removed.** Some machines register page-wide
+  listeners (the switch's focus-visible tracking is one) that keep running, and keep their
+  memory, after the element is gone. See `ownTeardown` above.
+- **State other copies of the kit must see goes through `pageState`** (`src/lib/page.ts`),
+  not a module variable: a page can load the kit twice, and a registry, an id counter or an
+  "open popover" kept per copy splits in two. Caches each copy can rebuild stay local.
+- Floating layers mount into the nearest `.vela-ui` host, which carries the theme; use the
+  `vela-ui-layer` class on portaled positioners. Popovers call `ensureUIHost` on show, so a
+  list portaled to the body still has the theme. A component built before its trigger is in
+  the DOM needs an explicit `host`: the `closest()` fallback portals to the body, outside the
+  theme.
+- Keyboard-facing components report open and close through an `onOpenChange` option, so a
+  host can scope its keyboard shortcuts while they are open.
+- A component that opens and closes a surface **announces it** with `announceSurface`
+  (`@luxalgo/vela-ui/surface-events`): open once the surface shows, close while it still
+  shows (before a fade-out, `hidden`, or removal), so the event bubbles to the host.
+- After announcing the close, run the hide or removal through `holdForExit`
+  (`@luxalgo/vela-ui/surface-exit`), so hosts can animate it out by styling `data-closing`. It
+  completes synchronously when no exit animation starts; keep the returned handle to
+  `cancel()` it on a reopen and `finish()` it on teardown.
+- The primitive's **root is one element**. Settings rows use `display: contents`, so a
+  fragment of sibling nodes would fall onto the pane grid as extra tracks.

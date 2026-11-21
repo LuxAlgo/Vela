@@ -1,0 +1,114 @@
+// The gallery's data components: figures, keycaps, an empty state, a table, a sparkline, a donut,
+// the three charts, a treemap, cards and a hover card, on sample trading figures.
+import { t } from '@luxalgo/vela-ui';
+import { createBarChart } from '@luxalgo/vela-ui/bar-chart';
+import { createCard } from '@luxalgo/vela-ui/card';
+import { createDataTable } from '@luxalgo/vela-ui/data-table';
+import { createDonut } from '@luxalgo/vela-ui/donut';
+import { createEmpty } from '@luxalgo/vela-ui/empty';
+import { attachHoverCard } from '@luxalgo/vela-ui/hover-card';
+import { shortcutKeys } from '@luxalgo/vela-ui/kbd';
+import { createLineChart } from '@luxalgo/vela-ui/line-chart';
+import { createScatterChart } from '@luxalgo/vela-ui/scatter-chart';
+import { createSparkline } from '@luxalgo/vela-ui/sparkline';
+import { createFigure, toneOf } from '@luxalgo/vela-ui/figure';
+import { createTreemap, type TreemapItem } from '@luxalgo/vela-ui/treemap';
+import { createButton } from '../src/ui';
+
+const markets = (rows: Array<[label: string, weight: number, change: number | null]>): TreemapItem[] => rows.map(([label, weight, value]) => ({ id: label, label, weight, value }));
+
+const MARKETS: TreemapItem[] = [
+    { id: 'crypto', label: 'Crypto', children: markets([['BTC', 6, 2.4], ['ETH', 4, -1.2], ['SOL', 2, 5.1], ['BNB', 2, 0.4], ['XRP', 1, -3.3], ['DOGE', 1, 1.8]]) },
+    { id: 'stocks', label: 'Stocks', children: markets([['NVDA', 5, 3.2], ['AAPL', 4, -0.6], ['MSFT', 4, 0.9], ['TSLA', 2, -4.4], ['AMZN', 3, 1.1]]) },
+    { id: 'forex', label: 'Forex', children: markets([['EURUSD', 1, -0.2], ['USDJPY', 1, 0.5], ['GBPUSD', 1, null]]) },
+];
+
+interface Trade {
+    id: string;
+    symbol: string;
+    side: 'Long' | 'Short';
+    pnl: number;
+    bars: number;
+}
+
+const TRADES: Trade[] = [
+    { id: '1', symbol: 'BTCUSDT', side: 'Long', pnl: 412.5, bars: 18 },
+    { id: '2', symbol: 'ETHUSDT', side: 'Short', pnl: -120.25, bars: 7 },
+    { id: '3', symbol: 'SOLUSDT', side: 'Long', pnl: 88, bars: 31 },
+    { id: '4', symbol: 'BNBUSDT', side: 'Short', pnl: 0, bars: 4 },
+];
+
+const box = (w: string, h: string, child: HTMLElement): HTMLElement => {
+    const el = document.createElement('div');
+    el.style.width = w;
+    el.style.height = h;
+    el.append(child);
+    return el;
+};
+
+export function dataGallery(row: (label: string, ...children: HTMLElement[]) => void, host: HTMLElement): void {
+    const net = TRADES.reduce((a, r) => a + r.pnl, 0);
+    row('figure', createFigure({ label: 'Net P&L', value: net.toFixed(2), tone: toneOf(net), sub: `${TRADES.length} trades` }).el, createFigure({ label: 'Worst trade', value: '-120.25', tone: 'loss' }).el, createFigure({ label: 'Open orders' }).el);
+    row('kbd', ...shortcutKeys('Ctrl+Shift+K'));
+    row('empty', box('320px', 'auto', createEmpty({ icon: 'bell', title: 'No alerts yet', description: 'Create one from the chart or the alerts panel.', action: createButton({ text: 'New alert', variant: 'outline', size: 'sm' }).el }).el));
+
+    const table = createDataTable<Trade>({
+        columns: [
+            { id: 'symbol', header: 'Symbol', cell: (r) => r.symbol, sort: (r) => r.symbol },
+            { id: 'side', header: 'Side', cell: (r) => r.side },
+            { id: 'bars', header: 'Bars', title: 'Bars held', align: 'end', cell: (r) => r.bars, sort: (r) => r.bars },
+            { id: 'pnl', header: 'P&L', align: 'end', cell: (r) => r.pnl.toFixed(2), sort: (r) => r.pnl, tone: (r) => (r.pnl > 0 ? 'profit' : r.pnl < 0 ? 'loss' : 'muted') },
+        ],
+        rowKey: (r) => r.id,
+        sort: { column: 'pnl', dir: 'desc' },
+    });
+    table.setRows(TRADES);
+    row('data-table', box('420px', '150px', table.el));
+
+    const sparks = document.createElement('span');
+    sparks.append(createSparkline({ values: [10, 11, 10.5, 12, 11.8, 13] }).el, createSparkline({ values: [13, 12.6, 12.9, 11.7, 11.2], area: true, baseline: 12.4, width: 96, height: 28 }).el);
+    row('sparkline', sparks);
+    row('donut', createDonut({ segments: [{ value: 2, label: 'Wins', color: t.profit.var }, { value: 1, label: 'Losses', color: t.loss.var }, { value: 1, label: 'Even', color: t.fg.muted.var }], center: '67%', caption: 'win rate' }).el);
+
+    const bars = createBarChart({ axes: true, axisTitle: 'P&L' });
+    row('bar-chart', box('420px', '160px', bars.el));
+    bars.setData([12, -8, 25, 4, -15, 31, 9].map((value, i) => ({ label: `D${i + 1}`, value })), [{ at: 3.5, color: t.accent.var }]);
+
+    const line = createLineChart({ axes: true, yFormat: (v) => v.toFixed(0) });
+    row('line-chart', box('420px', '160px', line.el));
+    line.setData([0, 40, 25, 70, 55, 90, 120].map((y, x) => ({ x, y })));
+
+    const scatter = createScatterChart({ xTitle: 'Bars held', yTitle: 'P&L' });
+    row('scatter-chart', box('420px', '200px', scatter.el));
+    scatter.setData(TRADES.map((r) => ({ x: r.bars, y: r.pnl, color: r.pnl >= 0 ? t.profit.var : t.loss.var })), [{ x: 0, y: 40 }, { x: 32, y: 160 }]);
+
+    const map = createTreemap({ items: MARKETS, domain: 4, legend: true, drill: true, label: 'Moves by market', format: (v) => `${v > 0 ? '+' : ''}${v.toFixed(2)}%` });
+    row('treemap', box('480px', '300px', map.el));
+    const leaves = MARKETS.flatMap((group) => group.children ?? []);
+    setInterval(() => {
+        const moved = leaves[Math.floor(Math.random() * leaves.length)]!;
+        moved.value = Math.round(((moved.value ?? 0) + (Math.random() - 0.5)) * 100) / 100;
+        map.setValues({ [moved.id]: moved.value });
+    }, 2000);
+
+    const tiles = document.createElement('div');
+    tiles.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr; gap: 8px';
+    tiles.append(
+        createCard({ variant: 'inset', size: 'sm', content: createFigure({ label: 'Win rate', value: '67%', tone: 'profit' }).el }).el,
+        createCard({ variant: 'inset', size: 'sm', content: createFigure({ label: 'Worst trade', value: '-120.25', tone: 'loss' }).el }).el,
+    );
+    const summary = createCard({
+        eyebrow: 'Journal',
+        title: 'This week',
+        description: 'Closed trades on every account.',
+        action: createButton({ text: 'Export', variant: 'outline', size: 'sm' }).el,
+        content: tiles,
+        footer: [Object.assign(document.createElement('span'), { textContent: `${TRADES.length} trades` }), Object.assign(document.createElement('span'), { textContent: 'Updated just now' })],
+    });
+    const pick = createCard({ size: 'sm', title: 'BTCUSDT', description: 'Bitcoin / TetherUS · +1.24%', onSelect: () => pick.setSelected(!pick.el.hasAttribute('data-selected')) });
+    row('card', box('380px', 'auto', summary.el), box('220px', 'auto', pick.el));
+
+    const trigger = createButton({ text: 'Hover me', variant: 'outline', size: 'sm' }).el;
+    attachHoverCard(trigger, () => ({ title: 'Long position', icon: 'bell', shortcut: 'Alt+L', description: 'Draws a long trade with its target and stop.', hint: 'Shift-click to keep the tool' }), { host, openDelay: 150 });
+    row('hover-card', trigger);
+}

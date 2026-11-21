@@ -1,3 +1,4 @@
+import type { MessageLike } from '../i18n/types';
 import type { Millis } from './time';
 import type { OHLCV } from './ohlcv';
 import type { SeriesSpec, LineStyle } from './series';
@@ -63,6 +64,8 @@ export interface PriceLine {
     lineStyle?: LineStyle;
     width?: number;
     title?: string;
+    /** {@link title} in the chart's language. Absent ⇒ {@link title}. */
+    displayTitle?: MessageLike;
 }
 
 /**

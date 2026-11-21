@@ -7,6 +7,10 @@
 //
 // e.g. "3" → 3 minutes, "30" → 30 minutes, "1h" → 1 hour, "3M" → 3 months, "S" → 1 second.
 
+import { msg } from '../core/i18n/message';
+import { localizeNumberText, textOf } from '../core/i18n/text';
+import type { MessageDescriptor, Translator } from '../core/i18n/types';
+
 type UnitKey = 'S' | 'MIN' | 'H' | 'D' | 'W' | 'M' | 'Y';
 
 /** Per-unit duration in ms. Month = 30 days, year = 365 days — matches the core's bucketing. */
@@ -20,18 +24,33 @@ const UNIT_MS: Record<UnitKey, number> = {
     Y: 31_536_000_000,
 };
 
-const UNIT_NAME: Record<UnitKey, string> = {
-    S: 'second',
-    MIN: 'minute',
-    H: 'hour',
-    D: 'day',
-    W: 'week',
-    M: 'month',
-    Y: 'year',
+/** A count of each unit in words ("3 months"); `count` picks the plural form, `n` is the
+ *  count as shown. */
+const UNIT_NAME: Record<UnitKey, MessageDescriptor> = {
+    S: msg('widget.timeframe.seconds', '{count, plural, one {{n} second} other {{n} seconds}}'),
+    MIN: msg('widget.timeframe.minutes', '{count, plural, one {{n} minute} other {{n} minutes}}'),
+    H: msg('widget.timeframe.hours', '{count, plural, one {{n} hour} other {{n} hours}}'),
+    D: msg('widget.timeframe.days', '{count, plural, one {{n} day} other {{n} days}}'),
+    W: msg('widget.timeframe.weeks', '{count, plural, one {{n} week} other {{n} weeks}}'),
+    M: msg('widget.timeframe.months', '{count, plural, one {{n} month} other {{n} months}}'),
+    Y: msg('widget.timeframe.years', '{count, plural, one {{n} year} other {{n} years}}'),
 };
 
-/** The single-letter suffix used in the compact topbar label ("30m", "1D", "3M"). */
-const UNIT_SHORT: Record<UnitKey, string> = { S: 's', MIN: 'm', H: 'h', D: 'D', W: 'W', M: 'M', Y: 'Y' };
+/** The compact topbar label ("30m", "1D", "3M"): a count and the unit's letter. */
+const UNIT_SHORT: Record<UnitKey, MessageDescriptor> = {
+    S: msg('widget.timeframe.short.seconds', '{n}s'),
+    MIN: msg('widget.timeframe.short.minutes', '{n}m'),
+    H: msg('widget.timeframe.short.hours', '{n}h'),
+    D: msg('widget.timeframe.short.days', '{n}D'),
+    W: msg('widget.timeframe.short.weeks', '{n}W'),
+    M: msg('widget.timeframe.short.months', '{n}M'),
+    Y: msg('widget.timeframe.short.years', '{n}Y'),
+};
+
+/** The compact label of `count` units in `i18n`'s language. */
+function shortLabel(key: UnitKey, count: number, i18n: Translator | null | undefined): string {
+    return textOf(i18n, UNIT_SHORT[key], { n: localizeNumberText(String(count), i18n) });
+}
 
 function unitKey(letter: string): UnitKey | null {
     if (letter === '') return 'MIN'; // a bare number is minutes
@@ -51,8 +70,8 @@ const UNIT_MINUTES: Record<Exclude<UnitKey, 'S'>, number> = {
 };
 
 /** The canonical timeframe string the chart consumes. Every unit from minutes up collapses
- *  to BARE MINUTES — the one form providers and the core read identically (`3M` would mean
- *  "3 minutes" to `timeframeToMs`, not "3 months"). Seconds pass through as `NS`. */
+ *  to BARE MINUTES — the one form providers and the core read identically (a provider's
+ *  interval table knows `M`, not every `NM` count). Seconds pass through as `NS`. */
 function canonicalFor(key: UnitKey, count: number): string {
     if (key === 'S') return `${count}S`;
     return `${count * UNIT_MINUTES[key]}`;
@@ -71,8 +90,9 @@ export interface ParsedTimeframe {
     short?: string;
 }
 
-/** Parse a typed timeframe string. `valid` is false for empty/garbage input (count ≥ 1). */
-export function parseTimeframe(text: string): ParsedTimeframe {
+/** Parse a typed timeframe string. `valid` is false for empty/garbage input (count ≥ 1).
+ *  The labels read in `i18n`'s language (English without one). */
+export function parseTimeframe(text: string, i18n?: Translator | null): ParsedTimeframe {
     const raw = String(text ?? '').trim();
     if (!raw) return { valid: false };
 
@@ -89,16 +109,29 @@ export function parseTimeframe(text: string): ParsedTimeframe {
     if (!Number.isFinite(count) || count < 1) return { valid: false };
 
     const ms = count * UNIT_MS[key];
-    const name = UNIT_NAME[key];
     return {
         valid: true,
         count,
         unit: key,
         ms,
         canonical: canonicalFor(key, count),
-        label: `${count} ${name}${count === 1 ? '' : 's'}`,
-        short: `${count}${UNIT_SHORT[key]}`,
+        label: textOf(i18n, UNIT_NAME[key], { count, n: localizeNumberText(String(count), i18n) }),
+        short: shortLabel(key, count, i18n),
     };
+}
+
+/**
+ * A data source's timeframe (`'1D'`, `'W'`, `'1M'`, `'3M'`, `'12M'`, `'240'`, `'30S'`) in the
+ * form the chart consumes: `D`, `W` or `M` for one day, week or month — the default presets'
+ * own values — and the canonical bare minutes for any other count (`'3M'` → `'129600'`).
+ * Unit letters read as sources write them, upper-case: `M` is a month. Null when unparsed.
+ */
+export function chartTimeframeOf(value: string | undefined): string | null {
+    if (value === undefined) return null;
+    const parsed = parseTimeframe(value);
+    if (!parsed.valid) return null;
+    if (parsed.count === 1 && (parsed.unit === 'D' || parsed.unit === 'W' || parsed.unit === 'M')) return parsed.unit;
+    return parsed.canonical ?? null;
 }
 
 /** Duration in ms of an existing timeframe value (`1`, `60`, `4h`, `D`, `W`, …), NaN if unknown. */
@@ -137,16 +170,17 @@ export function favoriteTimeframeChips(favorites: readonly string[]): string[] {
     });
 }
 
-/** Compact display label for any timeframe value ("60" → "1h", "D" → "1D"). */
-export function timeframeLabel(value: string): string {
-    const parsed = parseTimeframe(value);
+/** Compact display label for any timeframe value ("60" → "1h", "D" → "1D"), in `i18n`'s
+ *  language (English without one). */
+export function timeframeLabel(value: string, i18n?: Translator | null): string {
+    const parsed = parseTimeframe(value, i18n);
     if (!parsed.valid) return value;
     // Prefer the largest unit that divides evenly (60 → 1h, 240 → 4h, 1440 → 1D).
     const ms = parsed.ms!;
     const order: UnitKey[] = ['Y', 'M', 'W', 'D', 'H', 'MIN', 'S'];
     for (const key of order) {
         if (ms % UNIT_MS[key] === 0 && ms / UNIT_MS[key] >= 1) {
-            return `${ms / UNIT_MS[key]}${UNIT_SHORT[key]}`;
+            return shortLabel(key, ms / UNIT_MS[key], i18n);
         }
     }
     return parsed.short!;

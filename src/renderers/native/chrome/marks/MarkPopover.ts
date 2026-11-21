@@ -5,32 +5,39 @@
 // cluster of many marks costs one fetch per entry actually looked at. The glyph is
 // canvas pixels, not DOM, so an invisible anchor element inside the plot stands in as
 // the popover's trigger; the renderer moves it as the glyph moves (pan/zoom).
+import { msg } from '../../../../core/i18n/message';
+import { textOf } from '../../../../core/i18n/text';
+import type { Translator } from '../../../../core/i18n/types';
 import type { VelaTheme } from '../../../../core/options';
 import type { MarkContent, MarkContentSource, MarkPanelItem } from '../../../../core/marks/types';
-import { Popover } from '../../../../ui/components/popover';
-import { CALLOUT_CSS, CALLOUT_STYLE_ID } from '../../../../ui/components/callout-bubble';
-import { injectStyles } from '../../../../ui/styles';
+import { Popover } from '@luxalgo/vela-ui/popover';
+import { calloutPart } from '@luxalgo/vela-ui/callout-bubble';
+import { injectChromeStyles } from '../../../../ui/chromeStyles';
 import { sanitizeHtml } from '../../../../ui/sanitize-html';
 import type { MarkCluster } from './layout';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 const MARKS_STYLE_ID = 'vela-marks-popover';
-const MARKS_CSS = `
+const MARKS_CSS = css`@layer vela.chrome {
+
 .vela-marks-panel { padding: 0; gap: 0; min-width: 220px; max-width: 320px; max-height: 320px; overflow-y: auto; overscroll-behavior: contain; }
 .vela-marks-section { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; }
-.vela-marks-section + .vela-marks-section { border-top: 1px solid var(--vela-border); }
+.vela-marks-section + .vela-marks-section { border-top: 1px solid ${t.border}; }
 .vela-marks-field { display: flex; justify-content: space-between; gap: 16px; line-height: 1.45; }
-.vela-marks-field-label { color: var(--vela-fg-muted); }
-.vela-marks-field-value { color: var(--vela-fg-bright); text-align: right; font-variant-numeric: tabular-nums; }
-.vela-marks-html { color: var(--vela-fg); line-height: 1.45; overflow-wrap: anywhere; }
+.vela-marks-field-label { color: ${t.fg.muted}; }
+.vela-marks-field-value { color: ${t.fg.bright}; text-align: end; font-variant-numeric: tabular-nums; }
+.vela-marks-html { color: ${t.fg}; line-height: 1.45; overflow-wrap: anywhere; }
 .vela-marks-html p { margin: 0 0 6px; }
 .vela-marks-html p:last-child { margin-bottom: 0; }
-.vela-marks-html a { color: var(--vela-accent); }
+.vela-marks-html a { color: ${t.accent}; }
 .vela-marks-html img { max-width: 100%; height: auto; }
 .vela-marks-html table { border-collapse: collapse; }
-.vela-marks-html td, .vela-marks-html th { padding: 2px 6px; border: 1px solid var(--vela-border); }
+.vela-marks-html td, .vela-marks-html th { padding: 2px 6px; border: 1px solid ${t.border}; }
 .vela-marks-html pre, .vela-marks-html code { font-family: var(--vela-font-mono, monospace); font-size: 0.92em; }
-.vela-marks-loading, .vela-marks-error { color: var(--vela-fg-muted); font-style: italic; }
-`;
+.vela-marks-loading, .vela-marks-error { color: ${t.fg.muted}; font-style: italic; }
+
+}`;
 
 export interface MarkPopoverDeps {
     /** The positioned plot element — the anchor lives in it. */
@@ -41,7 +48,14 @@ export interface MarkPopoverDeps {
     theme: () => VelaTheme;
     /** The cluster whose popup shows changed — its key while one is open, null once it closed (the glyph paints "active" meanwhile). */
     onOpenChange?: (key: string | null) => void;
+    /** The chart's translator (the popup's loading and error notes). Absent: English. */
+    i18n?: () => Translator;
 }
+
+const TEXT = {
+    loading: msg('chart.marks.loading', 'Loading…'),
+    failed: msg('chart.marks.failed', 'Couldn’t load this entry.'),
+};
 
 /** A glyph's box in plot space (center + size). */
 export interface MarkGlyphRect {
@@ -75,8 +89,7 @@ export class MarkPopover {
 
     constructor(private readonly deps: MarkPopoverDeps) {
         const doc = deps.plot.ownerDocument;
-        injectStyles(CALLOUT_STYLE_ID, CALLOUT_CSS, doc);
-        injectStyles(MARKS_STYLE_ID, MARKS_CSS, doc);
+        injectChromeStyles(MARKS_STYLE_ID, MARKS_CSS, doc);
         this.anchor = doc.createElement('div');
         this.anchor.className = 'vela-marks-anchor';
         Object.assign(this.anchor.style, { position: 'absolute', pointerEvents: 'none', left: '0', top: '0', width: '0', height: '0' });
@@ -99,7 +112,7 @@ export class MarkPopover {
             trigger: this.anchor,
             host: this.deps.host(),
             theme: this.deps.theme(),
-            gap: 8,
+            sideOffset: 8,
             align: 'center', // centered on the glyph
             fadeMs: 120, // a short, discreet fade in and out
             className: 'vela-marks-pop',
@@ -157,6 +170,7 @@ export class MarkPopover {
         const doc = body.ownerDocument;
         const root = doc.createElement('div');
         root.className = 'vela-callout-panel vela-marks-panel';
+        calloutPart(root, 'panel');
         const pending: Array<{ el: HTMLElement; resolve: () => void }> = [];
         for (const mark of cluster.marks) {
             const section = doc.createElement('section');
@@ -164,6 +178,7 @@ export class MarkPopover {
             if (mark.title) {
                 const title = doc.createElement('div');
                 title.className = 'vela-callout-title';
+                calloutPart(title, 'title');
                 title.textContent = mark.title;
                 section.appendChild(title);
             }
@@ -171,7 +186,7 @@ export class MarkPopover {
             if (typeof content === 'function') {
                 const slot = doc.createElement('div');
                 slot.className = 'vela-marks-loading';
-                slot.textContent = 'Loading…';
+                slot.textContent = textOf(this.deps.i18n?.() ?? null, TEXT.loading);
                 section.appendChild(slot);
                 pending.push({ el: section, resolve: () => this.resolveLazy(content, slot, gen) });
             } else if (content !== undefined) {
@@ -202,7 +217,7 @@ export class MarkPopover {
             () => {
                 if (gen !== this.generation) return;
                 slot.className = 'vela-marks-error';
-                slot.textContent = 'Couldn’t load this entry.';
+                slot.textContent = textOf(this.deps.i18n?.() ?? null, TEXT.failed);
             },
         );
     }
@@ -213,6 +228,7 @@ export class MarkPopover {
         if ('text' in content) {
             const text = doc.createElement('div');
             text.className = 'vela-callout-text';
+            calloutPart(text, 'text');
             text.textContent = String(content.text);
             section.appendChild(text);
             return;
@@ -232,11 +248,14 @@ export class MarkPopover {
                     if (!actions) {
                         actions = doc.createElement('div');
                         actions.className = 'vela-callout-actions';
+                        calloutPart(actions, 'actions');
                         section.appendChild(actions);
                     }
                     const btn = doc.createElement('button');
                     btn.type = 'button';
                     btn.className = 'vela-callout-btn' + (item.primary ? ' vela-callout-btn-primary' : '');
+                    calloutPart(btn, 'button');
+                    if (item.primary) btn.dataset.primary = '';
                     btn.textContent = item.label;
                     btn.addEventListener('click', () => {
                         item.run();
@@ -249,6 +268,7 @@ export class MarkPopover {
                 if (item.type === 'text') {
                     const text = doc.createElement('div');
                     text.className = 'vela-callout-text';
+                    calloutPart(text, 'text');
                     text.textContent = item.text;
                     section.appendChild(text);
                 } else if (item.type === 'field') {

@@ -15,10 +15,11 @@ import type { DrawingsOption } from '../core/drawings';
 import type { MarketDataFeed } from '../core/ports/MarketDataFeed';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import type { IndicatorHandle } from '../core/IndicatorHandle';
+import type { VelaEventMap } from '../core/events/types';
 import { Statusline, statuslineInkOf, type StatuslinePart } from '../widget/statusline';
 import { MarketStatusTracker } from '../widget/market-status';
 import { SessionShadingTracker, parseSessionSpec } from '../widget/session-shading';
-import { timeframeMs } from '../widget/timeframe';
+import { chartTimeframeOf, timeframeLabel, timeframeMs } from '../widget/timeframe';
 import { Watermark } from '../widget/watermark';
 import { CellControls } from '../widget/cell-controls';
 import { ChartContextMenu } from '../widget/context-menu';
@@ -29,6 +30,7 @@ import { inputDeltas, type InputValue } from '../core/model/inputs';
 import {
     legendActionsProviderFor,
     legendCalloutsProviderFor,
+    drawingActionsProviderFor,
     resolveEngines,
     statePersistenceHandlers,
     type CellStateContext,
@@ -39,6 +41,39 @@ import { prefixedSymbol, type CellState } from '../state/document';
 import { parseSymbol } from '../data/ProviderRegistry';
 import { isExchangeTimezone, normalizeTimezone, resolveTimezone, timezoneMenuRows } from '../core/timezones';
 import { applyPlotOverlayTokens } from '../ui';
+import type { LocalizationOptions, MessageLike, Translator } from '../core/i18n/types';
+import { msg } from '../core/i18n/message';
+import { sourceText, textOf } from '../core/i18n/text';
+import { nativeIndicatorEntry } from '../core/native-indicators/NativeIndicator';
+import { priceStyleApplies } from '../chart-types/applicability';
+import { priceStyleIds } from '../renderers/native/core/chartConfig';
+import { STATUSLINE_PART_LABELS } from '../widget/statusline-model';
+
+/** The cell's settings rows (the chart settings dialog renders them in the chart's language). */
+const TEXT = {
+    regularHours: msg('workspace.settings.regularHours', 'Regular hours (RTH)'),
+    extendedHours: msg('workspace.settings.extendedHours', 'Extended hours (ETH)'),
+    extendedColor: msg('workspace.settings.extendedColor', 'Extended hours'),
+    premarketColor: msg('workspace.settings.premarketColor', 'Pre-market'),
+    postmarketColor: msg('workspace.settings.postmarketColor', 'Post-market'),
+    tradingSession: msg('workspace.settings.tradingSession', 'Trading session'),
+    session: msg('workspace.settings.session', 'Session'),
+    advanced: msg('workspace.settings.advanced', 'Advanced'),
+    barsToFetch: msg('workspace.settings.barsToFetch', 'Bars to fetch'),
+    timeZone: msg('workspace.settings.timeZone', 'Time zone'),
+    timeZoneRow: msg('workspace.settings.timeZoneRow', 'Time zone'),
+    watermark: msg('workspace.settings.watermark', 'Watermark'),
+    symbolWatermark: msg('workspace.settings.symbolWatermark', 'Symbol watermark'),
+    replayWatermark: msg('workspace.settings.replayWatermark', 'Replay watermark'),
+    statusLine: msg('workspace.settings.statusLine', 'Status line'),
+    statusLineParts: msg('workspace.settings.statusLineParts', 'Status line'),
+    indicators: msg('workspace.settings.indicators', 'Indicators'),
+    indicatorTitles: msg('workspace.settings.indicatorTitles', 'Titles'),
+    indicatorValues: msg('workspace.settings.indicatorValues', 'Values'),
+    builtIn: msg('workspace.indicators.builtIn', 'Built-in'),
+    unavailableFallback: msg('workspace.data.unavailableFallback', '{symbol} is not available at {timeframe}. Showing {shown} instead.'),
+    unavailable: msg('workspace.data.unavailable', '{symbol} is not available at {timeframe}.'),
+};
 
 /** The seed/mutable market state of one cell (all optional — an empty cell parks).
  *  The SAME vocabulary as the widget's chart options: the workspace's top-level chart
@@ -87,13 +122,13 @@ export function seedDefaults(opts: Pick<VelaOptions, 'symbol' | 'timeframe' | 'b
  *  sub-key (see {@link cellDrawings}). */
 export type CellChartDefaults = Pick<
     VelaOptions,
-    'renderer' | 'defaultLanguage' | 'currentPriceLine' | 'logScale' | 'animations' | 'glow' | 'upColor' | 'downColor' | 'drawings' | 'settings' | 'priceAxis'
+    'renderer' | 'defaultLanguage' | 'currentPriceLine' | 'logScale' | 'animations' | 'glow' | 'upColor' | 'downColor' | 'drawings' | 'settings' | 'priceAxis' | 'freePan'
 >;
 
 /** The {@link CellChartDefaults} pick of a workspace's options (pure, for the build). */
 export function cellChartDefaults(opts: CellChartDefaults): CellChartDefaults {
-    const { renderer, defaultLanguage, currentPriceLine, logScale, animations, glow, upColor, downColor, drawings, settings, priceAxis } = opts;
-    return { renderer, defaultLanguage, currentPriceLine, logScale, animations, glow, upColor, downColor, drawings, settings, priceAxis };
+    const { renderer, defaultLanguage, currentPriceLine, logScale, animations, glow, upColor, downColor, drawings, settings, priceAxis, freePan } = opts;
+    return { renderer, defaultLanguage, currentPriceLine, logScale, animations, glow, upColor, downColor, drawings, settings, priceAxis, freePan };
 }
 
 /** The cell form of the shell's `drawings` option: everything passes through EXCEPT the
@@ -134,6 +169,9 @@ export interface CellDeps {
     engines: Record<string, () => ScriptingEngine>;
     /** The workspace's top-level chart options every cell's chart starts from. */
     chartDefaults: CellChartDefaults;
+    /** The workspace's CURRENT localization — a cell built after a `setLocale` starts in it
+     *  (absent = the chart defaults: English). */
+    localization?(): LocalizationOptions;
     theme: VelaTheme;
     live: boolean;
     volume: boolean;
@@ -175,6 +213,9 @@ export interface CellDeps {
     onMarketChanged(id: string): void;
     /** The cell's price style changed in place (topbar icon/menu refresh upstream). */
     onPriceStyleChanged(id: string): void;
+    /** What the cell can draw changed with its symbol's facts — the drawn style, the greyed
+     *  styles — while the chosen style did not: refresh the style chrome, nothing to save. */
+    onPriceStyleShown?(id: string): void;
     /** The cell's indicator ledger changed (count/picker refresh upstream). */
     onIndicatorsChanged(id: string): void;
     /** A Status line tab or watermark pref changed on this cell (the style link mirrors upstream). */
@@ -212,6 +253,22 @@ function instanceDeltas(handle: IndicatorHandle | null): { inputs?: Record<strin
     const inputs = inputDeltas(handle.inputs, handle.inputValues());
     const props = inputDeltas(handle.props, handle.propValues());
     return inputs || props ? { ...(inputs ? { inputs } : {}), ...(props ? { props } : {}) } : undefined;
+}
+
+/** The names the indicator picker's search matches for a native type besides its shown
+ *  title: the title in English, and the short title (`RSI`) in `i18n`'s language and in
+ *  English. */
+/** A saved status-line parts bag as typed entries; parts it leaves out keep their default. */
+function statuslinePartEntries(parts: CellState['statuslineParts']): Array<[StatuslinePart, boolean]> {
+    return Object.entries(parts ?? {}).filter((e): e is [StatuslinePart, boolean] => typeof e[1] === 'boolean');
+}
+
+function nativeAliases(type: string, i18n: Translator | undefined): { aliases?: string[] } {
+    const entry = nativeIndicatorEntry(type);
+    if (!entry) return {};
+    const names = [sourceText(entry.title)];
+    if (entry.shortTitle !== undefined) names.push(textOf(i18n, entry.shortTitle), sourceText(entry.shortTitle));
+    return { aliases: [...new Set(names)] };
 }
 
 export class ChartCell {
@@ -265,7 +322,8 @@ export class ChartCell {
      *  (a pool/persisted cell can be built before the shared manifest has loaded). */
     private pendingManifestNames: LedgerManifestEntry[] | null = null;
     /** The volume auto-add rides the cell's first candles (`load:end`); until then the
-     *  registry can't show it and the dehydrated ledger reports the INTENT instead. */
+     *  registry can't show it and the dehydrated ledger reports the INTENT instead. After
+     *  them the chart itself reports an add still waiting for the symbol's facts. */
     private volumeMayBePending = true;
     /** Volume intent: the seed's ledger, else the workspace `volume` option — a
      *  rehydrated ledger overwrites it (see {@link applyIndicatorLedger}). */
@@ -278,6 +336,11 @@ export class ChartCell {
     /** Last symbol we toasted "no provider serves this" for — once per symbol (the
      *  core re-reports on every provider-index settle). */
     private unresolvedToasted: string | null = null;
+    /** The timeframe the chart RUNS for a symbol whose source refused the requested one
+     *  (`data:unavailable`). The requested timeframe stays in `state.timeframe` — what the
+     *  cell persists and the timeframe link shares — and returns on the next symbol, or
+     *  ends with an explicit timeframe choice. Null while the chart runs what was asked. */
+    private fallback: { symbol: string; timeframe: string } | null = null;
     /** The cell's third-party state bag (`ext` of the persisted per-chart state) —
      *  seeded from the boot/restored document, refreshed by handler `serialize` calls at
      *  dehydrate time. Entries with no registered handler this session ride along
@@ -324,6 +387,7 @@ export class ChartCell {
             this.host,
             {
                 ...deps.chartDefaults,
+                ...deps.localization?.(),
                 symbol,
                 timeframe: seed.timeframe,
                 bars: seed.bars,
@@ -360,6 +424,7 @@ export class ChartCell {
         // context follows the workspace rule (built fresh per click, active-cell bound).
         this.inner.renderer.setLegendActions(legendActionsProviderFor(this.inner, () => deps.context()));
         this.inner.renderer.setLegendCallouts(legendCalloutsProviderFor(this.inner, () => deps.context()));
+        this.inner.renderer.setDrawingActions(drawingActionsProviderFor(this.inner, () => deps.context()));
         // The cell owns ONE unified undo timeline (drawings + indicator ops), driven by
         // the workspace keymap. The drawings layer must not self-serve Ctrl+Z/Y or the
         // two histories desync (its preempt would pop the core drawing stack while the
@@ -381,7 +446,7 @@ export class ChartCell {
             // A document can carry the price style too (a template import): the renderer
             // is already showing it, so adopt it and re-project the chrome (topbar icon,
             // persisted state) — the `setPriceStyle` path never ran for it.
-            const style = this.priceStyle;
+            const style = this.requestedPriceStyle;
             if (style !== (this.state.priceStyle ?? 'candles')) {
                 this.state.priceStyle = style;
                 this.deps.onPriceStyleChanged(this.id);
@@ -416,7 +481,8 @@ export class ChartCell {
         // indicators must not call back into a workspace that doesn't know the cell yet.
         this.extState = { ...(seed.ext ?? {}) };
         // The volume auto-add rides the cell's first candles — from `load:end` on, the
-        // registry is the whole truth and the dehydrated ledger stops reporting intent.
+        // registry (plus the chart's own pending read) is the whole truth and the
+        // dehydrated ledger stops reporting intent.
         this.inner.on('load:end', () => {
             this.volumeMayBePending = false;
         });
@@ -427,6 +493,15 @@ export class ChartCell {
             this.unresolvedToasted = symbol;
             const list = providers.length > 0 ? providers.join(', ') : 'none';
             this.deps.toast(`No registered provider serves "${symbol}" (registered: ${list})`, 'error', 6000);
+        });
+        // A source that refuses the requested timeframe for good: show the one it suggests.
+        this.inner.on('data:unavailable', (e) => this.onDataUnavailable(e));
+        // The symbol's facts landed (or a switch reset them): the chart already draws the
+        // fallback of a style they rule out — re-project the style chrome (shown style,
+        // greyed entries, status-line ink). The requested style is untouched.
+        this.inner.on('symbol:facts', () => {
+            this.syncStatuslineColors();
+            this.deps.onPriceStyleShown?.(this.id);
         });
         // The loading affordance and the watermark never share the canvas.
         this.inner.on('load:start', ({ symbol }) => {
@@ -450,13 +525,14 @@ export class ChartCell {
         if (!this.indicatorValuesOn) this.inner.renderer.set('indicatorValues', false);
         this.watermarkOn = seed.watermark ?? deps.watermark;
         this.replayWatermarkOn = seed.replayWatermark ?? true;
-        this.watermark = deps.watermark ? new Watermark(this.host, symbol ?? '', seed.timeframe ?? '60') : null;
+        this.watermark = deps.watermark ? new Watermark(this.host, symbol ?? '', seed.timeframe ?? '60', () => this.inner?.i18n) : null;
         if (!this.watermarkOn) this.watermark?.setVisible(false);
         if (!this.replayWatermarkOn) this.watermark?.setReplayVisible(false);
         this.inner.on('replay:start', () => this.watermark?.setReplaying(true));
         this.inner.on('replay:end', () => this.watermark?.setReplaying(false));
         this.statusline = deps.statusline ? new Statusline(this.host, symbol ?? '', (sym) => this.inner?.data.symbolIcon(sym)) : null;
         this.statusline?.setMeta(seed.timeframe ?? '60', this.state.provider ?? '');
+        for (const [part, visible] of statuslinePartEntries(seed.statuslineParts)) this.statusline?.setPartVisible(part, visible);
         this.statusline?.onChart(this.inner);
         // The status line's right-click menu: part toggles route through the cell so the
         // style link mirrors them; the chart toggle is the object tree's same eye seam.
@@ -473,7 +549,7 @@ export class ChartCell {
         void this.inner.data.ready().then(() => {
             if (this.inner && this.state.symbol) {
                 this.statusline?.setSymbol(this.state.symbol);
-                this.statusline?.setMeta(this.state.timeframe ?? '60', this.inner.data.displayPrefix(this.state.symbol) ?? this.state.provider ?? '');
+                this.statusline?.setMeta(this.timeframe, this.inner.data.displayPrefix(this.state.symbol) ?? this.state.provider ?? '');
             }
             this.refreshSymbolMetadata();
             if (this.inner && this.state.symbol) this.marketStatus?.track(this.inner.data, this.state.symbol);
@@ -585,9 +661,12 @@ export class ChartCell {
      * only pass for host `chart.setMarket` calls). Idempotent, so the double run converges.
      */
     private projectMarket(symbol: string, timeframe: string): void {
+        // Any market other than the fallback's ends it — a host switching the chart directly
+        // included: the timeframe the chart then runs is the cell's own.
+        if (this.fallback && (this.fallback.symbol !== symbol || this.fallback.timeframe !== timeframe)) this.fallback = null;
         this.state.symbol = symbol;
         this.state.provider = parseSymbol(symbol).provider ?? undefined;
-        this.state.timeframe = timeframe;
+        if (!this.fallback) this.state.timeframe = timeframe;
         this.state.session = normalizeSession(this.inner?.market.session);
         this.watermark?.update(symbol, timeframe);
         this.statusline?.setSymbol(symbol);
@@ -696,7 +775,7 @@ export class ChartCell {
         const symbol = this.state.symbol;
         if (!chart || !symbol) return;
         const now = Date.now();
-        const requestedSpan = Math.max(this.state.bars ?? 1000, this.rangeBars) * timeframeMs(this.state.timeframe ?? '60');
+        const requestedSpan = Math.max(this.state.bars ?? 1000, this.rangeBars) * timeframeMs(this.timeframe);
         const fallbackSpan = Number.isFinite(requestedSpan) ? Math.max(3 * 86_400_000, requestedSpan) : 3 * 86_400_000;
         const range = chart.getVisibleRange() ?? { from: now - fallbackSpan, to: now };
         this.sessionShading.track(chart.data, symbol, { session: this.session, timeframe: this.timeframe, range });
@@ -727,13 +806,11 @@ export class ChartCell {
     private pushSettingsSections(): void {
         const chart = this.inner;
         if (!chart) return;
-        const rth = 'Regular hours (RTH)';
-        const eth = 'Extended hours (ETH)';
         const shadeRows = this.sessionOvernightFlag
             ? [
                   {
                       kind: 'color' as const,
-                      label: 'Extended hours',
+                      label: TEXT.extendedColor,
                       id: 'extended-color',
                       get: () => this.sessionShadeColor('extendedColor'),
                       set: (v: string) => this.setSessionShadeColor('extendedColor', v),
@@ -742,14 +819,14 @@ export class ChartCell {
             : [
                   {
                       kind: 'color' as const,
-                      label: 'Pre-market',
+                      label: TEXT.premarketColor,
                       id: 'premarket-color',
                       get: () => this.sessionShadeColor('premarketColor'),
                       set: (v: string) => this.setSessionShadeColor('premarketColor', v),
                   },
                   {
                       kind: 'color' as const,
-                      label: 'Post-market',
+                      label: TEXT.postmarketColor,
                       id: 'postmarket-color',
                       get: () => this.sessionShadeColor('postmarketColor'),
                       set: (v: string) => this.setSessionShadeColor('postmarketColor', v),
@@ -758,29 +835,32 @@ export class ChartCell {
         // The `id` fields are the sections' stable visibility ids (`settings.hidden`,
         // docs/user/options.md) — same reserved ids as the widget's sections.
         const sessionSection = {
-            title: 'Trading session',
+            title: TEXT.tradingSession,
             id: 'trading-session',
             placement: 'symbol' as const,
             rows: [
                 {
                     kind: 'select' as const,
-                    label: 'Session',
+                    label: TEXT.session,
                     id: 'session',
-                    options: [rth, eth],
-                    get: () => (this.session === 'extended' ? eth : rth),
-                    set: (v: string) => this.setSession(v === eth ? 'extended' : 'regular'),
+                    options: [
+                        ['regular', TEXT.regularHours],
+                        ['extended', TEXT.extendedHours],
+                    ] as const,
+                    get: () => (this.session === 'extended' ? 'extended' : 'regular'),
+                    set: (v: string) => this.setSession(v === 'extended' ? 'extended' : 'regular'),
                 },
                 ...shadeRows,
             ],
         };
         const advanced = {
-            title: 'Advanced',
+            title: TEXT.advanced,
             id: 'advanced',
             placement: 'end' as const,
             rows: [
                 {
                     kind: 'select' as const,
-                    label: 'Bars to fetch',
+                    label: TEXT.barsToFetch,
                     id: 'bars',
                     options: ['500', '1000', '2000', '5000', '10000', '20000', '50000', '60000', '80000', '100000'],
                     get: () => String(this.state.bars ?? 1000),
@@ -796,15 +876,15 @@ export class ChartCell {
         // as the bottom bar — UTC, the exchange rule, the catalog — writing the workspace
         // CHOICE, so picking Exchange never reaches the renderer as a zone.
         const timezoneSection = {
-            title: 'Time zone',
+            title: TEXT.timeZone,
             id: 'time-zone',
             placement: 'symbol' as const,
             rows: [
                 {
                     kind: 'select' as const,
-                    label: 'Time zone',
+                    label: TEXT.timeZoneRow,
                     id: 'zone',
-                    options: timezoneMenuRows(this.deps.timezone()).map((r) => [r.value, r.label] as const),
+                    options: timezoneMenuRows(this.deps.timezone(), chart.i18n).map((r) => [r.value, r.label] as const),
                     get: () => {
                         const choice = this.deps.timezone();
                         return isExchangeTimezone(choice) ? choice : normalizeTimezone(choice);
@@ -814,73 +894,73 @@ export class ChartCell {
             ],
         };
         const watermarkSection = {
-            title: 'Watermark',
+            title: TEXT.watermark,
             id: 'watermark',
             placement: 'symbol' as const,
             rows: [
                 {
                     kind: 'toggle' as const,
-                    label: 'Symbol watermark',
+                    label: TEXT.symbolWatermark,
                     id: 'visible',
                     get: () => this.watermarkOn,
                     set: (v: boolean) => this.setWatermarkVisible(v),
                 },
                 {
                     kind: 'toggle' as const,
-                    label: 'Replay watermark',
+                    label: TEXT.replayWatermark,
                     id: 'replay',
                     get: () => this.replayWatermarkOn,
                     set: (v: boolean) => this.setReplayWatermarkVisible(v),
                 },
             ],
         };
-        const sections: Array<{ title: string; rows: readonly unknown[]; placement?: 'after-symbol' | 'end' | 'symbol'; id?: string }> = [];
+        const sections: Array<{ title: MessageLike; rows: readonly unknown[]; placement?: 'after-symbol' | 'end' | 'symbol'; id?: string }> = [];
         if (this.statusline) {
             const sl = this.statusline;
             sections.push({
-                title: 'Status line',
+                title: TEXT.statusLine,
                 id: 'status-line',
                 rows: [
-                    { kind: 'heading', label: 'Status line', id: 'parts' },
+                    { kind: 'heading', label: TEXT.statusLineParts, id: 'parts' },
                     {
                         kind: 'toggle',
-                        label: 'Symbol name',
+                        label: STATUSLINE_PART_LABELS.name,
                         id: 'name',
                         get: () => sl.partVisible('name'),
                         set: (v: boolean) => this.setStatuslinePart('name', v),
                     },
                     {
                         kind: 'toggle',
-                        label: 'Market status',
+                        label: STATUSLINE_PART_LABELS.market,
                         id: 'market',
                         get: () => sl.partVisible('market'),
                         set: (v: boolean) => this.setStatuslinePart('market', v),
                     },
                     {
                         kind: 'toggle',
-                        label: 'OHLC values',
+                        label: STATUSLINE_PART_LABELS.ohlc,
                         id: 'ohlc',
                         get: () => sl.partVisible('ohlc'),
                         set: (v: boolean) => this.setStatuslinePart('ohlc', v),
                     },
                     {
                         kind: 'toggle',
-                        label: 'Bar change values',
+                        label: STATUSLINE_PART_LABELS.change,
                         id: 'change',
                         get: () => sl.partVisible('change'),
                         set: (v: boolean) => this.setStatuslinePart('change', v),
                     },
-                    { kind: 'heading', label: 'Indicators', id: 'indicators' },
+                    { kind: 'heading', label: TEXT.indicators, id: 'indicators' },
                     {
                         kind: 'toggle',
-                        label: 'Titles',
+                        label: TEXT.indicatorTitles,
                         id: 'indicator-titles',
                         get: () => this.indicatorTitlesOn,
                         set: (v: boolean) => this.setIndicatorTitlesVisible(v),
                     },
                     {
                         kind: 'toggle',
-                        label: 'Values',
+                        label: TEXT.indicatorValues,
                         id: 'indicator-values',
                         get: () => this.indicatorValuesOn,
                         set: (v: boolean) => this.setIndicatorValuesVisible(v),
@@ -929,6 +1009,7 @@ export class ChartCell {
     /** Show/hide one status-line segment (the settings dialog's Status line tab). */
     private setStatuslinePart(part: StatuslinePart, visible: boolean): void {
         this.statusline?.setPartVisible(part, visible);
+        this.deps.onStateDirty();
         this.deps.onStatusPrefsChanged(this.id);
     }
 
@@ -968,17 +1049,53 @@ export class ChartCell {
         return this.inner;
     }
 
+    /** Re-read the cell's own chrome (status line, watermark, view controls, settings rows,
+     *  native indicator names) in the chart's language, after `chart.setLocale`. */
+    relocalize(): void {
+        if (!this.inner) return;
+        this.statusline?.relocalize();
+        this.watermark?.relocalize();
+        this.cellControls.refresh();
+        this.pushSettingsSections();
+        this.refreshNativeCatalog();
+    }
+
     get symbol(): string {
         return this.state.symbol ?? '';
     }
 
+    /** The timeframe the chart shows — the requested one, or the fallback while the symbol's
+     *  source refuses it (what the topbar shows). */
     get timeframe(): string {
+        return this.fallback?.timeframe ?? this.state.timeframe ?? '60';
+    }
+
+    /** The timeframe the user asked for — what the cell persists and the timeframe link
+     *  shares. Differs from {@link timeframe} while the symbol's source refuses it. */
+    get requestedTimeframe(): string {
         return this.state.timeframe ?? '60';
     }
 
+    /** The price style the chart draws — the requested one, or its close-based fallback while
+     *  the symbol's data cannot draw it (what the topbar shows). */
     get priceStyle(): string {
+        const shown = this.inner?.renderer.get('shownPriceStyle');
+        return typeof shown === 'string' ? shown : this.requestedPriceStyle;
+    }
+
+    /** The price style the user chose — what the cell persists. Differs from
+     *  {@link priceStyle} while the symbol's data cannot draw it (`SymbolInfo.ohlc: false`
+     *  rules out candles, bars and Heikin Ashi); it comes back on the next symbol that can. */
+    get requestedPriceStyle(): string {
         const live = this.inner?.renderer.get('priceStyle');
         return typeof live === 'string' ? live : (this.state.priceStyle ?? 'candles');
+    }
+
+    /** The style ids the symbol's data cannot draw — greyed in the style pickers. Empty while
+     *  the symbol's facts are unknown. */
+    unavailablePriceStyles(): string[] {
+        const facts = this.inner?.symbolFacts() ?? null;
+        return facts ? priceStyleIds().filter((id) => !priceStyleApplies(id, facts)) : [];
     }
 
     /** Manifest instances + native instances — the topbar indicator count. */
@@ -992,19 +1109,64 @@ export class ChartCell {
     setSymbol(symbol: string): void {
         if (!this.inner || symbol === this.symbol) return;
         this.unresolvedToasted = null; // a re-picked symbol gets a fresh verdict
-        void this.inner.setMarket({ symbol });
-        this.projectMarket(symbol, this.timeframe);
+        // A fallback belongs to the symbol that refused: the next one is asked for the
+        // requested timeframe again.
+        const fellBack = this.fallback !== null;
+        this.fallback = null;
+        const timeframe = this.timeframe;
+        void this.inner.setMarket(fellBack ? { symbol, timeframe } : { symbol });
+        this.projectMarket(symbol, timeframe);
         this.deps.onMarketChanged(this.id);
     }
 
+    /** An explicit timeframe choice — it becomes the requested one, also while a fallback
+     *  runs: picking the fallback keeps it shown, anything else asks the chart for it. */
     setTimeframe(timeframe: string): void {
-        if (!this.inner || timeframe === this.timeframe) return;
+        if (!this.inner || (!this.fallback && timeframe === this.timeframe)) return;
+        const shown = this.timeframe;
+        this.fallback = null;
+        if (timeframe === shown) {
+            this.projectMarket(this.symbol, timeframe);
+            this.deps.onMarketChanged(this.id);
+            return;
+        }
         // Leaving range mode: drop the chip AND its fetch budget (back to the cell's own bars).
         this.activeRangeId = null;
         this.rangeBars = 0;
         void this.inner.setMarket({ timeframe, bars: this.state.bars });
         this.projectMarket(this.symbol, timeframe);
         this.deps.onMarketChanged(this.id);
+    }
+
+    /**
+     * The source refused the chart's timeframe for this symbol for good: switch to the one it
+     * suggests (`default`, else `finest`) and say so, keeping the requested timeframe as the
+     * cell's own. A refusal of the fallback itself, or one with nothing better to offer, is
+     * only reported — the cell never chains switches.
+     */
+    private onDataUnavailable(e: VelaEventMap['data:unavailable']): void {
+        const chart = this.inner;
+        if (!chart || this.destroyed) return;
+        const market = chart.market;
+        if (e.symbol !== (market.symbol ?? 'TEST') || e.timeframe !== (market.timeframe ?? '60')) return; // superseded
+        const i18n = chart.i18n;
+        const symbol = parseSymbol(e.symbol).ticker || e.symbol;
+        const asked = timeframeLabel(e.timeframe, i18n);
+        const to = chartTimeframeOf(e.default) ?? chartTimeframeOf(e.finest);
+        const again = this.fallback !== null && this.fallback.symbol === e.symbol && this.fallback.timeframe === e.timeframe;
+        if (to === null || again || timeframeMs(to) === timeframeMs(e.timeframe)) {
+            this.deps.toast(textOf(i18n, TEXT.unavailable, { symbol, timeframe: asked }), 'error', 6000);
+            return;
+        }
+        this.fallback = { symbol: e.symbol, timeframe: to };
+        // The range chip's timeframe is not what shows any more: leave range mode.
+        this.activeRangeId = null;
+        this.rangeBars = 0;
+        this.pendingRange = null;
+        void chart.setMarket({ timeframe: to, bars: this.state.bars });
+        this.projectMarket(e.symbol, to);
+        this.deps.onMarketChanged(this.id);
+        this.deps.toast(textOf(i18n, TEXT.unavailableFallback, { symbol, timeframe: asked, shown: timeframeLabel(to, i18n) }), 'info', 5000);
     }
 
     /** Applied live (renderer feature) — no reload. */
@@ -1042,8 +1204,16 @@ export class ChartCell {
      */
     applyRange(preset: RangePreset): void {
         if (!this.inner || this.destroyed) return;
+        const shown = this.timeframe;
+        // A chip names its timeframe explicitly: a running fallback ends, the chip's timeframe
+        // is the requested one from here on.
+        const endsFallback = this.fallback !== null;
+        if (endsFallback) {
+            this.fallback = null;
+            this.state.timeframe = preset.tf;
+        }
         this.activeRangeId = preset.id;
-        const tfChanged = preset.tf !== this.timeframe;
+        const tfChanged = preset.tf !== shown;
         const deeper = preset.bars > Math.max(this.state.bars ?? 500, this.rangeBars);
         this.rangeBars = preset.bars;
         if (tfChanged || deeper) {
@@ -1059,6 +1229,7 @@ export class ChartCell {
         } else {
             this.inner.setVisibleRangePreset(preset.preset);
         }
+        if (endsFallback) this.deps.onMarketChanged(this.id); // the requested timeframe changed
     }
 
     /** Reset this cell's view: re-enable auto scale and frame the full history —
@@ -1182,22 +1353,32 @@ export class ChartCell {
      *  index space the picker hands back, so `libraryRows` and `addFromLibrary` MUST both
      *  read it — indexing the unsorted catalog on add would land on a different study. */
     private supportedNatives(): CellNativeInfo[] {
-        return this.nativeCatalog.filter((n) => n.supported).sort((a, b) => a.title.localeCompare(b.title, 'en', { sensitivity: 'base' }));
+        // Titles are in the chart's language, so they sort by its collation (A→Z in English).
+        const locale = this.inner?.i18n.locale ?? 'en';
+        const collator = new Intl.Collator(locale, { sensitivity: 'base' });
+        return this.nativeCatalog.filter((n) => n.supported).sort((a, b) => collator.compare(a.title, b.title));
     }
 
     /** The picker's library rows: supported natives first (see {@link supportedNatives}),
      *  then the manifest in the host's own order. */
-    libraryRows(): Array<{ name: string; language?: string; category?: string; native?: boolean; nativeType?: string; beta?: boolean }> {
+    libraryRows(): Array<{ name: string; aliases?: string[]; language?: string; category?: string; native?: boolean; nativeType?: string; beta?: boolean }> {
         return [
-            ...this.supportedNatives().map((n) => ({ name: n.title, category: 'Built-in', native: true, nativeType: n.type, beta: n.beta })),
+            ...this.supportedNatives().map((n) => ({
+                name: n.title,
+                ...nativeAliases(n.type, this.inner?.i18n),
+                category: textOf(this.inner?.i18n, TEXT.builtIn),
+                native: true,
+                nativeType: n.type,
+                beta: n.beta,
+            })),
             ...this.manifest.map((e) => ({ name: e.name, language: e.language, category: e.category })),
         ];
     }
 
     /** The picker's on-chart rows: native instances first, then live script instances. */
-    onChartRows(): Array<{ name: string; language?: string; native?: boolean; nativeType?: string }> {
+    onChartRows(): Array<{ name: string; aliases?: string[]; language?: string; native?: boolean; nativeType?: string }> {
         return [
-            ...this.nativeHandles().map((h) => ({ name: h.title, native: true, nativeType: h.nativeType })),
+            ...this.nativeHandles().map((h) => ({ name: h.title, ...nativeAliases(h.nativeType!, this.inner?.i18n), native: true, nativeType: h.nativeType })),
             ...this.instances.map((it) => ({ name: it.entry.name, language: it.entry.language })),
         ];
     }
@@ -1454,14 +1635,16 @@ export class ChartCell {
      */
     rehydrate(cs: CellState): void {
         if (!this.inner || this.destroyed) return;
-        if (cs.priceStyle && cs.priceStyle !== this.priceStyle) this.setPriceStyle(cs.priceStyle);
+        if (cs.priceStyle && cs.priceStyle !== this.requestedPriceStyle) this.setPriceStyle(cs.priceStyle);
         if (cs.watermark !== undefined && cs.watermark !== this.watermarkOn) this.setWatermarkVisible(cs.watermark);
         if (cs.replayWatermark !== undefined && cs.replayWatermark !== this.replayWatermarkOn) this.setReplayWatermarkVisible(cs.replayWatermark);
         if (cs.indicatorTitles !== undefined && cs.indicatorTitles !== this.indicatorTitlesOn) this.setIndicatorTitlesVisible(cs.indicatorTitles);
         if (cs.indicatorValues !== undefined && cs.indicatorValues !== this.indicatorValuesOn) this.setIndicatorValuesVisible(cs.indicatorValues);
-        // Cosmetics + drawings round-trip (both validate untrusted input).
+        for (const [part, visible] of statuslinePartEntries(cs.statuslineParts)) {
+            if (this.statusline && this.statusline.partVisible(part) !== visible) this.setStatuslinePart(part, visible);
+        }
+        // Cosmetics round-trip (validates untrusted input); the drawings follow the market below.
         if (cs.rendererConfig != null) this.inner.renderer.applyConfig(cs.rendererConfig);
-        if (cs.drawings != null) this.inner.drawings.fromJSON(cs.drawings);
         if (cs.indicators) this.applyIndicatorLedger(cs.indicators as { manifest: LedgerManifestEntry[]; natives: LedgerNativeEntry[] });
         // Third-party state converges to the document too: the restored bag REPLACES
         // the baseline (absent in the document = the document carries none), then the
@@ -1476,7 +1659,15 @@ export class ChartCell {
         const bars = typeof cs.bars === 'number' && Number.isFinite(cs.bars) && cs.bars > 0 ? cs.bars : 0;
         const next: { symbol?: string; timeframe?: string; bars?: number; session?: MarketSession } = {};
         if (symbol && symbol !== this.symbol) next.symbol = symbol;
-        if (cs.timeframe && cs.timeframe !== this.timeframe) next.timeframe = cs.timeframe;
+        const timeframe = cs.timeframe || this.requestedTimeframe;
+        if (this.fallback && (next.symbol !== undefined || timeframe !== this.requestedTimeframe)) {
+            // The document names another market or timeframe: the fallback ends, and the
+            // document's timeframe is the requested one (asked for unless already shown).
+            const shown = this.fallback.timeframe;
+            this.fallback = null;
+            this.state.timeframe = timeframe;
+            if (timeframe !== shown) next.timeframe = timeframe;
+        } else if (!this.fallback && cs.timeframe && cs.timeframe !== this.timeframe) next.timeframe = cs.timeframe;
         if (session !== this.session) {
             this.state.session = session;
             next.session = session;
@@ -1486,6 +1677,10 @@ export class ChartCell {
             next.bars = Math.max(bars, this.rangeBars);
         }
         if (Object.keys(next).length > 0) void this.inner.setMarket(next);
+        // The drawings round-trip (untrusted input too) once the switch has STARTED: a chart
+        // whose drawings belong to its symbol drops them as a symbol switch starts, and the
+        // document's drawings are the ones of the market it names.
+        if (cs.drawings != null) this.inner.drawings.fromJSON(cs.drawings);
     }
 
     /** Snapshot everything the pool needs to restore this slot later. The market fields
@@ -1496,14 +1691,18 @@ export class ChartCell {
         // budget — in range mode the config carries the chip's transient fetch budget.
         const live = this.inner?.market;
         const ext = this.inner ? this.dehydrateExt() : Object.keys(this.extState).length > 0 ? { ...this.extState } : undefined;
+        const statuslineParts = this.statusPrefs().parts;
         return {
             ...this.state,
-            ...(live ? { symbol: live.symbol, provider: live.provider, timeframe: live.timeframe } : {}),
-            priceStyle: this.priceStyle,
+            // The REQUESTED timeframe while a fallback shows another: a reload asks for it again.
+            ...(live ? { symbol: live.symbol, provider: live.provider, timeframe: this.fallback && live.symbol === this.fallback.symbol && live.timeframe === this.fallback.timeframe ? this.state.timeframe : live.timeframe } : {}),
+            // The CHOSEN style while the symbol's data shows a fallback: a reload draws it again.
+            priceStyle: this.requestedPriceStyle,
             watermark: this.watermarkOn,
             replayWatermark: this.replayWatermarkOn,
             indicatorTitles: this.indicatorTitlesOn,
             indicatorValues: this.indicatorValuesOn,
+            ...(statuslineParts ? { statuslineParts } : {}),
             rendererConfig: this.inner?.renderer.getConfig() ?? undefined,
             drawings: this.inner ? this.inner.drawings.toJSON() : undefined,
             // Natives from the chart's SYNC registry read — an async catalog mirror here
@@ -1527,7 +1726,7 @@ export class ChartCell {
                     }),
                 pendingManifest: this.pendingManifestNames,
                 manifestSettled: this.deps.manifestSettled(),
-                volumePending: this.volumeMayBePending && this.volumeIntent,
+                volumePending: (this.volumeMayBePending && this.volumeIntent) || (this.inner?.pendingNativeIndicators().includes('volume') ?? false),
             }),
             ...(ext ? { ext } : {}),
         };

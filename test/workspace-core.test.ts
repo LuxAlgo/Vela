@@ -293,6 +293,45 @@ describe('sync model (pure)', () => {
         expect(syncTargets('c4', groups, IDS)).toEqual([]); // an unlisted origin follows nothing
     });
 
+    it('link groups: every linked cell once, lone and unlisted cells left out', async () => {
+        const { syncGroups } = await import('../src/workspace/sync');
+        expect(syncGroups(true, IDS)).toEqual([IDS]);
+        expect(syncGroups({ c1: 'a', c2: 'b', c3: 'a', c4: 'b' }, IDS)).toEqual([['c1', 'c3'], ['c2', 'c4']]);
+        expect(syncGroups({ c1: 'a', c2: 'a', c3: 'b' }, IDS)).toEqual([['c1', 'c2']]);
+        expect(syncGroups(false, IDS)).toEqual([]);
+    });
+
+    it('identical drawings are the same linked content whatever their key order or per-chart state', async () => {
+        const { drawingLinkContent } = await import('../src/workspace/sync');
+        const base = { type: 'trendline', paneId: 'price', anchors: [{ time: 1, price: 2 }], style: { lineColor: '#fff', lineWidth: 2 } } as const;
+        const reordered = { style: { lineWidth: 2, lineColor: '#fff' }, anchors: [{ price: 2, time: 1 }], paneId: 'price', type: 'trendline' } as const;
+        expect(drawingLinkContent(reordered as never)).toBe(drawingLinkContent(base as never));
+        // Lock, visibility, draw order and creation time stay per chart.
+        const perChart = { ...base, id: 'dw-9', locked: true, visible: false, zIndex: 40, createdAt: 99 };
+        expect(drawingLinkContent(perChart as never)).toBe(drawingLinkContent(base as never));
+        // Geometry, style, text and per-type settings are the drawing itself.
+        expect(drawingLinkContent({ ...base, anchors: [{ time: 1, price: 3 }] } as never)).not.toBe(drawingLinkContent(base as never));
+        expect(drawingLinkContent({ ...base, style: { lineColor: '#000', lineWidth: 2 } } as never)).not.toBe(drawingLinkContent(base as never));
+        expect(drawingLinkContent({ ...base, text: { value: 'a' } } as never)).not.toBe(drawingLinkContent(base as never));
+        expect(drawingLinkContent({ ...base, props: { extend: 'right' } } as never)).not.toBe(drawingLinkContent(base as never));
+        expect(drawingLinkContent({ ...base, paneId: 'p2' } as never)).not.toBe(drawingLinkContent(base as never));
+    });
+
+    it('identical drawings pair one to one across charts, in each chart\'s order', async () => {
+        const { pairIdenticalDrawings } = await import('../src/workspace/sync');
+        const line = (id: string, price = 1) => ({ id, type: 'trendline', paneId: 'price', anchors: [{ time: 1, price }], style: {} }) as never;
+        const links = pairIdenticalDrawings([
+            { cellId: 'c1', drawings: [line('a1'), line('a2'), line('a3'), line('a4', 5)] },
+            { cellId: 'c2', drawings: [line('b1'), line('b2'), line('b3', 7)] },
+            { cellId: 'c3', drawings: [line('x1')] },
+        ]);
+        expect(links.map((l) => Object.fromEntries(l))).toEqual([
+            { c1: 'a1', c2: 'b1', c3: 'x1' },
+            { c1: 'a2', c2: 'b2' },
+            // a3 has no partner left; a4 and b3 match nothing.
+        ]);
+    });
+
     it('rangesWithin: the epsilon short-circuit on both edges', async () => {
         const { rangesWithin } = await import('../src/workspace/sync');
         const a = { from: 1000, to: 2000 };

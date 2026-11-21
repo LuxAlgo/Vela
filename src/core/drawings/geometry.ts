@@ -51,6 +51,8 @@ export interface Projector {
     xOf(time: number): number;
     /** Pixel y for a price on a pane; `null` when the pane is gone. */
     yOf(price: number, paneId: string): number | null;
+    /** Known price precision for this pane, when supplied by the renderer. */
+    priceDecimals?(paneId: string): number | undefined;
     /** Inverse — pixel → data point on a pane (used on create/drag commit). */
     pxToPoint(x: number, y: number, paneId: string): DrawingPoint;
     /** Which pane owns a pixel y, or `null` outside every pane. */

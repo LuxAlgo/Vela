@@ -2,6 +2,9 @@
 // snaps on the bar grid, how marks fold into clusters and stacks, where every glyph
 // sits, and which glyph is under a point. The painter and the renderer's hit-tests both
 // read the same `MarkLaneLayout`, so what is drawn is exactly what is clickable.
+import { msg } from '../../../../core/i18n/message';
+import { localizeNumberText, textOf } from '../../../../core/i18n/text';
+import type { Translator } from '../../../../core/i18n/types';
 import type { MarkGroup, TimelineMark } from '../../../../core/marks/types';
 
 /** Token size of a single mark, px. */
@@ -245,13 +248,17 @@ export function markStackAt(layout: MarkLaneLayout, x: number, y: number): numbe
 }
 
 /** Hover text for a glyph: the mark's own tooltip (or title) alone; a cluster names its group and size. */
-export function clusterTooltip(cluster: MarkCluster, groups: readonly MarkGroup[]): string | null {
+export function clusterTooltip(cluster: MarkCluster, groups: readonly MarkGroup[], i18n?: Translator | null): string | null {
     const first = cluster.marks[0];
     if (!first) return null;
     if (cluster.marks.length === 1) return first.tooltip ?? first.title ?? null;
-    const label = cluster.group !== undefined ? markGroupLabel(cluster.group, groups) : (first.title ?? first.tooltip ?? 'Marks');
-    return `${label} · ${cluster.marks.length}`;
+    const label = cluster.group !== undefined ? markGroupLabel(cluster.group, groups) : (first.title ?? first.tooltip ?? textOf(i18n, MARKS));
+    return textOf(i18n, CLUSTER, { label, count: localizeNumberText(String(cluster.marks.length), i18n) });
 }
+
+/** A cluster's hover text: its group (or first mark) and how many marks it gathers. */
+const CLUSTER = msg('chart.marks.cluster', '{label} · {count}');
+const MARKS = msg('chart.marks.marks', 'Marks');
 
 /** A group's display label: its definition, else the capitalized id. */
 export function markGroupLabel(groupId: string, groups: readonly MarkGroup[]): string {

@@ -1,13 +1,23 @@
 // Timezone drawer (mobile) — opened by a long-press on the time axis. Lists the same
 // rows as the desktop bottom-bar picker (exchange rule + every IANA zone); picking one
 // applies and closes.
-import { Drawer } from '../ui/components/drawer';
-import { iconEl } from '../ui/icons';
-import { injectStyles } from '../ui/styles';
+import { msg } from '../core/i18n/message';
+import { textOf } from '../core/i18n/text';
+import type { Translator } from '../core/i18n/types';
+import { Drawer } from '@luxalgo/vela-ui/drawer';
+import { iconEl } from '@luxalgo/vela-ui/icons';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { timezoneMenuRows } from './timezones';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
+
+const TEXT = {
+    title: msg('widget.timezoneDrawer.title', 'Time zone'),
+};
 
 const STYLE_ID = 'vela-widget-timezone-drawer';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 .vela-tzd-list { padding: 2px 0 4px; }
 .vela-tzd-row {
     display: flex;
@@ -19,10 +29,11 @@ const CSS = `
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
 }
-.vela-tzd-row:active { background: var(--vela-hover); }
-.vela-tzd-row-label { flex: 1 1 auto; min-width: 0; font-size: 14px; color: var(--vela-fg-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.vela-tzd-row .vela-icon { flex: none; color: var(--vela-fg-bright); }
-`;
+.vela-tzd-row:active { background: ${t.hover}; }
+.vela-tzd-row-label { flex: 1 1 auto; min-width: 0; font-size: 14px; color: ${t.fg.bright}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vela-tzd-row .vela-icon { flex: none; color: ${t.fg.bright}; }
+
+}`;
 
 export interface TimezoneDrawerOptions {
     host: HTMLElement;
@@ -30,17 +41,20 @@ export interface TimezoneDrawerOptions {
     timezone: () => string;
     onTimezone: (zone: string) => void;
     onOpenChange?: (open: boolean) => void;
+    /** The shell's translator. Absent: English. */
+    i18n?: Translator;
 }
 
 export class TimezoneDrawer {
     private readonly drawer: Drawer;
 
     constructor(private readonly opts: TimezoneDrawerOptions) {
-        injectStyles(STYLE_ID, CSS, opts.host.ownerDocument);
-        this.drawer = new Drawer({ host: opts.host, title: 'Time zone', onOpenChange: opts.onOpenChange });
+        injectChromeStyles(STYLE_ID, CSS, opts.host.ownerDocument);
+        this.drawer = new Drawer({ host: opts.host, title: textOf(opts.i18n, TEXT.title), onOpenChange: opts.onOpenChange });
     }
 
     open(): void {
+        this.drawer.setTitle(textOf(this.opts.i18n, TEXT.title));
         this.render();
         this.drawer.show();
     }
@@ -58,7 +72,7 @@ export class TimezoneDrawer {
         this.drawer.body.replaceChildren();
         const list = doc.createElement('div');
         list.className = 'vela-tzd-list';
-        for (const tz of timezoneMenuRows(this.opts.timezone())) {
+        for (const tz of timezoneMenuRows(this.opts.timezone(), this.opts.i18n)) {
             const row = doc.createElement('div');
             row.className = 'vela-tzd-row';
             const label = doc.createElement('span');

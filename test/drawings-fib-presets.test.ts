@@ -3,6 +3,12 @@
 // the swing level 0 sits on.
 import { describe, it, expect } from 'vitest';
 import { createDrawing, FIB_PRESETS, matchFibPreset, type FibLevels, type FibRetracement, type Projector } from '../src/core/drawings';
+import { createTranslator, type MessageLike } from '../src/plugin';
+
+/** Toolbar and drawing text as an English chart shows it. */
+const english = createTranslator({ locale: 'en' });
+const en = (m: MessageLike | null | undefined): string | null | undefined => (m == null ? m : english.t(m));
+
 
 /** x = time, y = 200 − price, 300 × 200 px. */
 const proj: Projector = {
@@ -35,7 +41,7 @@ const priceOf = (d: FibLevels, ratio: number): number | undefined => d.levelLine
 
 describe('ready-made fib level sets', () => {
     it('the sets are Classic, Extension and OTE, in that order', () => {
-        expect(FIB_PRESETS.map((p) => p.label)).toEqual(['Classic', 'Extension', 'OTE']);
+        expect(FIB_PRESETS.map((p) => en(p.label))).toEqual(['Classic', 'Extension', 'OTE']);
     });
 
     it('a new retracement starts on Classic: the standard pullback levels from the swing high', () => {

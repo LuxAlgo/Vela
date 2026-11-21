@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { createDrawing, deserializeDrawing, lineSegmentIntersection, type Projector, type PatternDrawing } from '../src/core/drawings';
+import { createTranslator, type MessageLike } from '../src/plugin';
+
+/** Toolbar and drawing text as an English chart shows it. */
+const english = createTranslator({ locale: 'en' });
+const en = (m: MessageLike | null | undefined): string | null | undefined => (m == null ? m : english.t(m));
+
 
 const HR = 3600000;
 
@@ -23,7 +29,7 @@ describe('drawings/patterns', () => {
     it('XABCD has 5 vertices, labels X–D, fills two triangles, shows leg ratios', () => {
         const d = createDrawing('xabcd', { paneId: 'price', anchors: [at(0, 50), at(1, 70), at(2, 60), at(3, 80), at(4, 55)] })! as PatternDrawing;
         expect(d.anchorSchema().min).toBe(5);
-        expect(d.vertexLabels()).toEqual(['X', 'A', 'B', 'C', 'D']);
+        expect(d.vertexLabels().map(en)).toEqual(['X', 'A', 'B', 'C', 'D']);
         expect(d.legRatios()).toBe(true);
         expect(d.fillTriangles()).toEqual([[0, 1, 2], [2, 3, 4]]);
         // AB/XA = |60−70| / |70−50| = 10/20 = 0.5
@@ -35,7 +41,7 @@ describe('drawings/patterns', () => {
     it('ABCD has 4 vertices + ratios; hit-tests on its polyline', () => {
         const d = createDrawing('abcd', { paneId: 'price', anchors: [at(0, 40), at(2, 60), at(4, 50), at(6, 70)] })! as PatternDrawing;
         expect(d.anchorSchema().min).toBe(4);
-        expect(d.vertexLabels()).toEqual(['A', 'B', 'C', 'D']);
+        expect(d.vertexLabels().map(en)).toEqual(['A', 'B', 'C', 'D']);
         // on the A→B leg midpoint: (1h, 50) → px (1, 50)
         expect(d.hitTest(1, 50, proj, 4)).toBe(true);
         expect(d.hitTest(1, 90, proj, 4)).toBe(false);
@@ -44,17 +50,17 @@ describe('drawings/patterns', () => {
 
     it('Elliott impulse / correction label 1–5 and A–C with no ratios', () => {
         const imp = createDrawing('elliottimpulse', { paneId: 'price', anchors: [at(0, 10), at(1, 20), at(2, 15), at(3, 30), at(4, 25)] })! as PatternDrawing;
-        expect(imp.vertexLabels()).toEqual(['1', '2', '3', '4', '5']);
+        expect(imp.vertexLabels().map(en)).toEqual(['1', '2', '3', '4', '5']);
         expect(imp.legRatios()).toBe(false);
         const corr = createDrawing('elliottcorrection', { paneId: 'price', anchors: [at(0, 30), at(1, 20), at(2, 26)] })! as PatternDrawing;
         expect(corr.anchorSchema().min).toBe(3);
-        expect(corr.vertexLabels()).toEqual(['A', 'B', 'C']);
+        expect(corr.vertexLabels().map(en)).toEqual(['A', 'B', 'C']);
     });
 
     it('Head & shoulders has 7 vertices, peaks labelled, neckline through the troughs', () => {
         const d = createDrawing('headshoulders', { paneId: 'price', anchors: [at(0, 40), at(1, 60), at(2, 50), at(3, 70), at(4, 50), at(5, 60), at(6, 40)] })! as PatternDrawing;
         expect(d.anchorSchema().min).toBe(7);
-        expect(d.vertexLabels()).toEqual(['', 'LS', '', 'H', '', 'RS', '']);
+        expect(d.vertexLabels().map(en)).toEqual(['', 'LS', '', 'H', '', 'RS', '']);
         expect(d.necklineIndices()).toEqual([2, 4]);
     });
 

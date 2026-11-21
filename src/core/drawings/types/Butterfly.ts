@@ -1,11 +1,13 @@
+import { msg } from '../../i18n/message';
+import type { MessageLike } from '../../i18n/types';
 import { HarmonicPattern, type HarmonicRanges } from './HarmonicPattern';
 
 /** Butterfly: AB≈0.786 XA, CD 1.618–2.618 BC, completion AD 1.272–1.618 XA (D extends beyond X). */
 export class Butterfly extends HarmonicPattern {
     readonly type = 'butterfly' as const;
 
-    patternName(): string {
-        return 'Butterfly';
+    patternName(): MessageLike {
+        return msg('drawing.butterfly.patternName', 'Butterfly');
     }
 
     protected ranges(): HarmonicRanges {

@@ -138,6 +138,11 @@ class FakeRenderer implements IChartRenderer {
         this.nativePushes.push([type, data]);
     }
     setIndicatorStatus(): void {}
+    /** The host settings tabs the cell pushes (the Status line tab among them). */
+    settingsSections: ReadonlyArray<{ id?: string; rows: readonly unknown[] }> = [];
+    setSettingsSections(sections: ReadonlyArray<{ id?: string; rows: readonly unknown[] }>): void {
+        this.settingsSections = sections;
+    }
 }
 
 /** The most recently constructed FakeRenderer (Vela instantiates the class). */
@@ -443,6 +448,81 @@ describe('ChartCell symbol metadata — the session verdict does not wait for th
     });
 });
 
+describe('ChartCell volume on a symbol whose source has no volume', () => {
+    /**
+     * One provider: `MACRO` is stated to carry no volume, `BTCUSDT` states nothing about it.
+     * By default the bars wait a macrotask, so the facts are known when the first candles
+     * paint; `holdFacts` keeps the facts in flight until released, so the candles win.
+     */
+    function factsFeed(opts: { holdFacts?: boolean } = {}): { feed: MultiProviderFeed; releaseFacts: () => void } {
+        let release: () => void = () => {};
+        const gate = opts.holdFacts ? new Promise<void>((r) => (release = r)) : Promise.resolve();
+        const provider: DataProvider = {
+            getBars: async () => {
+                if (!opts.holdFacts) await new Promise((r) => setTimeout(r, 0));
+                return makeBars(60);
+            },
+            listSymbols: () => Promise.resolve([{ ticker: 'MACRO' }, { ticker: 'BTCUSDT' }]),
+            getSymbolInfo: async (ticker) => {
+                await gate;
+                return ticker === 'MACRO' ? { ticker, volume: false } : { ticker };
+            },
+        };
+        const feed = new MultiProviderFeed(new BarStore());
+        void feed.registerProvider('lux', provider);
+        return { feed, releaseFacts: () => release() };
+    }
+
+    it('a fresh cell neither adds nor saves a volume indicator there', async () => {
+        const { feed } = factsFeed();
+        const cell = makeCell({ symbol: 'LUX:MACRO' }, { feed });
+        await cell.chart.ready();
+        await settle();
+        expect(volumeOf(cell)).toBeUndefined();
+        expect(cell.dehydrate().indicators!.natives).toEqual([]);
+        cell.destroy();
+    });
+
+    it('a fresh cell on a symbol that says nothing about volume still gets it', async () => {
+        const { feed } = factsFeed();
+        const cell = makeCell({ symbol: 'LUX:BTCUSDT' }, { feed });
+        await cell.chart.ready();
+        await settle();
+        expect(volumeOf(cell)).toBeDefined();
+        expect(cell.dehydrate().indicators!.natives).toEqual(['volume']);
+        cell.destroy();
+    });
+
+    it('a saved volume indicator stays there', async () => {
+        const { feed } = factsFeed();
+        const cell = makeCell({ symbol: 'LUX:MACRO', indicators: { natives: ['volume'], manifest: [] } } as Partial<CellBoot>, { feed });
+        await cell.chart.ready();
+        await settle();
+        expect(volumeOf(cell)).toBeDefined();
+        expect(cell.dehydrate().indicators!.natives).toEqual(['volume']);
+        cell.destroy();
+    });
+
+    it('a save while the facts are in flight keeps the owed volume, and the facts settle it', async () => {
+        for (const [symbol, natives] of [['LUX:BTCUSDT', ['volume']], ['LUX:MACRO', []]] as const) {
+            const { feed, releaseFacts } = factsFeed({ holdFacts: true });
+            const cell = makeCell({ symbol }, { feed });
+            await cell.chart.ready();
+            await settle();
+            // The first candles are in and the add waits on the facts: a save now must not
+            // read back as the user removing the volume indicator.
+            expect(volumeOf(cell)).toBeUndefined();
+            expect(cell.dehydrate().indicators!.natives).toEqual(['volume']);
+
+            releaseFacts();
+            await settle();
+            expect(cell.dehydrate().indicators!.natives).toEqual(natives);
+            expect(volumeOf(cell) !== undefined).toBe(natives.length > 0);
+            cell.destroy();
+        }
+    });
+});
+
 describe('ChartCell indicator picker library', () => {
     // Vela is now the name of whole charting products built on this library, so the
     // library's own indicators can't be filed under "Vela" in their picker.
@@ -452,6 +532,47 @@ describe('ChartCell indicator picker library', () => {
         const natives = cell.libraryRows().filter((r) => r.native);
         expect(natives.length).toBeGreaterThan(0);
         expect(new Set(natives.map((r) => r.category))).toEqual(new Set(['Built-in']));
+        cell.destroy();
+    });
+});
+
+describe('ChartCell status line parts are saved with the chart', () => {
+    type ToggleRow = { kind: string; id?: string; get?: () => boolean; set?: (v: boolean) => void };
+    /** The Status line tab's switch for one part, as the settings dialog shows it. */
+    const statusLineRow = (id: string): ToggleRow => {
+        const tab = lastRenderer!.settingsSections.find((s) => s.id === 'status-line')!;
+        return (tab.rows as ToggleRow[]).find((r) => r.kind === 'toggle' && r.id === id)!;
+    };
+
+    it('a part switched off in the Status line tab is saved and asks for a save', async () => {
+        const onStateDirty = vi.fn();
+        const cell = makeCell({}, { statusline: true, onStateDirty });
+        await settle();
+        onStateDirty.mockClear();
+        statusLineRow('ohlc').set!(false);
+        expect(onStateDirty).toHaveBeenCalled();
+        expect(cell.dehydrate().statuslineParts).toEqual({ logo: true, name: true, market: true, ohlc: false, change: true });
+        cell.destroy();
+    });
+
+    it('a chart reopened from a saved document shows the parts it was saved with', async () => {
+        const cell = makeCell({ statuslineParts: { market: false, ohlc: false, change: false } }, { statusline: true });
+        await settle();
+        expect(statusLineRow('name').get!()).toBe(true);
+        expect(statusLineRow('market').get!()).toBe(false);
+        expect(statusLineRow('ohlc').get!()).toBe(false);
+        expect(statusLineRow('change').get!()).toBe(false);
+        expect(cell.dehydrate().statuslineParts).toEqual({ logo: true, name: true, market: false, ohlc: false, change: false });
+        cell.destroy();
+    });
+
+    it('applying a saved document to an open chart brings its status line back to the saved parts', async () => {
+        const cell = makeCell({}, { statusline: true });
+        await settle();
+        cell.rehydrate({ ...SEED, statuslineParts: { ohlc: false, change: false } });
+        expect(statusLineRow('ohlc').get!()).toBe(false);
+        expect(statusLineRow('change').get!()).toBe(false);
+        expect(statusLineRow('market').get!()).toBe(true);
         cell.destroy();
     });
 });

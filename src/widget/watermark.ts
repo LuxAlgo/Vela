@@ -1,9 +1,14 @@
 // Symbol watermark — large faded "SYMBOL · TF" centered on the price pane, with a smaller
 // "Replay" line under it while the chart replays past bars.
-import { injectStyles } from '../ui/styles';
-import { iconEl } from '../ui/icons';
+import { msg } from '../core/i18n/message';
+import { textOf } from '../core/i18n/text';
+import type { Translator } from '../core/i18n/types';
+import { injectChromeStyles } from '../ui/chromeStyles';
+import { iconEl } from '@luxalgo/vela-ui/icons';
 import { timeframeLabel } from './timeframe';
 import { parseSymbol } from '../data/ProviderRegistry';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 /** The watermark's largest type size — a lone full-size chart renders at this cap. */
 const MAX_FONT_PX = 36;
@@ -13,7 +18,8 @@ const MIN_FONT_PX = 12;
 const FILL = 0.9;
 
 const STYLE_ID = 'vela-widget-watermark';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 .vela-watermark {
     position: absolute;
     /* Insets follow the renderer-published gutters AND the price-pane vertical
@@ -21,8 +27,8 @@ const CSS = `
      * the study panes below, the drawings toolbar, or the price scale. */
     top: var(--vela-price-pane-top, 0px);
     bottom: var(--vela-price-pane-bottom, 0px);
-    left: var(--vela-toolbar-gutter, 0px);
-    right: var(--vela-scale-gutter, 0px);
+    inset-inline-start: var(--vela-toolbar-gutter, 0px);
+    inset-inline-end: var(--vela-scale-gutter, 0px);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -30,7 +36,7 @@ const CSS = `
     overflow: hidden;
     pointer-events: none;
     z-index: 1;
-    color: var(--vela-fg);
+    color: ${t.fg};
     opacity: 0.05;
     font-size: ${MAX_FONT_PX}px;
     font-weight: 700;
@@ -46,7 +52,8 @@ const CSS = `
     font-size: 0.8em;
 }
 .vela-watermark [hidden] { display: none !important; }
-`;
+
+}`;
 
 /**
  * The font size that fits `textPxAtMax` (the text's width measured AT the cap) into
@@ -59,6 +66,11 @@ export function watermarkFontPx(availPx: number, textPxAtMax: number): number {
     if (textPxAtMax <= 0) return MAX_FONT_PX;
     return Math.max(MIN_FONT_PX, Math.min(MAX_FONT_PX, Math.floor((MAX_FONT_PX * availPx * FILL) / textPxAtMax)));
 }
+
+const TEXT = {
+    replay: msg('widget.watermark.replay', 'Replay'),
+    mark: msg('widget.watermark.mark', '{symbol} · {timeframe}'),
+};
 
 export class Watermark {
     readonly el: HTMLElement;
@@ -75,9 +87,18 @@ export class Watermark {
      *  canvas, so the mark stays out of its way. Starts true: the FIRST `load:start`
      *  fires during chart construction, before any subscriber can see it. */
     private loading = true;
+    private readonly replayText: Text;
+    private symbol = '';
+    private timeframe = '';
 
-    constructor(host: HTMLElement, symbol: string, timeframe: string) {
-        injectStyles(STYLE_ID, CSS, host.ownerDocument);
+    /** `i18n` reads the chart's translator (absent: English). */
+    constructor(
+        host: HTMLElement,
+        symbol: string,
+        timeframe: string,
+        private readonly i18n: () => Translator | null | undefined = () => null,
+    ) {
+        injectChromeStyles(STYLE_ID, CSS, host.ownerDocument);
         this.el = host.ownerDocument.createElement('div');
         this.el.className = 'vela-watermark';
         // Opt into the renderer's PNG export, beneath the canvases — on screen the mark
@@ -86,7 +107,8 @@ export class Watermark {
         this.text = host.ownerDocument.createElement('span');
         this.replayLine = host.ownerDocument.createElement('span');
         this.replayLine.className = 'vela-watermark-replay';
-        this.replayLine.append(iconEl('replay', host.ownerDocument), host.ownerDocument.createTextNode('Replay'));
+        this.replayText = host.ownerDocument.createTextNode(textOf(this.i18n(), TEXT.replay));
+        this.replayLine.append(iconEl('replay', host.ownerDocument), this.replayText);
         this.el.append(this.text, this.replayLine);
         host.appendChild(this.el);
         // The el tracks the price pane (CSS insets on the host), so observing it
@@ -130,9 +152,18 @@ export class Watermark {
     }
 
     update(symbol: string, timeframe: string): void {
+        this.symbol = symbol;
+        this.timeframe = timeframe;
+        const i18n = this.i18n();
         // Bare ticker — the venue prefix is routing identity, not something to watermark.
-        this.text.textContent = symbol ? `${parseSymbol(symbol).ticker} · ${timeframeLabel(timeframe)}` : '';
+        this.text.textContent = symbol ? textOf(i18n, TEXT.mark, { symbol: parseSymbol(symbol).ticker, timeframe: timeframeLabel(timeframe, i18n) }) : '';
         this.fit();
+    }
+
+    /** Re-read the mark and the replay line in the chart's language. */
+    relocalize(): void {
+        this.replayText.data = textOf(this.i18n(), TEXT.replay);
+        this.update(this.symbol, this.timeframe);
     }
 
     /** Measure the text at the cap and shrink it to the price pane's width. */

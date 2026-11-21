@@ -12,7 +12,7 @@ describe('NativeRenderer priceStyle feature (item 13)', () => {
 
     it('accepts every supported style and rejects unknown ones (→ candles)', () => {
         const r = new NativeRenderer();
-        for (const style of ['candles', 'bars', 'line', 'area', 'baseline']) {
+        for (const style of ['candles', 'bars', 'line', 'linemarkers', 'stepline', 'area', 'baseline', 'columns']) {
             r.applyFeature('priceStyle', style);
             expect(r.readFeature('priceStyle')).toBe(style);
         }

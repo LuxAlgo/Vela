@@ -94,7 +94,9 @@ export function parseSessionSpec(si: SymbolInfo | undefined): SessionSpec | null
 const dtfCache = new Map<string, Intl.DateTimeFormat | null>();
 
 /** Cached civil-time formatter for `tz` (constructing one is the expensive part);
- *  null when the timezone name is bogus — no shading beats wrong shading. */
+ *  null when the timezone name is bogus — no shading beats wrong shading. Pinned to en-US
+ *  whatever the chart's locale: its parts are parsed and its weekday compared to `'Sun'`,
+ *  `'Sat'` and `'Fri'`, never shown. */
 function civilFormatter(tz: string): Intl.DateTimeFormat | null {
     const cached = dtfCache.get(tz);
     if (cached !== undefined) return cached;

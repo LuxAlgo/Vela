@@ -72,7 +72,9 @@ beside it. The popup is built from each tool's own schema, so it shows only the 
 supports — line color/width/style, fill and text. The popup also locks and deletes the drawing, and
 its overflow menu (the `⋮` button) duplicates it in place, reorders it (bring-to-front /
 send-to-back), or resets its settings. A duplicate lands exactly on its source and becomes the
-selection, ready to drag away.
+selection, ready to drag away. An app built on Vela can add its own buttons to the popup and
+to the settings panel — an alert on the line, for example (see `registerDrawingAction` in the
+[plugin SDK](../contributing/plugin-sdk.md#drawing-actions--registerdrawingaction)).
 
 **The settings panel.** The popup's **gear**, or a double-click on the drawing, opens the full
 settings panel, laid out the same way for every tool:
@@ -84,7 +86,8 @@ settings panel, laid out the same way for every tool:
   (on/off, ratio, color), including the ones that are off.
 - **Label** — the words, their styling and, on line tools, where they sit along the line and on
   which side. Placement options appear only once the label has words.
-- **Points** — each anchor's price, editable, and its time in the chart's time zone.
+- **Points** — each anchor's price, editable, and its time in the chart's time zone. On a
+  daily or coarser chart the point shows its bar's date, the same in every time zone.
 - **Show on** — every timeframe, intraday only, 1H and up, or a custom set. The timeframe list
   appears only for a custom set, and a dot marks the chart's own timeframe. A drawing limited to
   other timeframes is neither painted nor clickable on this chart.
@@ -257,7 +260,7 @@ Magnet, Measure, and Stay in drawing mode are toolbar *modes*, not placeable typ
 
 | Tool | Type key | What it does |
 |---|---|---|
-| Rectangle | `box` | An axis-aligned filled box. |
+| Rectangle | `box` | An axis-aligned filled box. Drag a corner handle to resize both sides, or the handle in the middle of a side to move that side alone. Its settings can switch on a **Midline**, a line halfway between the top and the bottom on screen (a range's 50% level), broken where the box's label sits, with its own color (the border color until you pick one) and style (dashed by default). From code: `chart.drawings.add('box', { anchors, props: { midline: true } })`, with optional `midColor` and `midStyle` (`'solid'`, `'dashed'` or `'dotted'`). |
 | Arrow | `arrow` | A straight arrow between two points. |
 | Ellipse | `ellipse` | A data-space ellipse in a bounding box. |
 | Triangle | `triangle` | A three-point filled triangle. |
@@ -351,8 +354,8 @@ whether it falls in that pattern's ideal Fibonacci band.
 | Tool | Type key | What it does |
 |---|---|---|
 | Date & Price Range | `datepricerange` | A box reporting the time span + price/% change it covers. |
-| Long/Short Position | `position` | An entry/stop/target box: click the entry, then drag in the profit direction (up for a long, down for a short). Shows risk:reward, percentages, dollar loss, and position size from your risk % and account balance (size is editable and back-solves the risk %). The settings panel has a long/short switch (mirrors the levels across the entry), exact level values in price or points, and per-label display toggles; zone colors and label styling sit on the quick bar. |
-| Magnifier | `magnifier` | A press-drag-release rectangle whose interior shows the same market at a **lower timeframe**, rendered in the chart's own price style *and colors* (candles, bars, line, area, Heikin Ashi; custom chart types fall back to candles) at true time/price positions. The timeframe chip on the rectangle's bottom-left corner is a dropdown — click it to switch — and the same pick leads the quick bar, beside the up/down color overrides and the border style; **Auto** subdivides the chart's timeframe, and both pickers offer only timeframes below the chart's own. The finer bars load in the background and follow live data; when the chart is already at the finest timeframe, or the area needs more bars than the tool will fetch, a notice inside the rectangle says so. Needs a market with a ranged data source (offline `data` arrays have nothing to fetch). |
+| Long/Short Position | `position` | An entry/stop/target box: click the entry, then drag in the profit direction (up for a long, down for a short). Shows risk:reward, percentages, the amount lost at the stop, and position size from your risk % and account balance (size is editable and back-solves the risk %). The settings panel has a long/short switch (mirrors the levels across the entry), exact level values in price or points, and per-label display toggles; zone colors and label styling sit on the quick bar. |
+| Magnifier | `magnifier` | A press-drag-release rectangle whose interior shows the same market at a **lower timeframe**, rendered in the chart's own price style *and colors* (candles, bars, line, area, Heikin Ashi; line with markers and step line show as a line, columns as an area; custom chart types fall back to candles) at true time/price positions. The timeframe chip on the rectangle's bottom-left corner is a dropdown — click it to switch — and the same pick leads the quick bar, beside the up/down color overrides and the border style; **Auto** subdivides the chart's timeframe, and both pickers offer only timeframes below the chart's own. The finer bars load in the background and follow live data; when the chart is already at the finest timeframe, or the area needs more bars than the tool will fetch, a notice inside the rectangle says so. Needs a market with a ranged data source (offline `data` arrays have nothing to fetch). |
 
 ---
 
@@ -385,7 +388,7 @@ chart.drawings.lock(d.id);          // make it non-interactive
 chart.drawings.showToolbar(false);  // hide the toolbar (drawings still work from code)
 ```
 
-See the [`chart.drawings` reference](./api-reference.md#chartdrawings-control-surface) for the full
+See the [`chart.drawings` reference](./api-reference.md#chartdrawings--the-drawings-control-surface) for the full
 method list and which methods are gated by renderer support.
 
 ---
@@ -456,6 +459,44 @@ the next load.
 - **Clipboard.** `copyToClipboard(ids)` + `paste()`, or `duplicate(ids)` / `clone(id)`, mint fresh
   copies (new ids) and select them — an in-memory, per-chart clipboard. On the chart, the
   popup's overflow menu, **Ctrl/Cmd+D**, and a **Ctrl/Cmd+drag** of the body do the same.
+- **Remove everything.** `chart.drawings.clear()` deletes every drawing, locked ones included,
+  as one undo step.
+
+### Drawings per symbol
+
+By default a chart keeps its drawings when its symbol changes: a trend line drawn on one
+instrument stays at the same prices on the next. Set `clearOnSymbolChange` to make the drawings
+belong to the symbol instead:
+
+```js
+new Vela('#chart', { symbol: 'AAPL', drawings: { clearOnSymbolChange: true } });
+// or on a live chart:
+chart.drawings.setClearOnSymbolChange(true);
+```
+
+- **A switch to another symbol removes every drawing.** A timeframe or session change keeps
+  them.
+- **They go as the switch starts**, before the new bars load, so they never sit on the new
+  instrument's prices. The removal clears the undo history and raises one
+  `drawing:replaced` (`cause: 'symbol'`) in place of a `drawing:removed` per drawing, the way
+  `fromJSON` replaces a document: the user removed nothing.
+- **A restored state keeps its drawings.** `applyState()` and a `persist` boot put back the
+  document's drawings together with its symbol.
+
+Vela itself stores nothing per symbol: with the option on and no store, a symbol's drawings are
+gone once you leave it. To bring them back, keep one document per symbol in your app:
+
+```js
+const bySymbol = new Map();
+const save = () => bySymbol.set(chart.market.symbol, chart.drawings.toJSON());
+for (const ev of ['drawing:created', 'drawing:edited', 'drawing:removed', 'drawing:history']) chart.on(ev, save);
+chart.on('market:changed', ({ symbol }) => chart.drawings.fromJSON(bySymbol.get(symbol)));
+```
+
+Save on the drawing events, not on `market:changed`: by then the old symbol's drawings are
+already removed. `drawing:history` is the event of an undo or a redo, which raises none of the
+other three. Do not save on `drawing:replaced` with `cause: 'symbol'`: the chart is empty then
+because the new symbol's drawings are still to come.
 
 ---
 
@@ -464,8 +505,9 @@ the next load.
 Interactive drawing requires a renderer that declares the `userDrawings` capability — the **native
 renderer** does; a minimal custom adapter may not. When unsupported,
 `chart.drawings.supported` is `false`, the interactive methods warn and no-op, **but** the
-core-owned methods (`add` of the model, `all`, `toJSON`/`fromJSON`, `undo`/`redo`) still work, so a
-document round-trips even without an on-chart toolbar.
+core-owned methods (`all`, `update`, `remove`, `toJSON`/`fromJSON`, `undo`/`redo`) still work, so a
+document round-trips even without an on-chart toolbar. Placing a drawing (`add`) is interactive and
+returns `null` there; restore drawings with `fromJSON` instead.
 
 > **Stability:** the drawing-tools API is young and may change before a 1.0 release. The persisted
 > `DrawingsDocument` is versioned and migrated forward.

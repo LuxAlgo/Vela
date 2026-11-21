@@ -6,8 +6,9 @@ import type { SeriesSpec, LineLikeSeries, CandleSeries, LineStyle, CandleBarColo
 import { isLineLikeSeries, seriesShownOn } from '../../../core/model/series';
 import type { CoordinateSystem } from '../core/CoordinateSystem';
 import type { SceneGraph, PaneNode } from '../core/SceneGraph';
-import { candleTier, wickWidth, candleGeometry, snapY, aggregateCandleColumns } from './candle-lod';
-import { BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha as cssWithAlpha, effectiveCandlePaint } from '../core/chartConfig';
+import { candleTier, wickWidth, candleGeometry, snapY, aggregateCandleColumns, candleStickExtent, candleStickColor } from './candle-lod';
+import { BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, COLUMNS_FILL_ALPHA, withAlpha as cssWithAlpha, effectiveCandlePaint } from '../core/chartConfig';
+import { lineMarkerRadius, lineMarkersVisible, columnIsUp, columnGeometry, snapStroke, closeRuns, stepVertices } from './close-styles';
 import type { IRenderBackend } from './IRenderBackend';
 import { Batch, type RGBA } from './gl/Batch';
 import { parseColor } from './gl/color';
@@ -331,6 +332,9 @@ export class WebGL2Backend implements IRenderBackend {
         const i0 = Math.max(0, Math.floor(vr.from));
         const i1 = Math.min(n - 1, Math.ceil(vr.to));
         if (i1 < i0) return;
+        // Indicator series and fills may carry points past the last bar (a plot shifted
+        // forward), so they paint through the visible right whitespace too.
+        const s1 = Math.max(i1, Math.ceil(vr.to));
 
         // Blend/scissor are enabled once; the program/VAO/uniform bindings live in each pane's
         // `flush`, since an interleave-layer quad swaps them mid-pane anyway.
@@ -414,8 +418,8 @@ export class WebGL2Backend implements IRenderBackend {
                     // Fills paint at the model's z slot, under its own series — a band between
                     // two plots sits behind the plot lines, and the whole model moves as one
                     // unit when its object-tree row is reordered.
-                    for (const f of m.fills) if (f.overlay !== true) this.emitFill(b, m, f, mp, coords, i0, i1, off);
-                    for (const s of m.series) if (s.overlay !== true) this.emitSeries(b, s, mp, coords, i0, i1, theme, off);
+                    for (const f of m.fills) if (f.overlay !== true) this.emitFill(b, m, f, mp, coords, i0, s1, off);
+                    for (const s of m.series) if (s.overlay !== true) this.emitSeries(b, s, mp, coords, i0, s1, theme, off);
                 }
                 if (drawCandles && !candleDrawn) {
                     drawSlicesUpTo(scene.candleZ);
@@ -429,11 +433,11 @@ export class WebGL2Backend implements IRenderBackend {
                 if (isPrice) {
                     for (const m of scene.indicators.values()) {
                         const off = scene.offsetOf(m.id);
-                        for (const f of m.fills) if (f.overlay === true) this.emitFill(b, m, f, pane, coords, i0, i1, off);
+                        for (const f of m.fills) if (f.overlay === true) this.emitFill(b, m, f, pane, coords, i0, s1, off);
                     }
                     for (const m of scene.indicators.values()) {
                         const off = scene.offsetOf(m.id);
-                        for (const s of m.series) if (s.overlay === true) this.emitSeries(b, s, pane, coords, i0, i1, theme, off);
+                        for (const s of m.series) if (s.overlay === true) this.emitSeries(b, s, pane, coords, i0, s1, theme, off);
                     }
                 }
                 // Stack-top slices: the topmost indicator's drawings, force_overlay drawings,
@@ -461,7 +465,7 @@ export class WebGL2Backend implements IRenderBackend {
         if (this.glow > 0 && !this.screenProgram && !this.ensureScreenPipeline()) this.glow = 0;
         if (this.glow > 0 && this.screenProgram) {
             this.glowBatch.alpha = this.modelAlpha; // the glow of faded series fades too
-            this.renderGlow(gl, scene, coords, i0, i1);
+            this.renderGlow(gl, scene, coords, i0, s1);
         }
     }
 
@@ -685,6 +689,15 @@ export class WebGL2Backend implements IRenderBackend {
             case 'line':
                 this.emitPriceLine(b, bars, i0, i1, coords, pane, parseColor(st.line.color ?? theme.upColor), st.line.width);
                 return;
+            case 'linemarkers': {
+                const c = parseColor(st.line.color ?? theme.upColor);
+                this.emitPriceLine(b, bars, i0, i1, coords, pane, c, st.line.width);
+                this.emitLineMarkers(b, bars, i0, i1, coords, pane, c, st.line.width);
+                return;
+            }
+            case 'stepline':
+                this.emitStepLine(b, bars, i0, i1, coords, pane, parseColor(st.line.color ?? theme.upColor), st.line.width);
+                return;
             case 'area': {
                 const lineColor = st.area.lineColor ?? theme.upColor;
                 this.emitPriceArea(b, bars, i0, i1, coords, pane, parseColor(st.area.topColor ?? lineColor), parseColor(st.area.bottomColor ?? 'rgba(0,0,0,0)'));
@@ -694,6 +707,12 @@ export class WebGL2Backend implements IRenderBackend {
             case 'baseline':
                 this.emitBaseline(b, bars, i0, i1, coords, pane, scene, theme, dataW);
                 return;
+            case 'columns': {
+                const up = st.columns.upColor ?? cssWithAlpha(theme.upColor, COLUMNS_FILL_ALPHA);
+                const down = st.columns.downColor ?? cssWithAlpha(theme.downColor, COLUMNS_FILL_ALPHA);
+                this.emitColumns(b, bars, i0, i1, coords, pane, up, down, barColors);
+                return;
+            }
             default: // 'candles' + candle-drawn styles (a plugin style may fade candles to reveal its
                 // order-flow layer) and 'heikinashi' (the bars themselves arrive already transformed)
                 this.emitCandles(b, scene, bars, i0, i1, coords, pane, theme, barColors);
@@ -747,6 +766,72 @@ export class WebGL2Backend implements IRenderBackend {
             px = x;
             py = y;
             have = true;
+        }
+    }
+
+    /** Line with markers (mirrors Canvas2dBackend.drawLineMarkers): a dot on each bar's
+     *  close once bars are spaced enough to tell the dots apart. */
+    private emitLineMarkers(b: Batch, bars: OHLCV[], i0: number, i1: number, coords: CoordinateSystem, pane: PaneNode, c: RGBA, width: number): void {
+        const r = lineMarkerRadius(width);
+        if (!lineMarkersVisible(coords.pxPerBar(), r)) return;
+        const segs = Math.max(16, Math.ceil(r * 2));
+        for (let i = Math.max(0, i0 - 1); i <= i1; i += 1) {
+            const bar = bars[i];
+            if (!bar) continue;
+            b.circle(coords.logicalToX(i), coords.priceToY(bar.close, pane.scale, pane.bounds), r, c, segs);
+        }
+    }
+
+    /**
+     * Step line (mirrors Canvas2dBackend.drawStepLine): the snapped step vertices as
+     * axis-aligned rects, each run square-capped at both ends. Every rect owns the corner
+     * square at its END (the first one also at its start), so no pixel is covered twice
+     * and a translucent line keeps one even tone through its corners.
+     */
+    private emitStepLine(b: Batch, bars: OHLCV[], i0: number, i1: number, coords: CoordinateSystem, pane: PaneNode, c: RGBA, width: number): void {
+        const dpr = coords.dpr;
+        const hw = Math.max(1, width) / 2;
+        const runs = closeRuns(Math.max(0, i0 - 1), i1, (i) => {
+            const bar = bars[i];
+            return bar ? { x: snapStroke(coords.logicalToX(i), width, dpr), y: snapStroke(coords.priceToY(bar.close, pane.scale, pane.bounds), width, dpr) } : null;
+        });
+        for (const run of runs) {
+            const vs = stepVertices(run);
+            for (let k = 1; k < vs.length; k += 1) {
+                const a = vs[k - 1]!;
+                const z = vs[k]!;
+                if (a.y === z.y) {
+                    // Horizontal, always left to right.
+                    const x0 = k === 1 ? a.x - hw : a.x + hw;
+                    const x1 = z.x + hw;
+                    if (x1 > x0) b.rect(x0, a.y - hw, x1 - x0, hw * 2, c);
+                } else {
+                    // Vertical: never a run's first segment, so its start corner is the
+                    // previous horizontal's.
+                    const y0 = z.y > a.y ? a.y + hw : z.y - hw;
+                    const y1 = z.y > a.y ? z.y + hw : a.y - hw;
+                    if (y1 > y0) b.rect(a.x - hw, y0, hw * 2, y1 - y0, c);
+                }
+            }
+        }
+    }
+
+    /** Columns (mirrors Canvas2dBackend.drawColumns): one per bar from the pane's bottom
+     *  edge up to its close, up/down by the close against the previous close. */
+    private emitColumns(b: Batch, bars: OHLCV[], i0: number, i1: number, coords: CoordinateSystem, pane: PaneNode, up: string, down: string, barColors: ReadonlyMap<number, string>): void {
+        const spacing = coords.bodySpacing();
+        const dpr = coords.dpr;
+        const bottom = snapY(pane.bounds.top + pane.bounds.height, dpr);
+        const upC = parseColor(up);
+        const downC = parseColor(down);
+        for (let i = i0; i <= i1; i += 1) {
+            const bar = bars[i];
+            if (!bar) continue;
+            const top = snapY(coords.priceToY(bar.close, pane.scale, pane.bounds), dpr);
+            if (!(top < bottom)) continue;
+            const g = columnGeometry(coords.logicalToX(i), spacing, dpr);
+            const bc = barColors.get(bar.time);
+            b.rect(g.left, top, g.width, bottom - top, bc ? parseColor(bc) : columnIsUp(bars, i) ? upC : downC);
         }
     }
 
@@ -863,16 +948,22 @@ export class WebGL2Backend implements IRenderBackend {
         const up = paint.up;
         const down = paint.down;
         const cs = paint.candle;
+        // Too thin for a body, the stick IS the candle: it spans whatever part is still
+        // visible, so hiding the wick alone never empties the pane at these zooms.
+        const stick = candleStickExtent(cs);
+        if (stick === 'none') return; // every part hidden: nothing to paint at any zoom
+        // A body stick stands for the body (or for its border when the body is hidden).
+        const bodyStickAlpha = cs.bodyVisible ? this.candleBodyAlpha : this.candleStructureAlpha;
         if (tier === 'aggregate') {
-            // The stick IS the candle, so a bar's paint resolves as in the stick-only tier
-            // below: the wick color setting wins, then barcolor(), then the direction color.
+            if (stick === 'body') b.alpha = bodyStickAlpha;
             this.emitCandlesAggregated(b, bars, i0, i1, coords, pane, (bar) => {
                 const isUp = bar.close >= bar.open;
-                return (isUp ? cs.wickUpColor : cs.wickDownColor) ?? barColors.get(bar.time) ?? (isUp ? up : down);
-            });
+                return candleStickColor(cs, stick, isUp, barColors.get(bar.time) ?? (isUp ? up : down));
+            }, stick);
             return;
         }
         const drawBody = tier === 'full';
+        const bodyStick = !drawBody && stick === 'body';
         // When a fading style drops the body below the structure, draw a body outline even
         // if no border is configured — so the candle keeps a visible (hollow) skeleton.
         const fading = this.candleStructureAlpha > this.candleBodyAlpha + 0.001;
@@ -890,7 +981,7 @@ export class WebGL2Backend implements IRenderBackend {
             // Body geometry up front so the wick can be clipped to it when the body is hollow.
             let bodyTop = 0;
             let bodyH = 0;
-            if (drawBody) {
+            if (drawBody || bodyStick) {
                 const oY = coords.priceToY(bar.open, pane.scale, pane.bounds);
                 const cY = coords.priceToY(bar.close, pane.scale, pane.bounds);
                 // Both edges snapped to the device grid so the horizontal edges rasterize
@@ -898,7 +989,10 @@ export class WebGL2Backend implements IRenderBackend {
                 bodyTop = snapY(Math.min(oY, cY), coords.dpr);
                 bodyH = Math.max(1 / coords.dpr, snapY(Math.max(oY, cY), coords.dpr) - bodyTop);
             }
-            if (cs.wickVisible) {
+            if (bodyStick) {
+                b.alpha = bodyStickAlpha;
+                b.rect(g.wickX, bodyTop, g.wickW, bodyH, parseColor(candleStickColor(cs, 'body', isUp, bodyColorStr)));
+            } else if (cs.wickVisible) {
                 const hY = snapY(coords.priceToY(bar.high, pane.scale, pane.bounds), coords.dpr);
                 const lY = snapY(coords.priceToY(bar.low, pane.scale, pane.bounds), coords.dpr);
                 b.alpha = this.candleStructureAlpha;
@@ -939,18 +1033,21 @@ export class WebGL2Backend implements IRenderBackend {
 
     /**
      * Sub-pixel LOD (mirrors Canvas2dBackend.drawCandlesAggregated): bars sharing a
-     * rounded pixel column collapse into high-low sticks — one per contiguous
-     * SAME-COLOR coverage run (see {@link aggregateCandleColumns}), so a price gap
-     * inside the column stays a void and every bar's extent keeps its own color. Draw
-     * cost stays bounded by screen width, not bar count. `colorOf` is the calling
-     * style's per-bar paint rule (candles and OHLC bars resolve theirs differently).
+     * rounded pixel column collapse into sticks — one per contiguous SAME-COLOR
+     * coverage run (see {@link aggregateCandleColumns}), so a price gap inside the
+     * column stays a void and every bar's extent keeps its own color. Draw cost stays
+     * bounded by screen width, not bar count. `colorOf` is the calling style's per-bar
+     * paint rule (candles and OHLC bars resolve theirs differently); `extent` is what
+     * each bar covers — high to low, or open to close for candles whose wick is hidden.
      */
-    private emitCandlesAggregated(b: Batch, bars: OHLCV[], i0: number, i1: number, coords: CoordinateSystem, pane: PaneNode, colorOf: (bar: OHLCV) => string): void {
+    private emitCandlesAggregated(b: Batch, bars: OHLCV[], i0: number, i1: number, coords: CoordinateSystem, pane: PaneNode, colorOf: (bar: OHLCV) => string, extent: 'range' | 'body' = 'range'): void {
         const yOf = (price: number): number => coords.priceToY(price, pane.scale, pane.bounds);
-        for (const s of aggregateCandleColumns(bars, i0, i1, (i) => coords.logicalToX(i), yOf, colorOf)) {
+        // A body can be flat (a doji): it keeps one device pixel, as a wide candle's does.
+        const minH = extent === 'body' ? 1 / coords.dpr : 0;
+        for (const s of aggregateCandleColumns(bars, i0, i1, (i) => coords.logicalToX(i), yOf, colorOf, extent)) {
             const c = parseColor(s.color);
             const hY = yOf(s.hi);
-            b.rect(s.x - 0.5, hY, 1, yOf(s.lo) - hY, c);
+            b.rect(s.x - 0.5, hY, 1, Math.max(minH, yOf(s.lo) - hY), c);
         }
     }
 

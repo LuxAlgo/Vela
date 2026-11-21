@@ -8,27 +8,40 @@
 // rather than a kit Menu: it mixes a canvas and switch rows, which is beyond the menu
 // machine's item model. The host element provides the theme tokens (the panel portals
 // inside it, same as the menu positioner).
-import { injectStyles } from '../ui/styles';
-import { Tooltip } from '../ui/components/tooltip';
-import { announceSurface } from '../ui/surface-events';
-import { holdForExit, type SurfaceExit } from '../ui/surface-exit';
+import { msg } from '../core/i18n/message';
+import { textOf } from '../core/i18n/text';
+import type { MessageLike, Translator } from '../core/i18n/types';
+import { injectChromeStyles } from '../ui/chromeStyles';
+import { Tooltip } from '@luxalgo/vela-ui/tooltip';
+import { announceSurface } from '@luxalgo/vela-ui/surface-events';
+import { holdForExit, type SurfaceExit } from '@luxalgo/vela-ui/surface-exit';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
+
+const TEXT = {
+    layout: msg('widget.layoutPicker.layout', 'Layout'),
+    sync: msg('widget.layoutPicker.sync', 'Sync'),
+    gridHint: msg('widget.layoutPicker.gridHint', 'Click a square to apply that columns × rows layout.'),
+    gridSize: msg('widget.layoutPicker.gridSize', '{cols} × {rows}'),
+};
 
 const STYLE_ID = 'vela-widget-layout-picker-v15';
 // One monochrome selection language across the panel: lit cells and sync ON
 // switches both speak --vela-selected-*.
-const CSS = `
-.vela-lp-layer { position: absolute; z-index: var(--vela-z-menu); }
+const CSS = css`@layer vela.chrome {
+
+.vela-lp-layer { position: absolute; z-index: ${t.z.menu}; }
 .vela-lp {
-    background: var(--vela-surface);
-    color: var(--vela-fg);
-    border: 1px solid var(--vela-border-strong);
+    background: ${t.surface};
+    color: ${t.fg};
+    border: 1px solid ${t.border.strong};
     border-radius: 8px;
-    box-shadow: var(--vela-shadow);
+    box-shadow: ${t.shadow};
     padding: 10px 12px 10px;
     font-size: 13px;
     user-select: none;
     transform-origin: top;
-    animation: vela-lp-in var(--vela-dur-fast) var(--vela-ease);
+    animation: vela-lp-in ${t.dur.fast} ${t.ease};
 }
 @keyframes vela-lp-in {
     from { opacity: 0; transform: translateY(-4px) scale(0.98); }
@@ -43,7 +56,7 @@ const CSS = `
     font-weight: 600;
     letter-spacing: 1.2px;
     text-transform: uppercase;
-    color: var(--vela-fg-faint);
+    color: ${t.fg.faint};
     margin-bottom: 10px;
 }
 /* "?" help badge: hover it for the canvas explainer. */
@@ -54,17 +67,17 @@ const CSS = `
     width: 14px;
     height: 14px;
     border-radius: 50%;
-    border: 1px solid var(--vela-border-strong);
-    color: var(--vela-fg-muted);
+    border: 1px solid ${t.border.strong};
+    color: ${t.fg.muted};
     font-size: 9px;
     font-weight: 600;
     letter-spacing: 0;
     cursor: default;
-    transition: color var(--vela-dur-fast) var(--vela-ease), border-color var(--vela-dur-fast) var(--vela-ease);
+    transition: color ${t.dur.fast} ${t.ease}, border-color ${t.dur.fast} ${t.ease};
 }
-.vela-lp-badge:hover { color: var(--vela-fg-bright); border-color: var(--vela-fg-muted); }
+.vela-lp-badge:hover { color: ${t.fg.bright}; border-color: ${t.fg.muted}; }
 .vela-lp-tip { display: flex; flex-direction: column; gap: 4px; max-width: 230px; white-space: normal; }
-.vela-lp-vsep { width: 1px; flex: none; align-self: stretch; background: var(--vela-border-faint); }
+.vela-lp-vsep { width: 1px; flex: none; align-self: stretch; background: ${t.border.faint}; }
 .vela-lp-layout { width: 132px; display: flex; flex-direction: column; align-items: center; }
 .vela-lp-layout > .vela-lp-heading,
 .vela-lp-layout > .vela-lp-presets { align-self: stretch; }
@@ -72,26 +85,26 @@ const CSS = `
 .vela-lp-sq {
     all: unset;
     box-sizing: border-box;
-    border-radius: 4px;
-    background: var(--vela-hover);
-    border: 1px solid var(--vela-border-faint);
+    border-radius: ${t.radius.sm};
+    background: ${t.hover};
+    border: 1px solid ${t.border.faint};
     cursor: pointer;
-    transition: background var(--vela-dur-fast) var(--vela-ease), border-color var(--vela-dur-fast) var(--vela-ease);
+    transition: background ${t.dur.fast} ${t.ease}, border-color ${t.dur.fast} ${t.ease};
 }
-.vela-lp-sq:hover { background: var(--vela-hover-strong); border-color: var(--vela-border-strong); }
+.vela-lp-sq:hover { background: ${t.hover.strong}; border-color: ${t.border.strong}; }
 /* Selected/previewed squares — the shared monochrome selection chip. */
 .vela-lp-sq[data-on='1'] {
-    background: var(--vela-selected-bg);
-    border-color: var(--vela-selected-bg);
+    background: ${t.selected.bg};
+    border-color: ${t.selected.bg};
 }
 .vela-lp-presets { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
-.vela-lp-preset { all: unset; padding: 5px 8px; border-radius: 4px; cursor: pointer; color: var(--vela-fg-muted); font-size: 12px; white-space: nowrap; transition: transform 120ms var(--vela-ease); }
-.vela-lp-preset:hover { background: var(--vela-hover); }
+.vela-lp-preset { all: unset; box-sizing: border-box; padding: 5px 8px; border-radius: ${t.radius.sm}; cursor: pointer; color: ${t.fg.muted}; font-size: 12px; white-space: nowrap; transition: transform ${t.dur.fast} ${t.ease}; }
+.vela-lp-preset:hover { background: ${t.hover}; }
 .vela-lp-preset:active { transform: scale(0.98); }
-.vela-lp-preset[data-checked='1'] { background: var(--vela-hover-strong); color: var(--vela-fg-bright); }
+.vela-lp-preset[data-checked='1'] { background: ${t.hover.strong}; color: ${t.fg.bright}; }
 .vela-lp-sync { display: flex; flex-direction: column; gap: 4px; min-width: 118px; }
-.vela-lp-sync-row { all: unset; display: flex; align-items: center; gap: 14px; padding: 6px 8px; border-radius: 5px; cursor: pointer; }
-.vela-lp-sync-row:hover { background: var(--vela-hover); }
+.vela-lp-sync-row { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 14px; padding: 6px 8px; border-radius: 5px; cursor: pointer; }
+.vela-lp-sync-row:hover { background: ${t.hover}; }
 .vela-lp-sync-row .vela-lp-label { flex: 1 1 auto; }
 /* Toggle pill — same control language as the menu's switch rows, monochrome ON state. */
 .vela-lp-switch {
@@ -100,24 +113,25 @@ const CSS = `
     width: 34px;
     height: 18px;
     border-radius: 9px;
-    background: var(--vela-hover);
-    border: 1px solid var(--vela-border-soft);
+    background: ${t.hover};
+    border: 1px solid ${t.border.soft};
     transition: background 0.16s ease, border-color 0.16s ease;
 }
 .vela-lp-switch::after {
     content: '';
     position: absolute;
     top: 2px;
-    left: 2px;
+    inset-inline-start: 2px;
     width: 12px;
     height: 12px;
     border-radius: 50%;
-    background: var(--vela-fg-muted);
+    background: ${t.fg.muted};
     transition: transform 0.16s ease, background 0.16s ease;
 }
-.vela-lp-switch.on { background: var(--vela-selected-bg); border-color: var(--vela-selected-bg); }
-.vela-lp-switch.on::after { transform: translateX(16px); background: var(--vela-selected-fg); }
-`;
+.vela-lp-switch.on { background: ${t.selected.bg}; border-color: ${t.selected.bg}; }
+.vela-lp-switch.on::after { transform: translateX(16px); background: ${t.selected.fg}; }
+
+}`;
 
 /** The picker canvas is a fixed 4×4 — 16 cells, the workspace pool capacity. */
 const GRID = 4;
@@ -125,10 +139,15 @@ const GRID = 4;
 /** The current layout's footprint on the canvas (mirrors the workspace's LayoutShape). */
 export type LayoutPickerShape = { rows: number; cols: number };
 
+/** A grid layout's name, columns by rows (`2 × 3`), in the shell's language. */
+export function layoutGridLabel(cols: number, rows: number, i18n?: Translator | null): string {
+    return textOf(i18n, TEXT.gridSize, { cols, rows });
+}
+
 /** Build the bare 4×4 canvas (16 squares, row-major). Interaction wiring stays with the
  *  caller — the desktop popover adds hover previews, the mobile drawer taps to apply. */
-export function layoutGridCanvas(doc: Document): { el: HTMLElement; squares: HTMLButtonElement[] } {
-    injectStyles(STYLE_ID, CSS, doc);
+export function layoutGridCanvas(doc: Document, i18n?: Translator | null): { el: HTMLElement; squares: HTMLButtonElement[] } {
+    injectChromeStyles(STYLE_ID, CSS, doc);
     const el = doc.createElement('div');
     el.className = 'vela-lp-grid';
     const squares: HTMLButtonElement[] = [];
@@ -138,7 +157,7 @@ export function layoutGridCanvas(doc: Document): { el: HTMLElement; squares: HTM
             sq.className = 'vela-lp-sq';
             sq.dataset.r = String(r);
             sq.dataset.c = String(c);
-            sq.setAttribute('aria-label', `${c + 1} × ${r + 1}`);
+            sq.setAttribute('aria-label', textOf(i18n, TEXT.gridSize, { cols: c + 1, rows: r + 1 }));
             squares.push(sq);
             el.appendChild(sq);
         }
@@ -170,6 +189,8 @@ export interface LayoutPickerOptions {
     syncs: () => Array<{ id: string; label: string; checked: boolean }>;
     onToggleSync: (id: string) => void;
     onOpenChange?: (open: boolean) => void;
+    /** The shell's translator (headings, help, square names). Absent: English. */
+    i18n?: Translator;
 }
 
 export class LayoutPicker {
@@ -182,6 +203,8 @@ export class LayoutPicker {
     private readonly infoTip: Tooltip;
     private readonly presetsEl: HTMLElement;
     private readonly syncEl: HTMLElement;
+    /** Fixed text re-read in the current language on every open. */
+    private readonly fixedText: Array<{ el: HTMLElement; text: MessageLike }> = [];
 
     private isOpen = false;
     /** The card's exit animation after a close; a reopen cancels it. */
@@ -201,7 +224,7 @@ export class LayoutPicker {
     constructor(opts: LayoutPickerOptions) {
         this.opts = opts;
         this.doc = opts.host.ownerDocument;
-        injectStyles(STYLE_ID, CSS, this.doc);
+        injectChromeStyles(STYLE_ID, CSS, this.doc);
         const doc = this.doc;
 
         this.layer = doc.createElement('div');
@@ -222,7 +245,8 @@ export class LayoutPicker {
         const layoutHeading = doc.createElement('div');
         layoutHeading.className = 'vela-lp-heading';
         const headingText = doc.createElement('span');
-        headingText.textContent = 'Layout';
+        headingText.textContent = textOf(opts.i18n, TEXT.layout);
+        this.fixedText.push({ el: headingText, text: TEXT.layout });
         const badge = doc.createElement('span');
         badge.className = 'vela-lp-badge';
         badge.textContent = '?';
@@ -230,11 +254,11 @@ export class LayoutPicker {
         layoutCol.appendChild(layoutHeading);
         this.infoTip = new Tooltip(badge, {
             host: opts.host,
-            placement: 'bottom',
+            side: 'bottom',
             content: () => this.tipNode(),
         });
 
-        const { el: grid, squares } = layoutGridCanvas(doc);
+        const { el: grid, squares } = layoutGridCanvas(doc, opts.i18n);
         this.squares.push(...squares);
         layoutCol.appendChild(grid);
 
@@ -251,7 +275,8 @@ export class LayoutPicker {
         const syncCol = doc.createElement('div');
         const syncHeading = doc.createElement('div');
         syncHeading.className = 'vela-lp-heading';
-        syncHeading.textContent = 'Sync';
+        syncHeading.textContent = textOf(opts.i18n, TEXT.sync);
+        this.fixedText.push({ el: syncHeading, text: TEXT.sync });
         syncCol.appendChild(syncHeading);
         this.syncEl = doc.createElement('div');
         this.syncEl.className = 'vela-lp-sync';
@@ -300,6 +325,7 @@ export class LayoutPicker {
         this.exit?.cancel();
         this.exit = null;
         this.hover = null;
+        this.relabel();
         this.refresh();
         this.layer.style.display = '';
         this.position();
@@ -341,6 +367,17 @@ export class LayoutPicker {
         this.layer.remove();
     }
 
+    /** Fixed text and square names in the current language. */
+    relabel(): void {
+        const i18n = this.opts.i18n;
+        for (const { el, text } of this.fixedText) el.textContent = textOf(i18n, text);
+        this.infoTip.setContent(() => this.tipNode());
+        for (const sq of this.squares) {
+            const { r, c } = this.squarePos(sq);
+            sq.setAttribute('aria-label', textOf(i18n, TEXT.gridSize, { cols: c + 1, rows: r + 1 }));
+        }
+    }
+
     // ── internals ──
     private squareAt(e: PointerEvent): HTMLButtonElement | null {
         const sq = (e.target as Element | null)?.closest?.('.vela-lp-sq');
@@ -355,7 +392,7 @@ export class LayoutPicker {
     private tipNode(): HTMLElement {
         const tip = this.doc.createElement('div');
         tip.className = 'vela-lp-tip';
-        tip.textContent = 'Click a square to apply that columns × rows layout.';
+        tip.textContent = textOf(this.opts.i18n, TEXT.gridHint);
         return tip;
     }
 

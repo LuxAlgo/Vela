@@ -1,3 +1,4 @@
+import type { MessageLike } from '../../i18n/types';
 import type { SettingsSchema } from '../schema';
 import { LINE_FIELDS, FILL_FIELDS, TEXT_FIELDS } from '../schema';
 import { CalloutBase } from './CalloutBase';
@@ -10,7 +11,7 @@ import { CalloutBase } from './CalloutBase';
 export class PriceNote extends CalloutBase {
     readonly type = 'pricenote' as const;
 
-    protected override defaultLabel(): string {
+    protected override defaultLabel(): MessageLike {
         return ''; // no free text — the painter renders the pinned price
     }
 

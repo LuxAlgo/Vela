@@ -16,12 +16,15 @@
 // Kept free of DOM so the policy is unit-testable under the node environment.
 import { chartTypes, normalizeSettingsRow, type SettingsRowDescriptor } from '../../../chart-types/registry';
 import { hasOwnCandlePaint } from '../core/chartConfig';
+import { sourceText } from '../../../core/i18n/text';
+import type { MessageLike } from '../../../core/i18n/types';
 
 export type { SettingsVisibilityPolicy } from '../../../core/options';
 
-/** Kebab-case slug of a display label — the implicit id of label-only elements. */
-export function settingsIdSlug(label: string): string {
-    return label
+/** Kebab-case slug of a display label — the implicit id of label-only elements. A message
+ *  slugs its English source, so an id never changes with the display language. */
+export function settingsIdSlug(label: MessageLike): string {
+    return sourceText(label)
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-+|-+$/g, '');
@@ -103,14 +106,14 @@ export function filterHiddenRows(
 /** The structural slice of a host row this module needs (no callbacks). */
 export interface HostRowIdSource {
     kind: string;
-    label: string;
+    label: MessageLike;
     /** Explicit stable id — labels are display text; set this to survive renames. */
     id?: string;
 }
 
 /** The structural slice of a host section this module needs. */
 export interface HostSectionIdSource {
-    title: string;
+    title: MessageLike;
     rows: readonly HostRowIdSource[];
     id?: string;
 }
@@ -182,6 +185,10 @@ export const BUILTIN_SETTINGS_IDS: readonly string[] = [
     'symbol.style.baseline.fill-bottom',
     'symbol.style.baseline.base-level',
     'symbol.style.baseline.width',
+    'symbol.style.columns',
+    'symbol.style.columns.up-color',
+    'symbol.style.columns.down-color',
+    'symbol.style.columns.spacing',
     'symbol.animation',
     'symbol.animation.zoom',
     'symbol.animation.pan',
@@ -193,6 +200,8 @@ export const BUILTIN_SETTINGS_IDS: readonly string[] = [
     'scales.price-scale',
     'scales.price-scale.mode',
     'scales.price-scale.invert',
+    'scales.price-scale.price-only',
+    'scales.price-scale.free-pan',
     'scales.price-scale.last-price-line',
     'scales.price-scale.last-price-label',
     'scales.price-scale.countdown',

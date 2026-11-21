@@ -4,7 +4,9 @@ export type { VelaDeps, RunIndicatorResult } from './Vela';
 export { RendererControl } from './core/RendererControl';
 // The second pulse behind time displays — share one between a host clock and
 // `chart.renderer.setWallClock` so the countdown chip never reads a different second.
-export { SecondClock, type WallClock } from './core/util/wall-clock';
+// A host clock display reads `clockCorrection.now()`, the time the chips use: this
+// device's clock corrected by what live candles prove about it.
+export { SecondClock, ClockCorrection, clockCorrection, type WallClock } from './core/util/wall-clock';
 export { NativeRenderer } from './renderers/native/NativeRenderer';
 // The drawing-toolbar VIEW as a standalone component — a workspace shell mounts ONE
 // shared bar (dock:'static') and routes it to the active chart's `chart.drawings`.
@@ -31,7 +33,17 @@ export { lowerTimeframeTicks, barsToTicks } from './core/replayTicks';
 // Native indicators (core-computed, no scripting engine) — register a type, then chart.addNativeIndicator(type)
 export { registerNativeIndicator, unregisterNativeIndicator, getNativeIndicator, nativeIndicatorTypes, nativeIndicatorDescriptors } from './core/native-indicators';
 export type { NativeIndicator, NativeIndicatorContext, NativeIndicatorDescriptor, NativeIndicatorInfo, NativeIndicatorOutput } from './core/native-indicators';
-export { DARK_THEME, LIGHT_THEME, resolveTheme } from './core/theme';
+export { DARK_THEME, LIGHT_THEME, resolveTheme, registerTheme, registeredThemes, type RegisteredTheme } from './core/theme';
+export {
+    createTheme,
+    checkTheme,
+    type UiTheme,
+    type ThemeInput,
+    type ThemeSettings,
+    type CreateThemeOptions,
+    type ComponentSettings,
+    type TokenName,
+} from '@luxalgo/vela-ui/theme';
 export { TypedEventBus } from './core/events/EventBus';
 
 // User drawings (model + registry + persistence; renderer-agnostic)
@@ -79,6 +91,7 @@ export type {
     MarketSnapshot,
     VelaTheme,
     ThemeName,
+    ThemeId,
     ProviderName,
     RendererConstructor,
     RendererDisplayOptions,
@@ -92,6 +105,8 @@ export type {
     PriceAxisTick,
     PriceAxisTickContext,
     PriceAxisTicksFn,
+    FreePanEvent,
+    FreePanTrigger,
 } from './core/options';
 export type { CodeUpdateResult, IndicatorHandle, IndicatorEventMap } from './core/IndicatorHandle';
 export type { VelaEventMap } from './core/events/types';
@@ -107,7 +122,9 @@ export type {
     AxisLongPressEvent,
     InputChangeEvent,
     VisibleRange,
+    VisibleRangeOptions,
     DataWindowReadout,
+    DrawingActionView,
     DataWindowGroup,
     DataWindowRow,
     DataWindowOHLC,

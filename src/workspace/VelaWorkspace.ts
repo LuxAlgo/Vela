@@ -15,15 +15,21 @@ import { resolveTheme } from '../core/theme';
 import { TypedEventBus } from '../core/events/EventBus';
 import { MultiProviderFeed } from '../data/MultiProviderFeed';
 import { sharedBarStore } from '../data/BarStore';
-import { ensureUIHost, injectStyles, registerIcon, svg16 } from '../ui';
+import { ensureUIHost, registerIcon, svg16 } from '../ui';
 import { isEditableTarget, KeymapManager } from '../ui/keymap';
-import { Menu } from '../ui/components/menu';
+import { DropdownMenu } from '@luxalgo/vela-ui/dropdown-menu';
+import { createToaster, toast, type ToasterHandle } from '@luxalgo/vela-ui/toast';
+import { SURFACE_CLOSE_EVENT, SURFACE_OPEN_EVENT, type SurfaceEventDetail } from '@luxalgo/vela-ui/surface-events';
 import type { Vela } from '../Vela';
+import { LocaleState, pickLocalization } from '../core/i18n/translator';
+import type { LocaleChangedEvent, LocalizationOptions, MessageArgs, MessageLike, Translator } from '../core/i18n/types';
+import { msg } from '../core/i18n/message';
+import { eventTimeText, sliceGraphemes, textOf } from '../core/i18n/text';
 import { Topbar, priceStyleLabel, priceStyleIcon } from '../widget/topbar';
 import { Bottombar, RANGE_PRESETS } from '../widget/bottombar';
 import { SecondClock } from '../core/util/wall-clock';
-import { ObjectTree } from '../widget/object-tree';
-import { DataWindow } from '../widget/data-window';
+import { ObjectTree, OBJECT_TREE_TITLE } from '../widget/object-tree';
+import { DataWindow, DATA_WINDOW_TITLE } from '../widget/data-window';
 import type { ScriptRun } from '../core/script-run';
 import { PanelDock } from '../widget/panel-dock';
 import { SymbolPicker } from '../widget/symbol-picker';
@@ -33,9 +39,11 @@ import { ShortcutsHelp } from '../widget/shortcuts-help';
 import { Toast } from '../widget/toast';
 import { Glider, ZOOM_IN, ZOOM_OUT, PAN_FAST } from '../widget/glide';
 import { toolShortcutHints } from '../widget/tool-shortcuts';
-import { legendActionsProviderFor, legendCalloutsProviderFor, mobilePlacement, statePersistenceHandlers, topbarActionOverride, widgetActions, widgetAttachments, type WidgetActionDescriptor } from '../widget/contributions';
+import { drawingActionsProviderFor, legendActionsProviderFor, legendCalloutsProviderFor, mobilePlacement, statePersistenceHandlers, topbarActionOverride, widgetActions, widgetAttachments, type DockedStrip, type DockStripOptions, type FullscreenControl, type PanelDockView, type TopbarItems, type WidgetActionDescriptor } from '../widget/contributions';
 import { resolveTopbarComposition, topbarHas, TOPBAR_BUILTIN_IDS, type ResolvedTopbarComposition } from '../widget/topbar-composition';
 import { LayoutModeController, type LayoutMode } from '../widget/layout-mode';
+import { Sidebar, sidebarActions, sidebarControl } from '../widget/sidebar';
+import { shellDefaults } from '../widget/shell-defaults';
 import { MobileBar } from '../widget/mobile-bar';
 import { TimeframeDrawer } from '../widget/timeframe-drawer';
 import { DrawingsDrawer } from '../widget/drawings-drawer';
@@ -46,14 +54,15 @@ import { DrawingPill } from '../widget/drawing-pill';
 import { priceStyleIds } from '../renderers/native/core/chartConfig';
 import { resolveIndicators, type IndicatorManifest, type ResolvedIndicator } from '../widget/indicators';
 import { DrawingToolbar } from '../renderers/native/drawings/DrawingToolbar';
-import { applyAttributionMarkTheme, createAttributionMark, createCustomMark } from '../renderers/native/chrome/AttributionMark';
+import { applyAttributionMarkTheme, createAttributionMark, createCustomMark, relabelAttributionMark } from '../renderers/native/chrome/AttributionMark';
 import { rendererDefaults } from '../core/renderer-defaults';
 import { buildToolbar, type DrawingTypeKey, type SerializedDrawing, type SnapMode, type ToolbarDefinition } from '../core/drawings';
 import { timeframeToMs } from '../data/timeframe';
 import { timeframeLabel } from '../widget/timeframe';
 import { registerBuiltinChartTypes } from '../chart-types/builtins';
+import { PRICE_STYLE_UNAVAILABLE } from '../chart-types/labels';
 import { parseSymbol } from '../data/ProviderRegistry';
-import { syncTargets, rangesWithin, styleConfigPatch, SYNC_KINDS, type SyncKind, type SyncOptions, type SyncSetting } from './sync';
+import { syncTargets, syncGroups, pairIdenticalDrawings, drawingLinkContent, rangesWithin, styleConfigPatch, SYNC_KINDS, type SyncKind, type SyncOptions, type SyncSetting } from './sync';
 import { encodeState, decodeState, sanitizeState, type DrawingToolsState, type WorkspaceState, type WorkspaceStorage } from './persist';
 import { localStorageAdapter } from '../widget/persist';
 import { ChartCell, seedDefaults, cellChartDefaults, type CellSeed, type CellBoot, type PooledCellState } from './ChartCell';
@@ -75,6 +84,9 @@ import {
 } from './layouts';
 import { SplitterLayer, evenTracks } from './splitters';
 import { compositeLayoutScreenshot, tilesFromCellRects, triggerPngDownload, type LayoutShotTile } from './screenshot';
+import { injectChromeStyles } from '../ui/chromeStyles';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 /**
  * The workspace options: the widget's chart vocabulary + the shared shell surface + the
@@ -149,11 +161,17 @@ export interface WorkspaceEventMap extends Record<string, unknown> {
     'layout:changed': { layout: string };
     /** A cell was maximized over the whole grid, or the grid restored (`id: null`). */
     'cell:maximized': { id: string | null };
+    /** The shell entered (`on: true`) or left full screen, by any path: the key, the topbar
+     *  button, Esc, `setFullscreen`, or a switch to the mobile layout. */
+    'fullscreen:changed': { on: boolean };
     'cell:created': { id: string };
     'cell:destroyed': { id: string };
     /** The persistable state changed (debounced ~500ms) — re-pull `getState()` if you
      *  consume it. The signal custom persistence flows build on. */
     'state:changed': undefined;
+    /** The workspace's localization changed (`setLocale`), after every cell and the shared
+     *  chrome have re-rendered. */
+    'locale:changed': LocaleChangedEvent;
 }
 
 const DEFAULT_TIMEFRAMES = ['1', '5', '15', '30', '60', '240', 'D', 'W', 'M'];
@@ -163,14 +181,43 @@ const TIME_AXIS_H = 22; // px the renderer reserves for a time axis (mirrors Nat
 const ALERT_CAP = 50;
 
 const STYLE_ID = 'vela-workspace';
-const CSS = `
-.vela-workspace { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; background: var(--vela-bg); }
+const CSS = css`@layer vela.chrome {
+
+.vela-workspace { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; background: ${t.bg}; }
 .vela-ws-main { position: relative; display: flex; flex-direction: row; flex: 1 1 auto; min-height: 0; }
 .vela-ws-toolbar { position: relative; flex: none; }
 .vela-ws-strips { position: relative; flex: none; display: flex; flex-direction: column; min-width: 0; }
 .vela-ws-strips:empty { display: none; }
-.vela-ws-grid { position: relative; flex: 1 1 auto; min-width: 0; display: grid; gap: ${GAP_PX}px; background: var(--vela-border-soft); }
-.vela-cell { background: var(--vela-bg); position: relative; }
+/* REGIONS: once a plugin uses a layout region (a full-height column panel, the right edge,
+   a docked strip), the shell lays out as a grid — the drawing toolbar's column, the chart
+   column (topbar, main row, strips, bottom bar, lower strips), the column-panel region, the
+   edge — with the mobile bar across the foot. The side toolbars run the shell's full height:
+   the drawing toolbar from under the topbar to the foot, the edge from top to foot. Every
+   known child is placed explicitly, so one hidden by CSS (the topbar on mobile) never
+   shifts the others. */
+.vela-workspace[data-vela-regions] { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-rows: auto minmax(0, 1fr) auto auto auto auto; }
+[data-vela-regions] > .vela-widget-topbar { grid-area: 1 / 1 / 2 / 3; }
+[data-vela-regions] > .vela-ws-toolbar { grid-area: 2 / 1 / 6 / 2; display: flex; min-height: 0; }
+[data-vela-regions] > .vela-ws-main { grid-area: 2 / 2; }
+[data-vela-regions] > .vela-ws-strips { grid-area: 3 / 2; }
+[data-vela-regions] > .vela-widget-bottombar { grid-area: 4 / 2; }
+[data-vela-regions] > .vela-ws-strips-below { grid-area: 5 / 2; }
+[data-vela-regions] > .vela-mobilebar { grid-area: 6 / 1 / 7 / -1; }
+[data-vela-regions] > .vela-ws-column { grid-area: 1 / 3 / 6 / 4; position: relative; display: flex; min-height: 0; }
+[data-vela-regions] > .vela-ws-edge { grid-area: 1 / 4 / 6 / 5; position: relative; display: flex; min-height: 0; }
+/* The sidebar hosts the panel toggles on the desktop layout; the topbar's group steps aside. */
+.vela-workspace[data-vela-sidebar]:not([data-layout='mobile']) .vela-widget-panels { display: none; }
+/* Covering, the strip takes the area (the chart column and the drawing toolbar) whatever
+   height it set itself while docked. */
+[data-vela-regions] > [data-vela-cover] { grid-area: 1 / 1 / 5 / 3; z-index: 30; min-height: 0; min-width: 0; height: auto !important; max-height: none !important; align-self: stretch; }
+/* Maximized, a column panel covers the chart column with it. */
+[data-vela-regions] > .vela-ws-column:has(> .vela-panel[data-maximized]) { grid-column: 1 / 4; z-index: 26; }
+/* Mobile: a column panel covers the chart area like any panel, above the bottom bar; the
+   region lets the pointer through while it holds no open panel. */
+[data-layout='mobile'][data-vela-regions] > .vela-ws-column { grid-area: 1 / 1 / 6 / -1; z-index: 25; pointer-events: none; }
+[data-layout='mobile'][data-vela-regions] > .vela-ws-column > .vela-panel { pointer-events: auto; }
+.vela-ws-grid { position: relative; flex: 1 1 auto; min-width: 0; display: grid; gap: ${GAP_PX}px; background: ${t.border.soft}; }
+.vela-cell { background: ${t.bg}; position: relative; }
 /* Active-cell highlight: an overlay ring ABOVE the chart's own canvas stack (a plain
    outline on the cell is painted under them) — inert to the pointer. Scoped to
    multi-cell grids ([data-multi]): a single-cell layout always has an active cell,
@@ -179,16 +226,16 @@ const CSS = `
     content: '';
     position: absolute;
     inset: 0;
-    border: 2px solid var(--vela-fg-bright);
+    border: 2px solid ${t.fg.bright};
     pointer-events: none;
     z-index: 10;
 }
 /* Splitter hover mirrors the in-chart pane separator hover (CrosshairRenderer):
    a soft band over the whole grab target + a solid 2px line on the seam center. */
-.vela-ws-splitter:hover { background: var(--vela-separator-hover-band); }
-.vela-ws-splitter:hover::after { content: ''; position: absolute; background: var(--vela-separator-hover-line); }
-.vela-ws-splitter[data-axis='cols']:hover::after { left: calc(50% - 1px); top: 0; width: 2px; height: 100%; }
-.vela-ws-splitter[data-axis='rows']:hover::after { top: calc(50% - 1px); left: 0; height: 2px; width: 100%; }
+.vela-ws-splitter:hover { background: ${t.separatorHover.band}; }
+.vela-ws-splitter:hover::after { content: ''; position: absolute; background: ${t.separatorHover.line}; }
+.vela-ws-splitter[data-axis='cols']:hover::after { inset-inline-start: calc(50% - 1px); top: 0; width: 2px; height: 100%; }
+.vela-ws-splitter[data-axis='rows']:hover::after { top: calc(50% - 1px); inset-inline-start: 0; height: 2px; width: 100%; }
 /* Mobile: the docked drawing-toolbar column would eat a phone-width grid — the shell's
    drawings drawer + on-chart pill replace it (same policy as the widget's in-chart bar). */
 [data-layout='mobile'] .vela-ws-toolbar { display: none; }
@@ -196,18 +243,25 @@ const CSS = `
    the active ring would just outline the only visible chart — both are noise here. */
 .vela-ws-grid[data-maximized='1'] .vela-ws-splitter { display: none; }
 .vela-ws-grid[data-maximized='1'] .vela-cell[data-active='1']::after { display: none; }
+/* Full screen: the charts take the whole shell. The bars are hidden rather than removed, so
+   leaving shows them exactly as they were. */
+.vela-workspace[data-fullscreen] > .vela-widget-topbar,
+.vela-workspace[data-fullscreen] > .vela-widget-bottombar,
+.vela-workspace[data-fullscreen] .vela-ws-toolbar,
+.vela-workspace[data-fullscreen] > .vela-ws-edge { display: none; }
 /* Drop-target preview while a cell's drag handle is held: a dashed ring + the same
    soft wash the splitter hover uses, over the chart, inert to the pointer. */
 .vela-cell[data-drop-target='1']::before {
     content: '';
     position: absolute;
     inset: 0;
-    border: 2px dashed var(--vela-fg-bright);
-    background: var(--vela-separator-hover-band);
+    border: 2px dashed ${t.fg.bright};
+    background: ${t.separatorHover.band};
     pointer-events: none;
     z-index: 11;
 }
-`;
+
+}`;
 
 /** Grid glyph for the topbar layout dropdown (stroke follows the button color). */
 registerIcon('layout', svg16('<rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/><path d="M8 1.5v13M1.5 8h13"/>'));
@@ -229,6 +283,43 @@ export function declaredOrder(cells: Record<string, unknown> | undefined): strin
     return names.filter((n) => !/^\d+$/.test(n));
 }
 
+const TEXT = {
+    syncSymbol: msg('workspace.sync.symbol', 'Symbol'),
+    syncInterval: msg('workspace.sync.interval', 'Interval'),
+    syncCrosshair: msg('workspace.sync.crosshair', 'Crosshair'),
+    syncStyle: msg('workspace.sync.style', 'Style'),
+    alert: msg('workspace.alerts.untitled', 'Alert'),
+    alertToastDescription: msg('workspace.alerts.toastUntitled', '{source} — {message}'),
+    alertRow: msg('workspace.alerts.row', '{source} · {time} · {title}: {message}'),
+    alertDrawerTitle: msg('workspace.alerts.drawerTitle', '{source} · {title}'),
+    noAlerts: msg('workspace.alerts.none', 'No alerts yet'),
+    screenshot: msg('workspace.keys.screenshot', 'Download a screenshot of the layout'),
+    fullscreen: msg('workspace.keys.fullscreen', 'Toggle full screen'),
+    fullscreenHint: msg('workspace.fullscreen.hint', 'Press Esc to exit full screen'),
+    resetView: msg('workspace.keys.resetView', 'Reset view (all history)'),
+    toggleLog: msg('workspace.keys.toggleLog', 'Toggle logarithmic scale'),
+    togglePercent: msg('workspace.keys.togglePercent', 'Toggle percent scale'),
+    trendline: msg('workspace.keys.trendline', 'Arm the trend line tool'),
+    hlineCursor: msg('workspace.keys.hlineCursor', 'Horizontal line at the cursor price'),
+    vlineCursor: msg('workspace.keys.vlineCursor', 'Vertical line at the cursor time'),
+    undo: msg('workspace.keys.undo', 'Undo (active chart)'),
+    redo: msg('workspace.keys.redo', 'Redo (active chart)'),
+    zoomIn: msg('workspace.keys.zoomIn', 'Zoom in'),
+    zoomOut: msg('workspace.keys.zoomOut', 'Zoom out'),
+    panLeft: msg('workspace.keys.panLeft', 'Pan toward history'),
+    panRight: msg('workspace.keys.panRight', 'Pan toward now'),
+    openIndicators: msg('workspace.keys.openIndicators', 'Open the indicator picker'),
+    showShortcuts: msg('workspace.keys.showShortcuts', 'Show this shortcuts panel'),
+    categoryChart: msg('workspace.keys.category.chart', 'Chart'),
+    categoryDrawings: msg('workspace.keys.category.drawings', 'Drawings'),
+    categoryEdit: msg('workspace.keys.category.edit', 'Edit'),
+    categoryIndicators: msg('workspace.keys.category.indicators', 'Indicators'),
+    categoryHelp: msg('workspace.keys.category.help', 'Help'),
+};
+
+/** Characters an alert keeps in the bell's menu. */
+const ALERT_ROW_MAX = 80;
+
 /** The first `c<N>` name not already taken — identities for slots beyond the declared list. */
 export function nextAutoCellId(taken: ReadonlySet<string>): string {
     for (let i = 1; ; i += 1) {
@@ -241,24 +332,30 @@ export interface TypingState {
     dialogs: number;
     symbolSearch: boolean;
     timeframeEntry: boolean;
+    /** The shell's `symbolMenuFromKey`: `false` stops a bare key from OPENING symbol search. */
+    symbolMenuFromKey?: boolean;
 }
 
 /**
  * What a bare keystroke on the workspace root does. Nothing open: a letter or `0` seeds
- * symbol search (no timeframe starts with 0), a digit 1–9 the timeframe entry. An ENTRY
- * dialog open: its field takes focus a tick after the dialog reports open, so the next
- * key of a fast typist (`NQ`, `15`) still lands on the root — it is handed to that
- * dialog as more typed text instead of dropped. Any other open dialog swallows bare
- * typing. Pure — unit-tested.
+ * symbol search (no timeframe starts with 0) unless the shell turned that off, a digit
+ * 1–9 the timeframe entry. An ENTRY dialog open: its field takes focus a tick after the
+ * dialog reports open, so the next key of a fast typist (`NQ`, `15`) still lands on the
+ * root — it is handed to that dialog as more typed text instead of dropped. Any other
+ * open dialog swallows bare typing. Pure — unit-tested.
  */
 export function resolveTyping(key: string, open: TypingState): { target: 'symbol' | 'timeframe'; text: string } | null {
+    // One printable character (a code point: a letter outside the Basic Multilingual Plane
+    // counts once), not a control key name like `Enter`.
+    const printable = [...key].length === 1;
     if (open.dialogs > 0) {
-        if (key.length !== 1) return null; // a printable character, not a control key
+        if (!printable) return null;
         if (open.symbolSearch) return { target: 'symbol', text: key.toUpperCase() };
         if (open.timeframeEntry) return { target: 'timeframe', text: key.toUpperCase() };
         return null;
     }
-    if (/^[a-zA-Z0]$/.test(key)) return { target: 'symbol', text: key.toUpperCase() };
+    // A letter of any script opens symbol search: tickers are searched by name too.
+    if (printable && /^[\p{L}0]$/u.test(key)) return open.symbolMenuFromKey === false ? null : { target: 'symbol', text: key.toUpperCase() };
     if (/^[1-9]$/.test(key)) return { target: 'timeframe', text: key };
     return null;
 }
@@ -272,6 +369,10 @@ export class VelaWorkspace {
 
     private readonly gridEl: HTMLElement;
     private readonly stripsEl: HTMLElement;
+    /** Strips docked under the bottom bar. */
+    private readonly stripsBelowEl: HTMLElement;
+    /** The layout regions a plugin brought into use (see {@link region}). */
+    private readonly regions = new Map<'column' | 'edge', HTMLElement>();
     private readonly events = new TypedEventBus<WorkspaceEventMap>();
     private readonly feed = new MultiProviderFeed();
     private readonly cellsById = new Map<string, ChartCell>();
@@ -283,6 +384,8 @@ export class VelaWorkspace {
     private readonly splitters: SplitterLayer;
     private readonly resizeObserver: ResizeObserver | null = null;
     private readonly opts: VelaWorkspaceOptions;
+    /** The workspace's ONE localization — every cell's chart and the shared chrome follow it. */
+    private readonly localeState: LocaleState;
     private def: LayoutDefinition;
     /** Cell identities by SLOT POSITION — `order[i]` lives in the layout's i-th slot.
      *  Names come from the `cells` declaration order (then the persisted document);
@@ -292,6 +395,17 @@ export class VelaWorkspace {
     /** The cell maximized over the whole grid (null = normal grid). TRANSIENT view
      *  state — never persisted; any structural change (layout, applyState) restores. */
     private maximizedId: string | null = null;
+    /** Full screen: the bars hidden so the charts take the whole shell. TRANSIENT view
+     *  state like {@link maximizedId} — never persisted. */
+    private fullscreenOn = false;
+    /** The side panel full screen closed on the way in, reopened on the way out. */
+    private fullscreenPanel: string | null = null;
+    private fullscreenKeyOff: (() => void) | null = null;
+    /** The menus, popovers, dialogs and drawers open inside the shell. Each takes Esc
+     *  before full screen does. */
+    private readonly openSurfaces = new Set<HTMLElement>();
+    /** How many drawings each cell has selected: Esc clears a selection first. */
+    private readonly drawingSelections = new WeakMap<ChartCell, number>();
     private cellBackend: NativeBackend = 'auto';
     /** `layout: false` — the grid is pinned to the one-cell layout, the layout picker
      *  and sync switches never render, and `setLayout` no-ops. */
@@ -300,7 +414,8 @@ export class VelaWorkspace {
      *  mobile drawings stop, no pill (the headless `chart.drawings` API stays). */
     private readonly drawingsEnabled: boolean;
     /** The shared bar's content — `drawings: { tools | groups }` picks it. */
-    private readonly toolbarDef: ToolbarDefinition;
+    /** The shared toolbar, labelled in the workspace's language (rebuilt when it changes). */
+    private toolbarDef: ToolbarDefinition;
     private destroyed = false;
 
     // ── shared chrome ──
@@ -316,6 +431,8 @@ export class VelaWorkspace {
     private readonly tfQuick: TimeframeQuick;
     private shortcutsHelp: ShortcutsHelp | null = null;
     private readonly toastHost: Toast;
+    /** The grid's toaster: alert notices, and whatever a plugin raises with the kit's `toast()`. */
+    private readonly toaster: ToasterHandle;
     private readonly glider = new Glider(() => (this.activeId ? (this.cellsById.get(this.activeId)?.chart ?? null) : null));
     private readonly drawToolbar: DrawingToolbar | null;
     /** The GLOBAL armed tool/magnet/stay (workspace policy) — re-applied to whichever cell
@@ -368,11 +485,30 @@ export class VelaWorkspace {
      *  configs that legitimately differ — neither must propagate. */
     private styleSyncBusy = false;
     /** LINKED drawings (the drawings sync): one map per synced set (cellId → that
-     *  cell's drawing id), reachable from every member under its `cellId\0drawingId`
-     *  key — any member finds its peers to push edits/removals onto. Survives a
-     *  toggle-off (propagation freezes while the setting is off; re-enabling resumes
-     *  edit/delete for these pairs). Cleared on reload / `applyState`. */
+     *  cell's drawing id), reachable from every member under its {@link drawingLinkKey}
+     *  — any member finds its peers to push edits/removals onto. A key names the MARKET
+     *  the set was drawn on: a chart whose drawings belong to its symbol holds one
+     *  document per symbol, and their ids repeat from one document to the next. Survives
+     *  a toggle-off (propagation freezes while the setting is off; re-enabling resumes
+     *  edit/delete for these pairs). Never persisted: a reload or `applyState` rebuilds
+     *  it from content ({@link relinkIdenticalDrawings}). */
     private readonly drawingLinks = new Map<string, Map<string, string>>();
+    /** Linked copies whose set lost a member while their chart showed another symbol, by
+     *  {@link drawingLinkKey}: the removal reaches them when the chart is back on the
+     *  market ({@link alignCellDrawings}). Session-scoped, like the links. */
+    private readonly drawingRemovalsOwed = new Set<string>();
+    /** The symbol, as its chart writes it, each cell's drawings are the ones of: set when
+     *  the chart has landed on it and its document is in place, dropped as the chart
+     *  leaves it. A chart whose drawings belong to its symbol is in the link only while
+     *  settled ({@link drawingsSettledOn}). */
+    private readonly drawingsSettled = new Map<string, string>();
+    /** The market each cell's links are keyed under ({@link drawingMarketOf}). */
+    private readonly drawingLinkMarket = new Map<string, string>();
+    /** Per linked set, the edit each member's copy stands at (cellId → a count the link
+     *  raises with every edit it carries). Members on another symbol miss edits, each in
+     *  its turn: when two meet again on a market, the copy that stands later is the one
+     *  both take ({@link alignCellDrawings}). */
+    private readonly drawingLinkEdits = new WeakMap<Map<string, string>, Map<string, number>>();
     private manifest: ResolvedIndicator[] = [];
     /** The shared manifest can no longer change instance sets — resolved, or no
      *  `indicators` option so nothing ever will. Gates the cells' ledger fallback. */
@@ -382,7 +518,27 @@ export class VelaWorkspace {
     private alerts: Array<{ cellId: string; source: string; title: string; message: string; time: number }> = [];
     /** Bell retention — `alertCap` option, default {@link ALERT_CAP}. */
     private readonly alertCap: number;
-    private alertsMenu: Menu | null = null;
+    private alertsMenu: DropdownMenu | null = null;
+    /** Built-in topbar items a plugin hid at runtime (`ctx.topbar`). */
+    private readonly topbarHidden = new Set<string>();
+    private readonly topbarItems: TopbarItems = {
+        isVisible: (id) => this.topbarVisible(id),
+        setVisible: (id, visible) => this.setTopbarItemVisible(id, visible),
+    };
+    private dockView: PanelDockView | null = null;
+    /** The right-edge toolbar (`sidebar` option), or null when the shell has none. */
+    private sidebar: Sidebar | null = null;
+    /** The drawing toolbar's host: in the main row, until the shell lays out as a grid. */
+    private toolbarHost: HTMLElement | null = null;
+    private mainEl: HTMLElement | null = null;
+    private readonly sidebarCtl = sidebarControl(() => this.sidebar);
+    /** `ctx.fullscreen`: full screen as plugins read and drive it. */
+    private readonly fullscreenCtl: FullscreenControl = {
+        isOn: () => this.fullscreenOn,
+        set: (on) => this.setFullscreen(on),
+        onDidChange: (cb) => this.events.on('fullscreen:changed', ({ on }) => cb(on)),
+    };
+    private screenshotKeyOff: (() => void) | null = null;
     // ── mobile chrome (same components as the widget shell; CSS keys off data-layout
     // on the root, the drawers build lazily on first open and act on the ACTIVE cell) ──
     /** Writes `data-layout` on the root and pushes mode flips into every cell's renderer. */
@@ -411,6 +567,27 @@ export class VelaWorkspace {
     /** The single grid-wide attribution mark — re-inked on a live theme swap. */
     private attributionMark: HTMLElement | null = null;
     private readonly onRootKeydown = (ev: KeyboardEvent): void => this.routeTyping(ev);
+    /** Follows the shell's surfaces as they open and close. Side panels are left out: Esc
+     *  does not close them. */
+    private readonly onSurface = (ev: Event): void => {
+        const el = ev.target as HTMLElement | null;
+        if (!el || (ev as CustomEvent<SurfaceEventDetail>).detail?.kind === 'panel') return;
+        if (ev.type === SURFACE_OPEN_EVENT) this.openSurfaces.add(el);
+        else this.openSurfaces.delete(el);
+    };
+    /** Esc leaves full screen once nothing else has a use for it. Heard at the window,
+     *  ahead of every menu and chart handler, so what is open is judged as the key goes
+     *  down: an Esc that closes a menu, clears a selection or cancels a drawing is spent
+     *  on that alone. */
+    private readonly onFullscreenEscape = (ev: KeyboardEvent): void => {
+        if (!this.fullscreenOn || ev.key !== 'Escape' || ev.repeat || ev.defaultPrevented) return;
+        const target = ev.target as Node | null;
+        // Focus in the shell, or nowhere at all. A key typed elsewhere on the page is the page's.
+        if (target !== this.root.ownerDocument.body && !(target && this.root.contains(target))) return;
+        if (!this.escapeIsSpent(ev)) this.setFullscreen(false);
+    };
+    /** The `symbolMenuFromKey` option: a bare letter opens symbol search. */
+    private readonly symbolMenuFromKey: boolean;
 
     constructor(container: HTMLElement | string, opts: VelaWorkspaceOptions = {}) {
         registerBuiltinLayouts(); // idempotent — pickers and `layout` ids resolve from the registry
@@ -418,6 +595,8 @@ export class VelaWorkspace {
         const hostEl = typeof container === 'string' ? document.querySelector<HTMLElement>(container) : container;
         if (!hostEl) throw new Error(`VelaWorkspace: container not found: ${String(container)}`);
         this.opts = opts;
+        this.symbolMenuFromKey = opts.symbolMenuFromKey !== false;
+        this.localeState = new LocaleState(pickLocalization(opts));
         // Before any cell exists: the replay watches every cell from its creation on.
         this.replay = new WorkspaceReplay({
             cells: () => this.cells(),
@@ -475,10 +654,11 @@ export class VelaWorkspace {
         const bootActive = boot?.activeCellId ?? null;
 
         const doc = hostEl.ownerDocument;
-        injectStyles(STYLE_ID, CSS, doc);
+        injectChromeStyles(STYLE_ID, CSS, doc);
         this.root = doc.createElement('div');
         this.root.className = 'vela-workspace';
         ensureUIHost(this.root, resolveTheme(opts.theme));
+        this.applyRootAttributes();
 
         // ONE shared feed: providers registered once; every cell's `chart.data` operates
         // on the same registry, symbol index, and closed-bar cache.
@@ -490,6 +670,7 @@ export class VelaWorkspace {
         // ── shared dialogs/pickers (they act on the ACTIVE cell at call time) ──
         this.symbolPicker = new SymbolPicker({
             host: this.root,
+            i18n: this.localeState,
             // Row icons come from each descriptor's OWNING provider (resolveSymbolIcon).
             iconFor: (d) => this.feed.symbolIconOf(d),
             onSelect: (ticker) => this.active.setSymbol(ticker),
@@ -511,6 +692,7 @@ export class VelaWorkspace {
             opts.indicatorPicker !== false && !this.indicatorsOverride && topbarHas(this.topbarComp, 'indicators')
                 ? new IndicatorPicker({
                       host: this.root,
+                      i18n: this.localeState,
                       library: () => this.active.libraryRows(),
                       onChart: () => this.active.onChartRows(),
                       onAdd: (i) => this.active.addFromLibrary(i),
@@ -526,6 +708,7 @@ export class VelaWorkspace {
         const picker = this.indicatorPicker;
         this.tfQuick = new TimeframeQuick({
             host: this.root,
+            i18n: this.localeState,
             onApply: (tf) => this.setActiveTimeframe(tf),
             onOpenChange: (open) => this.trackDialog(open),
         });
@@ -533,6 +716,7 @@ export class VelaWorkspace {
         // ── topbar (shared) — reflects the active cell; the layout dropdown reads the registry live ──
         this.topbar = new Topbar(this.root, {
             symbol: '',
+            i18n: this.localeState,
             // RAW option, not the resolved lists — the bar distinguishes a host-declared
             // side (list is law) from a default one (an override's `order` may flow).
             composition: opts.topbar,
@@ -541,6 +725,7 @@ export class VelaWorkspace {
             onUndoClick: () => this.active.history.undo(),
             onRedoClick: () => this.active.history.redo(),
             onScreenshotClick: () => this.downloadScreenshot(),
+            onFullscreenClick: () => this.toggleFullscreen(),
             onAlertsClick: (anchor) => this.openAlertsMenu(anchor),
             timeframe: '60',
             timeframes: opts.timeframes ?? DEFAULT_TIMEFRAMES,
@@ -556,18 +741,13 @@ export class VelaWorkspace {
                 // The picker composes dynamic layouts on its grid canvas; registered
                 // presets the canvas cannot express (bespoke plugin areas) list as rows.
                 shape: () => layoutShape(this.def),
-                presets: () => layouts().filter((l) => layoutShape(l) === null).map((l) => ({ id: l.id, label: l.label })),
+                presets: () => layouts(this.localeState).filter((l) => layoutShape(l) === null).map((l) => ({ id: l.id, label: l.label })),
                 onSelectGrid: (rows, cols) => this.setLayout(layoutForGrid(rows, cols)),
                 onSelectPreset: (id) => this.setLayout(id),
                 // The SYNC switches reflect the simple all-cells form; flipping one
                 // OVERRIDES a host-set group record with plain on/off (groups stay an
                 // API-only shape).
-                syncs: () => [
-                    { id: 'symbol', label: 'Symbol', checked: this.syncOpts.symbol === true },
-                    { id: 'timeframe', label: 'Interval', checked: this.syncOpts.timeframe === true },
-                    { id: 'crosshair', label: 'Crosshair', checked: this.syncOpts.crosshair === true },
-                    { id: 'style', label: 'Style', checked: this.syncOpts.style === true },
-                ],
+                syncs: () => this.syncRows(),
                 onToggleSync: (id) => {
                     const kind = id as SyncKind;
                     this.sync.set(kind, this.syncOpts[kind] ? false : true);
@@ -585,7 +765,7 @@ export class VelaWorkspace {
         // `chart.drawings` API stays), `{ toolbar: false }` hides the bar,
         // `{ tools | groups }` picks its content. `drawingToolbar: false` stays the
         // workspace-level bar opt-out.
-        const toolbar = buildToolbar(opts.drawings);
+        const toolbar = buildToolbar(opts.drawings, this.localeState);
         this.drawingsEnabled = opts.drawings !== false;
         this.toolbarDef = toolbar.definition;
         let toolbarHost: HTMLElement | null = null;
@@ -594,31 +774,60 @@ export class VelaWorkspace {
             toolbarHost.className = 'vela-ws-toolbar';
             main.appendChild(toolbarHost);
         }
+        this.toolbarHost = toolbarHost;
+        this.mainEl = main;
         this.gridEl = doc.createElement('div');
         this.gridEl.className = 'vela-ws-grid';
         main.appendChild(this.gridEl);
+        // The sidebar exists before the dock: the dock publishes the built-in panels' toggles
+        // as it docks them. A host's own value wins over a plugin's default.
+        const sidebar = opts.sidebar !== undefined ? opts.sidebar : shellDefaults().sidebar;
+        if (sidebar) {
+            this.sidebar = new Sidebar({
+                composition: sidebar === true ? undefined : sidebar,
+                host: this.root,
+                i18n: this.localeState,
+                context: () => this.context(),
+            });
+            this.region('edge').appendChild(this.sidebar.el);
+            this.root.setAttribute('data-vela-sidebar', '');
+        }
         // One dock for the WHOLE grid (the panels follow the active cell), owning the built-ins,
-        // the contributed panels, the single-open rule and the topbar's toggle group.
+        // the contributed panels, the single-open rule and the toggle groups (the topbar's, and
+        // the sidebar's when there is one — on the desktop layout the sidebar's replaces it).
         this.dock = new PanelDock(main, {
-            chrome: this.topbar,
+            chrome: {
+                setPanelButtons: (buttons, onClick) => {
+                    this.topbar.setPanelButtons(buttons, onClick);
+                    this.sidebar?.setPanelButtons(buttons, onClick);
+                },
+                setPanelActive: (id, open) => {
+                    this.topbar.setPanelActive(id, open);
+                    this.sidebar?.setPanelActive(id, open);
+                },
+            },
             context: () => this.context(),
             changed: () => this.markStateDirty(),
+            i18n: this.localeState,
+            columnHost: () => this.region('column'),
         });
-        this.objectTree = new ObjectTree(main, (sym) => this.feed.symbolIcon(sym));
-        this.dataWindow = new DataWindow(main);
-        this.dock.addBuiltIn({ id: 'dataWindow', title: 'Data window', icon: 'datawindow', order: 10, panel: this.dataWindow, onChart: (c) => this.dataWindow.onChart(c) });
-        this.dock.addBuiltIn({ id: 'objects', title: 'Object tree', icon: 'objects', order: 20, panel: this.objectTree, onChart: (c) => this.objectTree.onChart(c) });
+        this.objectTree = new ObjectTree(main, (sym) => this.feed.symbolIcon(sym), this.localeState);
+        this.dataWindow = new DataWindow(main, this.localeState);
+        this.dock.addBuiltIn({ id: 'dataWindow', title: DATA_WINDOW_TITLE, icon: 'datawindow', order: 10, panel: this.dataWindow, onChart: (c) => this.dataWindow.onChart(c) });
+        this.dock.addBuiltIn({ id: 'objects', title: OBJECT_TREE_TITLE, icon: 'objects', order: 20, panel: this.objectTree, onChart: (c) => this.objectTree.onChart(c) });
         this.dock.refresh();
         // The dock's own slice of the boot document (open panel, dragged widths, pinned
         // placements) — the sync-storage twin of what `applyState` does for a late document.
         // Panels that are not registered yet keep their entry until they dock.
         if (boot?.panels) this.dock.applyState(boot.panels);
         this.root.appendChild(main);
+        this.placeToolbar();
         // Docked strips (`ctx.dockStrip`) — before the bottom bar, which appends itself next.
         this.stripsEl = doc.createElement('div');
         this.stripsEl.className = 'vela-ws-strips';
         this.root.appendChild(this.stripsEl);
         this.toastHost = new Toast(this.gridEl);
+        this.toaster = createToaster({ host: this.gridEl, contained: true, i18n: this.localeState });
 
         // ONE attribution mark for the whole grid (bottom-left, floating above the
         // bottom-left cell's time axis) — the cells disable their per-chart marks, and
@@ -637,7 +846,7 @@ export class VelaWorkspace {
             const mark =
                 typeof attribution === 'string' && attribution.trim()
                     ? createCustomMark(doc, attribution, background)
-                    : createAttributionMark(doc, background);
+                    : createAttributionMark(doc, background, this.localeState);
             Object.assign(mark.style, {
                 left: 'calc(var(--vela-toolbar-gutter, 0px) + 12px)',
                 bottom: `calc(var(--vela-bottom-gutter, ${TIME_AXIS_H}px) + 10px)`,
@@ -682,6 +891,7 @@ export class VelaWorkspace {
                   },
                   {
                       dock: 'static',
+                      i18n: () => this.localeState,
                       // Drawings sync is a WORKSPACE link (same model as the layout
                       // dropdown's switches) — the bar only hosts its toggle.
                       onDrawingsSync: (on) => {
@@ -699,6 +909,7 @@ export class VelaWorkspace {
         this.bottombar =
             opts.bottombar !== false
                 ? new Bottombar(this.root, {
+                      i18n: this.localeState,
                       timezone: this.timezone,
                       clock: this.clock,
                       onRange: (preset) => {
@@ -712,6 +923,10 @@ export class VelaWorkspace {
                       onSettingsClick: () => this.active.chart.renderer.openSettings(),
                   })
                 : null;
+        // Strips docked under the bottom bar (`dockStrip(el, { position: 'below-bottombar' })`).
+        this.stripsBelowEl = doc.createElement('div');
+        this.stripsBelowEl.className = 'vela-ws-strips vela-ws-strips-below';
+        this.root.appendChild(this.stripsBelowEl);
 
         // The mobile bar is the bottom bar of the mobile size class — the same chrome
         // toggle governs both; CSS (data-layout) decides which one is visible. Every
@@ -719,6 +934,7 @@ export class VelaWorkspace {
         this.mobileBar =
             opts.bottombar !== false
                 ? new MobileBar(this.root, {
+                      i18n: this.localeState,
                       symbol: '',
                       timeframe: '60',
                       onSymbolClick: () => this.symbolPicker.open(),
@@ -763,13 +979,16 @@ export class VelaWorkspace {
         this.keymap.attach(this.root);
         this.registerDefaultKeys();
         // Shortcut hints beside the bound tools in the shared toolbar's flyouts.
-        this.drawToolbar?.setShortcuts(toolShortcutHints(this.keymap));
+        this.drawToolbar?.setShortcuts(toolShortcutHints(this.keymap, this.localeState));
         this.root.addEventListener('keydown', this.onRootKeydown);
+        this.root.addEventListener(SURFACE_OPEN_EVENT, this.onSurface);
+        this.root.addEventListener(SURFACE_CLOSE_EVENT, this.onSurface);
         this.root.tabIndex = -1; // focusable host so bare keystrokes land here
 
         this.cellBackend = this.backendFor(this.def);
         this.applyGrid();
         this.buildCells();
+        this.relinkIdenticalDrawings(); // a persisted document's copies link again
         this.syncCellPresentation();
         this.setActiveCell(bootActive != null && this.cellsById.has(bootActive) ? bootActive : (this.order[0] ?? null));
         // Shortcuts only fire while focus is INSIDE the workspace (the keymap listens
@@ -789,6 +1008,7 @@ export class VelaWorkspace {
             this.manifestSettled = true; // nothing will ever resolve — settled empty from the start
         }
         this.mountAttachments();
+        this.sidebar?.activate();
         // A sync-storage boot restores third-party document-level state here — the shell
         // is fully built (cells live, attachments mounted). The async-adapter boot and
         // host `applyState` calls reach the same handlers through applyState.
@@ -851,9 +1071,9 @@ export class VelaWorkspace {
         triggerPngDownload(this.root.ownerDocument, url, 'vela-layout.png');
     }
 
-    /** Live cells the screenshot should include — maximized siblings are `hidden`. */
+    /** Live cells the screenshot should include — a maximize takes its siblings out. */
     private shotCells(): ChartCell[] {
-        return this.cells().filter((c) => c.host.style.visibility !== 'hidden');
+        return this.cells().filter((c) => !this.hiddenByMaximize(c.id));
     }
 
     /** Place every cell's raster onto one canvas the size of the grid. */
@@ -910,6 +1130,67 @@ export class VelaWorkspace {
         return this.events.on(event, handler);
     }
 
+    /**
+     * The workspace's translator: its resolved locale and direction, `t()` for messages and
+     * `format` for numbers and dates. Every cell's chart carries the same settings
+     * (`cell.chart.i18n`), and contributed actions read it as `ctx.i18n`. The same object
+     * for the workspace's lifetime; it reads the new settings after {@link setLocale}.
+     */
+    get i18n(): Translator {
+        return this.localeState;
+    }
+
+    /**
+     * Change the language, direction or formatting of the whole workspace at runtime — a
+     * locale tag (`ws.setLocale('de')`) or any {@link LocalizationOptions} fields. Fields
+     * you pass replace their current value (an explicit `undefined` restores the default);
+     * the others are kept. Every cell re-renders in place, the shared chrome follows, and
+     * `locale:changed` fires. Register the locale's pack (`registerLocale`) first for
+     * translated text.
+     */
+    setLocale(next: string | LocalizationOptions): void {
+        if (this.destroyed) return;
+        const patch = typeof next === 'string' ? { locale: next } : pickLocalization(next);
+        this.localeState.update(patch);
+        this.applyRootAttributes();
+        for (const cell of this.cellsById.values()) {
+            cell.chart.setLocale(patch);
+            cell.relocalize();
+        }
+        this.relocalizeChrome();
+        this.events.emit('locale:changed', { locale: this.localeState.locale, direction: this.localeState.direction });
+    }
+
+    /** Re-read the shared chrome in the current language. Dialogs, menus and drawers read
+     *  it on their next open; what stays on screen is relabeled here. */
+    private relocalizeChrome(): void {
+        this.symbolPicker.relabel();
+        this.indicatorPicker?.relabel();
+        this.tfQuick.relabel();
+        this.topbar.relocalize();
+        this.bottombar?.relocalize();
+        this.mobileBar?.relocalize();
+        this.dock.relocalize();
+        this.sidebar?.relocalize();
+        this.toolbarDef = buildToolbar(this.opts.drawings, this.localeState).definition;
+        this.drawToolbar?.setDefinition(this.toolbarDef);
+        this.drawToolbar?.relabel();
+        this.drawToolbar?.setShortcuts(toolShortcutHints(this.keymap, this.localeState));
+        this.drawingPill?.relocalize();
+        this.toaster.relabel();
+        if (this.attributionMark) relabelAttributionMark(this.attributionMark, this.localeState);
+    }
+
+    /** `lang` once the host set a locale, `dir` once it set a direction; otherwise the
+     *  attributes stay off and the host page decides. */
+    private applyRootAttributes(): void {
+        const s = this.localeState;
+        if (s.localeExplicit) this.root.setAttribute('lang', s.locale);
+        else this.root.removeAttribute('lang');
+        if (s.directionExplicit) this.root.setAttribute('dir', s.direction);
+        else this.root.removeAttribute('dir');
+    }
+
     /** The context handed to contributed actions/attachments (rebuilt per invocation). */
     context(): WorkspaceWidgetContext {
         return buildContext({
@@ -919,17 +1200,85 @@ export class VelaWorkspace {
             setActiveCell: (id) => this.setActiveCell(id),
             openSymbolSearch: (query) => this.symbolPicker.open(query ?? ''),
             togglePanel: (id, open) => this.dock.toggle(id, open),
-            dockStrip: (el) => {
-                this.stripsEl.appendChild(el);
+            dockStrip: (el, opts) => this.dockStrip(el, opts),
+            dockEdge: (el) => {
+                const edge = this.region('edge');
+                edge.appendChild(el);
                 return () => {
-                    if (el.parentElement === this.stripsEl) el.remove();
+                    if (el.parentElement === edge) el.remove();
                 };
             },
             root: this.root,
+            i18n: this.localeState,
             toast: (message, kind) => this.toastHost.show(message, kind),
             stateDirty: () => this.markStateDirty(),
             replay: this.replay,
+            topbar: this.topbarItems,
+            panels: () => (this.dockView ??= this.dock.view()),
+            sidebar: this.sidebarCtl,
+            fullscreen: this.fullscreenCtl,
         });
+    }
+
+    /** A layout region, created on first use — from then on the shell lays out as a grid. */
+    private region(kind: 'column' | 'edge'): HTMLElement {
+        let el = this.regions.get(kind);
+        if (!el) {
+            el = this.root.ownerDocument.createElement('div');
+            el.className = kind === 'column' ? 'vela-ws-column' : 'vela-ws-edge';
+            this.root.appendChild(el);
+            this.regions.set(kind, el);
+            this.useRegions();
+        }
+        return el;
+    }
+
+    /**
+     * Lay the shell out as a grid, for the rest of its life. The drawing toolbar leaves the main
+     * row for its own column, so it runs from under the topbar to the foot of the shell, beside
+     * the docked strips and the bottom bar.
+     */
+    private useRegions(): void {
+        if (this.root.hasAttribute('data-vela-regions')) return;
+        this.root.setAttribute('data-vela-regions', '');
+        this.placeToolbar();
+    }
+
+    /** In the grid, the drawing toolbar sits in its own column, just ahead of the main row. */
+    private placeToolbar(): void {
+        if (!this.root.hasAttribute('data-vela-regions') || !this.toolbarHost || !this.mainEl) return;
+        if (this.mainEl.parentElement === this.root && this.toolbarHost.parentElement === this.mainEl) this.root.insertBefore(this.toolbarHost, this.mainEl);
+    }
+
+    /** `ctx.dockStrip`: a strip above or under the bottom bar, which can cover the chart column. */
+    private dockStrip(el: HTMLElement, opts?: DockStripOptions): DockedStrip {
+        const home = opts?.position === 'below-bottombar' ? this.stripsBelowEl : this.stripsEl;
+        home.appendChild(el);
+        // A strip sits beside the drawing toolbar, not under it.
+        if (this.toolbarHost) this.useRegions();
+        // Covering, the strip is a grid item of the root; the placeholder keeps its spot in the column.
+        let placeholder: Comment | null = null;
+        const uncover = (): void => {
+            if (!placeholder) return;
+            el.removeAttribute('data-vela-cover');
+            if (el.parentElement === this.root) placeholder.replaceWith(el);
+            else placeholder.remove();
+            placeholder = null;
+        };
+        const strip = (() => {
+            uncover();
+            if (el.parentElement === home) el.remove();
+        }) as DockedStrip;
+        strip.cover = (on) => {
+            if (!on) return uncover();
+            if (placeholder || el.parentElement !== home) return;
+            placeholder = this.root.ownerDocument.createComment('vela-strip');
+            el.replaceWith(placeholder);
+            el.setAttribute('data-vela-cover', '');
+            this.useRegions();
+            this.root.appendChild(el);
+        };
+        return strip;
     }
 
     /** Re-project contributed topbar actions + side panels, and mount late-registered attachments. */
@@ -938,11 +1287,14 @@ export class VelaWorkspace {
         this.topbar.renderActions();
         this.mobileBar?.renderActions();
         this.dock.refresh(); // rebuilt panels bind to the active cell's chart on their own
+        this.sidebar?.render();
         // Re-project every cell's legend rows so a late registerLegendAction /
-        // registerLegendCallout (or a callout's own state change) appears there too.
+        // registerLegendCallout / registerDrawingAction (or a callout's own state change)
+        // appears there too.
         for (const cell of this.cells()) {
             cell.chart.renderer.setLegendActions(legendActionsProviderFor(cell.chart, () => this.context()));
             cell.chart.renderer.setLegendCallouts(legendCalloutsProviderFor(cell.chart, () => this.context()));
+            cell.chart.renderer.setDrawingActions(drawingActionsProviderFor(cell.chart, () => this.context()));
         }
     }
 
@@ -1050,18 +1402,27 @@ export class VelaWorkspace {
                 for (const cell of this.cellsById.values()) cell.chart.drawings.setFavorites(this.favs as never[]);
             }
             if (st.drawingTools) this.pushToolDefaults(null);
-            this.drawingLinks.clear(); // restored drawings carry new ids — old links are stale
+            this.drawingLinks.clear(); // the document decides what is linked — rebuilt below
+            this.drawingRemovalsOwed.clear();
             // Restored slots differ legitimately — with the style link on, an unguarded
             // rehydrate would smear each cell's restored config over its peers.
             this.styleSyncBusy = true;
             try {
                 for (const [i] of this.def.cells.entries()) {
                     const { id, ...cs } = st.charts[i]!;
-                    this.cellsById.get(id)?.rehydrate(cs);
+                    const cell = this.cellsById.get(id);
+                    if (!cell) continue;
+                    cell.rehydrate(cs);
+                    // The document's drawings are the ones of the market it names, in
+                    // place as its switch starts: nothing to wait for, and no arrival to
+                    // bring in line with the peers. A document that names no drawings
+                    // leaves the chart to its host, like any other symbol switch.
+                    if (cs.drawings != null) this.drawingsSettled.set(id, this.chartSymbolOf(cell));
                 }
             } finally {
                 this.styleSyncBusy = false;
             }
+            this.relinkIdenticalDrawings();
             // AFTER the cells: each restored rendererConfig carries its own zone and the
             // cell mirror adopts it — the document's shell-level field must have the
             // last word when the two disagree (a host editing just `timezone`).
@@ -1095,7 +1456,8 @@ export class VelaWorkspace {
             this.events.emit('cell:destroyed', { id });
         }
         this.pool.clear();
-        this.drawingLinks.clear(); // restored drawings carry new ids — old links are stale
+        this.drawingLinks.clear(); // the document decides what is linked — rebuilt after the cells
+        this.drawingRemovalsOwed.clear();
         for (const { id, ...cs } of st.charts) this.pool.set(id, cs);
         this.order = st.charts.map((c) => c.id); // the document's arrangement IS the order
         const def = this.monoLayout ? null : ensureLayout(st.layout); // mono: grid stays pinned to '1'
@@ -1104,6 +1466,7 @@ export class VelaWorkspace {
         this.clearMaximized(); // ditto — the rebuilt grid starts unmaximized
         this.applyGrid();
         this.buildCells();
+        this.relinkIdenticalDrawings();
         this.syncCellPresentation();
         this.topbar.setLayout(this.def.id);
         const nextActive = st.activeCellId && this.cellsById.has(st.activeCellId) ? st.activeCellId : (this.order[0] ?? null);
@@ -1247,6 +1610,81 @@ export class VelaWorkspace {
         this.events.emit('cell:maximized', { id });
     }
 
+    /** Whether the shell is in full screen (see {@link setFullscreen}). */
+    get fullscreen(): boolean {
+        return this.fullscreenOn;
+    }
+
+    /**
+     * Enter or leave full screen: the charts take the whole shell. The topbar, the drawing
+     * toolbar, the bottom bar and the sidebar hide, and the open side panel closes; leaving
+     * brings all of it back as it was. The shell keeps the size of its container: a host
+     * that shows its own interface around the shell hides it on `fullscreen:changed`.
+     * Transient view state, never persisted. Desktop layout only: on the mobile layout the
+     * one bar is how the chart is driven, so entering is ignored there, and a shell that
+     * turns mobile leaves full screen.
+     */
+    setFullscreen(on: boolean): void {
+        if (this.destroyed || on === this.fullscreenOn) return;
+        if (on && this.layoutCtl.current === 'mobile') return;
+        this.fullscreenOn = on;
+        const doc = this.root.ownerDocument;
+        if (on) {
+            // Focus inside the shell may sit on a button about to hide with its bar, and keys
+            // only reach the keymap from inside the shell. Focus elsewhere on the page stays.
+            const focusInside = this.root.contains(doc.activeElement);
+            this.root.dataset.fullscreen = '1';
+            this.fullscreenPanel = this.dock.openId;
+            if (this.fullscreenPanel) this.dock.toggle(this.fullscreenPanel, false);
+            doc.defaultView?.addEventListener('keydown', this.onFullscreenEscape, true);
+            if (focusInside) this.refocusActive();
+        } else {
+            delete this.root.dataset.fullscreen;
+            doc.defaultView?.removeEventListener('keydown', this.onFullscreenEscape, true);
+            this.toastHost.hideIf(this.t(TEXT.fullscreenHint));
+            const panel = this.fullscreenPanel;
+            this.fullscreenPanel = null;
+            // A panel opened during full screen stays the open one.
+            if (panel && this.dock.openId === null) this.dock.toggle(panel, true);
+        }
+        this.events.emit('fullscreen:changed', { on });
+    }
+
+    /** The key and the topbar button. Entering says how to leave: the button hides with its bar. */
+    private toggleFullscreen(): void {
+        const on = !this.fullscreenOn;
+        this.setFullscreen(on);
+        if (on && this.fullscreenOn) this.toastHost.show(this.t(TEXT.fullscreenHint), 'info');
+    }
+
+    /** Whether this Esc belongs to something other than full screen. */
+    private escapeIsSpent(ev: KeyboardEvent): boolean {
+        if (this.openDialogs > 0 || isEditableTarget(ev)) return true;
+        // Focus inside a dialog or a menu the shell does not track (a plugin's own): the key is
+        // its. One AROUND the shell is the page showing the charts in it, and takes nothing.
+        const target = ev.target as Partial<Element> | null;
+        const holder = typeof target?.closest === 'function' ? target.closest('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]') : null;
+        if (holder && holder !== this.root && this.root.contains(holder)) return true;
+        // A surface destroyed while open never announced its close.
+        for (const el of this.openSurfaces) if (!el.isConnected) this.openSurfaces.delete(el);
+        if (this.openSurfaces.size > 0) return true;
+        const cell = this.activeId ? this.cellsById.get(this.activeId) : undefined;
+        if (!cell) return false;
+        const drawings = cell.chart.drawings;
+        const selected = (this.drawingSelections.get(cell) ?? 0) > 0;
+        const tool = drawings.getTool();
+        const mode = drawings.getMode();
+        if (!selected && tool === null && mode === null) return false;
+        // Done here rather than left to the chart, which hears the key only while it holds
+        // the focus (a menu that closes leaves it on the page), and whose own Esc keeps a
+        // tool armed: the toolbar that would disarm it is hidden. This press returns the
+        // chart to rest, the next one leaves.
+        if (selected) drawings.select(null);
+        if (tool !== null) drawings.setTool(null);
+        if (mode !== null) drawings.setMode(null);
+        return true;
+    }
+
     /** The mobile bar's maximize stop: one press isolates the ACTIVE chart over the
      *  grid; while something is already isolated — the chart, or a pane inside it
      *  (mobile's double-tap) — the press restores that instead. Every branch re-syncs
@@ -1340,6 +1778,10 @@ export class VelaWorkspace {
         }
         this.attachmentDisposers.clear();
         this.root.removeEventListener('keydown', this.onRootKeydown);
+        this.root.removeEventListener(SURFACE_OPEN_EVENT, this.onSurface);
+        this.root.removeEventListener(SURFACE_CLOSE_EVENT, this.onSurface);
+        this.root.ownerDocument.defaultView?.removeEventListener('keydown', this.onFullscreenEscape, true);
+        this.openSurfaces.clear();
         this.keymap.destroy();
         this.drawToolbar?.destroy();
         this.topbar.destroy();
@@ -1353,6 +1795,7 @@ export class VelaWorkspace {
         this.priceScaleDrawer?.destroy();
         this.layoutCtl.destroy();
         this.dock.destroy(); // contributed panels; the two built-ins are ours to drop
+        this.sidebar?.destroy();
         this.objectTree.destroy();
         this.dataWindow.destroy();
         this.symbolPicker.destroy();
@@ -1360,6 +1803,7 @@ export class VelaWorkspace {
         this.tfQuick.destroy();
         this.shortcutsHelp?.destroy();
         this.toastHost.destroy();
+        this.toaster.destroy();
         this.alertsMenu?.destroy();
         this.glider.stop();
         sharedBarStore.retain(new Set(), this); // release OUR declaration only — other shells on the page keep theirs
@@ -1375,7 +1819,7 @@ export class VelaWorkspace {
         if (!cell) return;
         this.topbar.setSymbol(cell.symbol);
         this.topbar.setTimeframe(cell.timeframe);
-        this.topbar.setPriceStyle(cell.priceStyle);
+        this.topbar.setPriceStyle(cell.priceStyle, cell.unavailablePriceStyles());
         this.topbar.setIndicatorCount(cell.indicatorCount);
         this.topbar.renderActions(); // contributed `when()` gates may depend on the active cell
         this.mobileBar?.renderActions();
@@ -1566,11 +2010,14 @@ export class VelaWorkspace {
         this.splitters.layout();
     }
 
-    /** Overlay the maximize presentation on the freshly applied grid: EVERY cell spans
-     *  the full track grid — the maximized one on top, the siblings invisible beneath
-     *  it (their charts stay alive — restoring is instant). The siblings must span too:
-     *  left in their slots they would auto-flow into implicit zero-height rows, whose
-     *  gaps steal height from the maximized cell and collapse their renderers to 0.
+    /** Overlay the maximize presentation on the freshly applied grid: the maximized cell
+     *  spans the full track grid and its siblings leave the layout (`display: none`).
+     *  Their charts stay alive and keep the canvases they had (the renderer skips a
+     *  0×0 resize), so restoring is instant. They must not span the grid beneath the
+     *  maximized cell: every one of them would resize its canvases to the full grid,
+     *  multiplying the canvas memory by the cell count (a 2×2 phone layout goes past
+     *  iOS Safari's limit and the tab is killed). Out of the layout, they also leave no
+     *  implicit rows behind to steal height from the maximized cell.
      *  The splitter strips and the active ring hide via the `data-maximized` rules. */
     private applyMaximizePresentation(): void {
         const maxId = this.maximizedId;
@@ -1579,10 +2026,15 @@ export class VelaWorkspace {
         for (const [id, cell] of this.cellsById) {
             const style = cell.host.style;
             // applyGrid just re-derived each slot's own gridArea — only override while maximized.
-            if (maxId) style.gridArea = '1 / 1 / -1 / -1';
-            style.zIndex = maxId && id === maxId ? '5' : '';
-            style.visibility = maxId && id !== maxId ? 'hidden' : '';
+            if (maxId === id) style.gridArea = '1 / 1 / -1 / -1';
+            style.zIndex = maxId === id ? '5' : '';
+            style.display = this.hiddenByMaximize(id) ? 'none' : '';
         }
+    }
+
+    /** Whether a maximize has taken this cell out of the layout. */
+    private hiddenByMaximize(id: string): boolean {
+        return this.maximizedId != null && id !== this.maximizedId;
     }
 
     /** Rebuild every cell's view cluster (the maximize gate or state changed). */
@@ -1603,7 +2055,7 @@ export class VelaWorkspace {
      *  maximize has hidden — the drag handle's hit-test. */
     private cellAtPoint(x: number, y: number, excludeId: string): string | null {
         for (const [id, cell] of this.cellsById) {
-            if (id === excludeId || cell.host.style.visibility === 'hidden') continue;
+            if (id === excludeId || this.hiddenByMaximize(id)) continue;
             const r = cell.host.getBoundingClientRect();
             if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return id;
         }
@@ -1662,6 +2114,7 @@ export class VelaWorkspace {
                 feed: this.feed,
                 engines: this.opts.engines ?? {},
                 chartDefaults: cellChartDefaults(this.opts),
+                localization: () => this.localeState.options,
                 theme,
                 live: this.opts.live ?? false,
                 volume: this.opts.volume ?? true,
@@ -1681,6 +2134,7 @@ export class VelaWorkspace {
                 dropCell: (id, target) => this.swapCells(id, target),
                 onMarketChanged: (id) => this.onCellMarketChanged(id),
                 onPriceStyleChanged: (id) => this.onCellPriceStyleChanged(id),
+                onPriceStyleShown: (id) => this.projectCellPriceStyle(id),
                 onIndicatorsChanged: (id) => this.onCellIndicatorsChanged(id),
                 onStatusPrefsChanged: (id) => this.propagateStylePrefs(id),
                 onStateDirty: () => this.markStateDirty(),
@@ -1736,12 +2190,13 @@ export class VelaWorkspace {
         chart.on('alert', (alert) => {
             // Provenance the way a user reads it — symbol, timeframe, and the indicator
             // that fired — captured at fire time (the cell may switch markets later).
-            const source = [parseSymbol(cell.symbol).ticker || cell.symbol, timeframeLabel(cell.timeframe), alert.indicator]
+            // Written in the language of the moment it fired, like the toast it raises.
+            const source = [parseSymbol(cell.symbol).ticker || cell.symbol, timeframeLabel(cell.timeframe, this.localeState), alert.indicator]
                 .filter(Boolean)
                 .join(' ');
-            this.alerts.unshift({ cellId: cell.id, source, title: alert.title ?? 'Alert', message: alert.message, time: alert.time });
+            this.alerts.unshift({ cellId: cell.id, source, title: alert.title ?? this.t(TEXT.alert), message: alert.message, time: alert.time });
             if (this.alerts.length > this.alertCap) this.alerts.pop();
-            this.toastHost.show(`${source} — ${alert.title ? alert.title + ' — ' : ''}${alert.message}`, 'info', 4000);
+            toast(alert.title ?? this.t(TEXT.alert), { description: this.t(TEXT.alertToastDescription, { source, message: alert.message }), icon: 'bell' });
             this.topbar.setAlertCount(this.alerts.length);
         });
         // Favorites are a WORKSPACE preference: one shared toolbar, one star set — a star
@@ -1779,6 +2234,12 @@ export class VelaWorkspace {
         // cells and the set stays LINKED: edits and removals of any member follow
         // (the guard stops the propagated mutations from fanning out again).
         chart.on('drawing:created', ({ id }) => {
+            // A drawing made on a chart whose saved document is not back yet starts that
+            // document's ids over. What the link knows of the chart on this market (its
+            // linked copies, the removals owed to them) is of ids that now name other
+            // drawings: none of them must be taken for a copy.
+            const market = this.drawingMarketOf(cell);
+            if (!this.drawingsSettledOn(cell)) this.forgetDrawingLinks(market, cell.id);
             this.propagateDrawing(cell.id, id);
             this.markStateDirty();
         });
@@ -1793,6 +2254,17 @@ export class VelaWorkspace {
             this.propagateDrawingRemoval(cell.id, id);
             this.markStateDirty();
         });
+        // An undo, a redo and a document put in place change the cell's drawings without any
+        // of the three above: unreported, the saved state keeps the drawings as they were.
+        chart.on('drawing:history', () => this.markStateDirty());
+        chart.on('drawing:replaced', () => this.markStateDirty());
+        // A chart that lands on another symbol joins the charts already on it, and is out
+        // of the link from the start of the switch until then.
+        this.drawingsSettled.set(cell.id, this.chartSymbolOf(cell));
+        chart.on('load:start', () => {
+            if (this.chartSymbolOf(cell) !== this.drawingsSettled.get(cell.id)) this.drawingsSettled.delete(cell.id);
+        });
+        chart.on('market:changed', () => this.onCellMarketLanded(cell));
         // Tool/magnet/mode reflection (trigger ②): the ACTIVE cell's drawing state drives
         // the shared bar and the global mirrors — whatever the source (bar press, keymap,
         // API, a one-shot tool disarming itself after placement).
@@ -1820,6 +2292,7 @@ export class VelaWorkspace {
             this.drawToolbar?.setMeasureActive(mode === 'measure');
             this.drawToolbar?.setEraserActive(mode === 'eraser');
         });
+        chart.on('drawing:selected', ({ ids }) => this.drawingSelections.set(cell, ids.length));
         // Viewport sync: every applied pan/zoom/fit propagates to the same-group cells.
         chart.on('viewport:changed', (range) => this.propagateViewport(cell.id, range));
         // Style sync: any committed config edit (settings dialog, applyConfig) mirrors
@@ -1849,8 +2322,12 @@ export class VelaWorkspace {
         if (kind === 'drawings') {
             // Placement ghosts are stale under the new setting. Link pairs stay —
             // turning off freezes propagation; turning on resumes edit/delete for
-            // drawings paired earlier (never copies unpaired ones onto peers).
+            // drawings paired earlier and links identical copies the way a reload
+            // does (never copies unpaired ones onto peers).
             for (const cell of this.cellsById.values()) cell.chart.drawings.setExternalGhost(null);
+            // A removal made while the link is off reaches no peer, on screen or away.
+            if (!this.syncOpts.drawings) this.drawingRemovalsOwed.clear();
+            this.relinkIdenticalDrawings();
             // The toggle lives on the shared drawing toolbar; keep it truthful.
             this.drawToolbar?.setDrawingsSyncMode(!!setting);
             this.markStateDirty();
@@ -1923,44 +2400,199 @@ export class VelaWorkspace {
     private alignNewCellDrawings(preexisting: ReadonlySet<string>): void {
         const setting = this.syncOpts.drawings;
         if (!setting) return;
-        const ids = [...this.cellsById.keys()];
-        for (const id of ids) {
+        for (const id of [...this.cellsById.keys()]) {
             if (preexisting.has(id)) continue;
-            const cell = this.cellsById.get(id);
-            if (!cell?.chart.drawings.supported) continue;
-            const peers = syncTargets(id, setting, ids).filter((p) => preexisting.has(p));
-            if (peers.length === 0) continue; // an unlinked or all-new group has no source to inherit
-            const sourceId = this.activeId && peers.includes(this.activeId) ? this.activeId : peers[0]!;
-            const source = this.cellsById.get(sourceId);
-            if (!source) continue;
-            const drawings = cell.chart.drawings;
-            this.drawingSyncBusy = true;
-            try {
-                cell.history.silently(() => {
-                    const held = new Set(drawings.all().map((d) => d.id));
-                    for (const doc of source.chart.drawings.all()) {
-                        const group = this.drawingLinks.get(`${sourceId}\u0000${doc.id}`) ?? new Map([[sourceId, doc.id]]);
-                        const peerId = group.get(id);
-                        if (peerId != null && held.has(peerId)) {
+            // Only a peer on the arriving chart's market has drawings that belong on it.
+            this.alignCellDrawings(
+                id,
+                this.drawingSyncTargets(id, setting).filter((p) => preexisting.has(p)),
+            );
+        }
+    }
+
+    /**
+     * A chart finished a switch to another symbol. Where a chart's drawings belong to its
+     * symbol (`clearOnSymbolChange`), the switch swapped the document it holds, and that
+     * document missed whatever the link did while the chart showed something else: with
+     * the link on, it is brought in line with the charts already on the market
+     * ({@link alignCellDrawings}). A chart that carries its drawings from one symbol to
+     * the next holds no document of the market to bring in line, and is left as it is.
+     *
+     * Runs once the event's listeners are done: a host that keeps drawings per symbol
+     * puts the symbol's saved document back from one of them, and what the chart is
+     * brought in line with must be that document, not the empty chart before it. The
+     * chart joins the link at that point, not before ({@link drawingsSettled}). A
+     * timeframe or session change, and the switch a restored document makes, land on the
+     * symbol the chart's drawings are already settled on and bring nothing in line.
+     */
+    private onCellMarketLanded(cell: ChartCell): void {
+        if (this.destroyed || this.cellsById.get(cell.id) !== cell) return;
+        const symbol = this.chartSymbolOf(cell);
+        if (this.drawingsSettled.get(cell.id) === symbol) return;
+        if (!cell.chart.drawings.getClearOnSymbolChange()) {
+            this.drawingsSettled.set(cell.id, symbol);
+            return;
+        }
+        queueMicrotask(() => {
+            if (this.destroyed || this.cellsById.get(cell.id) !== cell) return;
+            if (this.chartSymbolOf(cell) !== symbol) return; // already on its way elsewhere
+            this.drawingsSettled.set(cell.id, symbol);
+            const setting = this.syncOpts.drawings;
+            if (!setting) return;
+            this.alignCellDrawings(cell.id, this.drawingSyncTargets(cell.id, setting));
+        });
+    }
+
+    /**
+     * Whether a cell's drawings are the ones of the symbol its chart is on. Always, for a
+     * chart that carries its drawings across symbols. A chart whose drawings belong to the
+     * symbol is empty from the start of a switch until the switch has landed and its host
+     * has put the symbol's saved document back: the link leaves it alone meanwhile, and
+     * {@link onCellMarketLanded} brings it in line with what it missed. A copy sent to it
+     * sooner would land on the empty chart, where the host takes it for the symbol's
+     * whole document and its ids for those of the saved one.
+     */
+    private drawingsSettledOn(cell: ChartCell): boolean {
+        try {
+            if (!cell.chart.drawings.getClearOnSymbolChange()) return true;
+        } catch {
+            return false; // destroyed
+        }
+        return this.drawingsSettled.get(cell.id) === this.chartSymbolOf(cell);
+    }
+
+    /** The symbol a cell's chart is on, as written: it changes as a switch starts. */
+    private chartSymbolOf(cell: ChartCell): string {
+        try {
+            return cell.chart.market.symbol ?? cell.symbol;
+        } catch {
+            return cell.symbol; // a destroyed cell names the symbol it last showed
+        }
+    }
+
+    /**
+     * Bring one chart's drawings in line with its link on the market it shows. A linked
+     * copy whose set lost a member while this chart was away goes ({@link
+     * drawingRemovalsOwed}). Then, from a peer among `peers` (the active cell when it is
+     * one): a drawing this chart already holds a linked copy of is refreshed in place, an
+     * identical unlinked one is adopted, any other is copied and linked. The arrival is
+     * the chart's starting state, not an edit: it stays out of the undo timeline, and the
+     * busy guard keeps the changes' own events from fanning back out.
+     */
+    private alignCellDrawings(id: string, peers: readonly string[]): void {
+        const cell = this.cellsById.get(id);
+        if (!cell?.chart.drawings.supported) return;
+        const market = this.drawingMarketOf(cell);
+        const drawings = cell.chart.drawings;
+        const owed = drawings.all().filter((d) => this.drawingRemovalsOwed.has(this.drawingLinkKey(market, id, d.id)));
+        this.forgetDrawingRemovalsOwed(market, id); // a copy the document did not bring back is gone already
+        const sourceId = peers.length === 0 ? null : this.activeId && peers.includes(this.activeId) ? this.activeId : peers[0]!;
+        const source = sourceId == null ? undefined : this.cellsById.get(sourceId);
+        if (owed.length === 0 && (sourceId == null || !source)) return; // nothing owed, and no peer to inherit from
+        this.drawingSyncBusy = true;
+        try {
+            cell.history.silently(() => {
+                for (const d of owed) drawings.remove(d.id);
+                if (sourceId == null || !source) return;
+                const own = drawings.all();
+                const held = new Set(own.map((d) => d.id));
+                // Unlinked drawings this chart already holds, by content: a chart back
+                // from a document saved in an earlier session carries identical copies
+                // that only lost their link — adopt those instead of duplicating them.
+                const unlinked = new Map<string, string[]>();
+                for (const d of own) {
+                    if (this.drawingLinks.has(this.drawingLinkKey(market, id, d.id))) continue;
+                    const content = drawingLinkContent(d);
+                    const queue = unlinked.get(content);
+                    if (queue) queue.push(d.id);
+                    else unlinked.set(content, [d.id]);
+                }
+                for (const doc of source.chart.drawings.all()) {
+                    const sourceKey = this.drawingLinkKey(market, sourceId, doc.id);
+                    const group = this.drawingLinks.get(sourceKey) ?? new Map([[sourceId, doc.id]]);
+                    // Both ends are on `market`; the set's other members keep the keys they have.
+                    const link = (drawingId: string): void => {
+                        group.set(id, drawingId);
+                        this.drawingLinks.set(sourceKey, group);
+                        this.drawingLinks.set(this.drawingLinkKey(market, id, drawingId), group);
+                        this.markDrawingEdit(group, [id], this.drawingEditOf(group, sourceId));
+                    };
+                    const peerId = group.get(id);
+                    if (peerId != null && held.has(peerId)) {
+                        const mine = this.drawingEditOf(group, id);
+                        const later = mine > this.drawingEditOf(group, sourceId) ? own.find((d) => d.id === peerId) : undefined;
+                        if (later) {
+                            // This chart edited its copy after the charts here last followed
+                            // the set (they were away in turn): they take its edit.
+                            const followers = peers.filter((p) => group.has(p));
+                            for (const p of followers) {
+                                this.cellsById.get(p)?.chart.drawings.update(group.get(p)!, { anchors: later.anchors, style: later.style, text: later.text, props: later.props });
+                            }
+                            this.markDrawingEdit(group, followers, mine);
+                        } else {
                             drawings.update(peerId, { anchors: doc.anchors, style: doc.style, text: doc.text, props: doc.props });
-                            continue;
+                            this.markDrawingEdit(group, [id], this.drawingEditOf(group, sourceId));
                         }
-                        const copy = drawings.add(doc.type, {
-                            paneId: doc.paneId,
-                            anchors: doc.anchors,
-                            style: doc.style,
-                            text: doc.text,
-                            props: doc.props,
-                            zIndex: doc.zIndex,
-                        });
-                        if (!copy) continue;
-                        if (peerId != null) this.drawingLinks.delete(`${id}\u0000${peerId}`);
-                        group.set(id, copy.id);
-                        for (const [cellId, dId] of group) this.drawingLinks.set(`${cellId}\u0000${dId}`, group);
+                        continue;
                     }
-                });
-            } finally {
-                this.drawingSyncBusy = false;
+                    const match = unlinked.get(drawingLinkContent(doc))?.shift();
+                    if (match != null) {
+                        if (peerId != null) this.drawingLinks.delete(this.drawingLinkKey(market, id, peerId));
+                        link(match);
+                        continue;
+                    }
+                    const copy = drawings.add(doc.type, {
+                        paneId: doc.paneId,
+                        anchors: doc.anchors,
+                        style: doc.style,
+                        text: doc.text,
+                        props: doc.props,
+                        zIndex: doc.zIndex,
+                    });
+                    if (!copy) continue;
+                    if (peerId != null) this.drawingLinks.delete(this.drawingLinkKey(market, id, peerId));
+                    link(copy.id);
+                }
+            });
+        } finally {
+            this.drawingSyncBusy = false;
+        }
+    }
+
+    /**
+     * Rebuild the drawings link from content. Which drawings are linked copies lives only
+     * in memory, so a reload or `applyState` restores every chart's drawings unlinked:
+     * here, drawings with identical content ({@link pairIdenticalDrawings}) on charts of
+     * the same link group become one linked set again, so documents saved by any earlier
+     * session relink without a stored pairing. A copy edited while the link was off no
+     * longer matches and stays independent. Charts on different markets never relink: a
+     * copy the link once put on another symbol stays that chart's own. Drawings already
+     * linked keep their links; runs whenever the link is established — a restore with it
+     * on, and turning it on.
+     */
+    private relinkIdenticalDrawings(): void {
+        const setting = this.syncOpts.drawings;
+        if (!setting) return;
+        const byMarket: Array<{ market: string; members: string[] }> = [];
+        for (const group of syncGroups(setting, this.cells().map((c) => c.id))) {
+            const split = new Map<string, string[]>();
+            for (const cellId of group) {
+                const cell = this.cellsById.get(cellId);
+                if (!cell) continue;
+                const market = this.drawingMarketOf(cell);
+                const members = split.get(market);
+                if (members) members.push(cellId);
+                else split.set(market, [cellId]);
+            }
+            for (const [market, members] of split) if (members.length > 1) byMarket.push({ market, members });
+        }
+        for (const { market, members } of byMarket) {
+            const cells = members.map((cellId) => ({
+                cellId,
+                drawings: (this.cellsById.get(cellId)?.chart.drawings.all() ?? []).filter((d) => !this.drawingLinks.has(this.drawingLinkKey(market, cellId, d.id))),
+            }));
+            for (const link of pairIdenticalDrawings(cells)) {
+                for (const [cellId, dId] of link) this.drawingLinks.set(this.drawingLinkKey(market, cellId, dId), link);
             }
         }
     }
@@ -2047,22 +2679,125 @@ export class VelaWorkspace {
     }
 
     /**
-     * Copy a freshly created drawing onto the origin's same-group followers (fresh ids
-     * through `drawings.add` — anchors are time+price, so the copy lands at the same
-     * spot whatever the follower shows) and register the whole set as LINKED: edits
-     * and removals of any member follow while the link is on ({@link drawingLinks}).
-     * The busy guard stops the copies' own `drawing:created` events from fanning out.
+     * The market a cell shows, as the drawings link compares it: its symbol's ticker,
+     * without the venue in front, so `BTCUSDT` and `binance:BTCUSDT` are one market. Read
+     * off the symbol as written, never off what resolves it: which venue serves a bare
+     * symbol is known only once its index has loaded and can differ from one page load to
+     * the next, and two charts must not link on one load and stay apart on the other. The
+     * cost: the same ticker on two venues is one market here.
+     *
+     * Read off the CHART: its symbol changes as a switch starts, in the same step that
+     * takes a symbol's drawings off it, while the cell follows only once the switch has
+     * landed when a host switched the chart itself. A drawing made in between must not
+     * be taken for one of the market the cell still names.
+     *
+     * Every link operation reads its cells' markets here, so this is also where a cell's
+     * link keys catch up with a market it moved to ({@link drawingLinkMarket}), and where
+     * a cell seen off the symbol its drawings were settled on stops being settled
+     * ({@link drawingsSettled}): it stays out of the link until it lands, also when the
+     * switch it is on brings it back to that symbol without landing anywhere else.
+     */
+    private drawingMarketOf(cell: ChartCell): string {
+        const symbol = this.chartSymbolOf(cell);
+        let carries = false;
+        try {
+            carries = !cell.chart.drawings.getClearOnSymbolChange();
+        } catch {
+            // A destroyed cell carries nothing anywhere.
+        }
+        if (this.drawingsSettled.get(cell.id) !== symbol) this.drawingsSettled.delete(cell.id);
+        const market = parseSymbol(symbol).ticker;
+        const keyed = this.drawingLinkMarket.get(cell.id);
+        if (keyed !== market) {
+            this.drawingLinkMarket.set(cell.id, market);
+            // A chart that keeps its drawings across symbols took its linked copies with
+            // it: their keys follow, so copies that travel together stay linked. A chart
+            // whose drawings belong to the symbol left them in the market's document.
+            if (keyed !== undefined && carries) this.moveDrawingLinks(cell.id, keyed, market);
+        }
+        return market;
+    }
+
+    /** A drawing's key in {@link drawingLinks}: the market its document is of, its cell, its id. */
+    private drawingLinkKey(market: string, cellId: string, drawingId: string): string {
+        return `${market}\u0000${cellId}\u0000${drawingId}`;
+    }
+
+    /** The edit of its set a cell's linked copy stands at ({@link drawingLinkEdits}). */
+    private drawingEditOf(group: Map<string, string>, cellId: string): number {
+        return this.drawingLinkEdits.get(group)?.get(cellId) ?? 0;
+    }
+
+    /** Record that `cellIds` hold their set's copy as of edit `at` (default: a new edit). */
+    private markDrawingEdit(group: Map<string, string>, cellIds: readonly string[], at?: number): void {
+        let edits = this.drawingLinkEdits.get(group);
+        if (!edits) this.drawingLinkEdits.set(group, (edits = new Map()));
+        const edit = at ?? Math.max(0, ...edits.values()) + 1;
+        for (const cellId of cellIds) edits.set(cellId, edit);
+    }
+
+    /** Drop the removals owed to one cell on one market ({@link drawingRemovalsOwed}). */
+    private forgetDrawingRemovalsOwed(market: string, cellId: string): void {
+        const prefix = this.drawingLinkKey(market, cellId, '');
+        for (const key of [...this.drawingRemovalsOwed]) if (key.startsWith(prefix)) this.drawingRemovalsOwed.delete(key);
+    }
+
+    /** Take one cell out of every linked set on one market, with the removals owed to it there. */
+    private forgetDrawingLinks(market: string, cellId: string): void {
+        const prefix = this.drawingLinkKey(market, cellId, '');
+        for (const [key, group] of [...this.drawingLinks]) {
+            if (!key.startsWith(prefix)) continue;
+            this.drawingLinks.delete(key);
+            group.delete(cellId);
+        }
+        this.forgetDrawingRemovalsOwed(market, cellId);
+    }
+
+    /** Re-key one cell's linked drawings from one market to another. */
+    private moveDrawingLinks(cellId: string, from: string, to: string): void {
+        const prefix = this.drawingLinkKey(from, cellId, '');
+        for (const [key, group] of [...this.drawingLinks]) {
+            if (!key.startsWith(prefix)) continue;
+            this.drawingLinks.delete(key);
+            this.drawingLinks.set(this.drawingLinkKey(to, cellId, key.slice(prefix.length)), group);
+        }
+    }
+
+    /**
+     * The origin's drawings-link followers that show the origin's market. A drawing's
+     * anchors are a time and a price on ONE instrument, so the link never carries a
+     * drawing, its placement ghost, an edit or a removal to a chart on another symbol,
+     * whatever its link group says.
+     */
+    private drawingSyncTargets(originId: string, setting: SyncSetting): string[] {
+        const origin = this.cellsById.get(originId);
+        if (!origin) return [];
+        const market = this.drawingMarketOf(origin);
+        return syncTargets(originId, setting, [...this.cellsById.keys()]).filter((id) => {
+            const cell = this.cellsById.get(id);
+            return cell != null && this.drawingMarketOf(cell) === market && this.drawingsSettledOn(cell);
+        });
+    }
+
+    /**
+     * Copy a freshly created drawing onto the origin's same-group followers on the same
+     * market ({@link drawingSyncTargets}; fresh ids through `drawings.add`) and register
+     * the whole set as LINKED: edits and removals of any member follow while the link is
+     * on ({@link drawingLinks}). The busy guard stops the copies' own `drawing:created`
+     * events from fanning out.
      */
     private propagateDrawing(originId: string, drawingId: string): void {
         if (this.drawingSyncBusy || this.destroyed) return;
         const setting = this.syncOpts.drawings;
         if (!setting) return;
-        const doc = this.cellsById.get(originId)?.chart.drawings.all().find((d) => d.id === drawingId);
-        if (!doc) return;
+        const origin = this.cellsById.get(originId);
+        const doc = origin?.chart.drawings.all().find((d) => d.id === drawingId);
+        if (!origin || !doc) return;
+        const market = this.drawingMarketOf(origin);
         this.drawingSyncBusy = true;
         try {
             const group = new Map([[originId, drawingId]]);
-            for (const id of syncTargets(originId, setting, [...this.cellsById.keys()])) {
+            for (const id of this.drawingSyncTargets(originId, setting)) {
                 const copy = this.cellsById.get(id)?.chart.drawings.add(doc.type, {
                     paneId: doc.paneId,
                     anchors: doc.anchors,
@@ -2073,7 +2808,7 @@ export class VelaWorkspace {
                 if (copy) group.set(id, copy.id);
             }
             if (group.size > 1) {
-                for (const [cellId, dId] of group) this.drawingLinks.set(`${cellId}\u0000${dId}`, group);
+                for (const [cellId, dId] of group) this.drawingLinks.set(this.drawingLinkKey(market, cellId, dId), group);
             }
         } finally {
             this.drawingSyncBusy = false;
@@ -2081,31 +2816,37 @@ export class VelaWorkspace {
     }
 
     /** Mirror an in-progress placement (its current ghost, `null` = placement ended)
-     *  onto the origin's same-group followers — the live half of the drawings link;
-     *  the created copy replaces the ghosts when the placement completes. One-way by
-     *  contract (an external ghost never re-emits drafts), so no busy guard needed. */
+     *  onto the origin's same-group followers on the same market — the live half of the
+     *  drawings link; the created copy replaces the ghosts when the placement completes.
+     *  One-way by contract (an external ghost never re-emits drafts), so no busy guard. */
     private propagateDraft(originId: string, doc: SerializedDrawing | null): void {
         if (this.destroyed) return;
         const setting = this.syncOpts.drawings;
         if (!setting) return;
-        for (const id of syncTargets(originId, setting, [...this.cellsById.keys()])) {
+        for (const id of this.drawingSyncTargets(originId, setting)) {
             this.cellsById.get(id)?.chart.drawings.setExternalGhost(doc);
         }
     }
 
     /** Push a linked drawing's edited CONTENT (anchors, style, text, per-type props)
-     *  onto its same-group peers — any member propagates, not just the original. */
+     *  onto its same-group peers on the same market — any member propagates, not just
+     *  the original. A peer whose chart moved to another symbol keeps its copy as it is;
+     *  where drawings belong to the symbol, it takes the edit once back on the market
+     *  ({@link onCellMarketLanded}). */
     private propagateDrawingEdit(originId: string, drawingId: string): void {
         if (this.drawingSyncBusy || this.destroyed) return;
         const setting = this.syncOpts.drawings;
         if (!setting) return;
-        const group = this.drawingLinks.get(`${originId}\u0000${drawingId}`);
+        const origin = this.cellsById.get(originId);
+        if (!origin) return;
+        const group = this.drawingLinks.get(this.drawingLinkKey(this.drawingMarketOf(origin), originId, drawingId));
         if (!group) return;
-        const doc = this.cellsById.get(originId)?.chart.drawings.all().find((d) => d.id === drawingId);
+        const doc = origin.chart.drawings.all().find((d) => d.id === drawingId);
         if (!doc) return;
+        const followed = [originId];
         this.drawingSyncBusy = true;
         try {
-            for (const id of syncTargets(originId, setting, [...this.cellsById.keys()])) {
+            for (const id of this.drawingSyncTargets(originId, setting)) {
                 const peerId = group.get(id);
                 if (peerId == null) continue;
                 this.cellsById.get(id)?.chart.drawings.update(peerId, {
@@ -2114,19 +2855,28 @@ export class VelaWorkspace {
                     text: doc.text,
                     props: doc.props,
                 });
+                followed.push(id);
             }
         } finally {
             this.drawingSyncBusy = false;
         }
+        this.markDrawingEdit(group, followed);
     }
 
     /** Remove a linked drawing's peers with it. The removed member always leaves its
-     *  link group (whatever the setting); peers are only deleted while the link is on.
-     *  A propagated peer removal re-enters here under the busy guard and just cleans
-     *  its own link key. */
+     *  link group (whatever the setting); peers are only deleted while the link is on,
+     *  and only on charts that show the same market. A linked chart on another symbol
+     *  keeps its copy as it is; where its drawings belong to the symbol, that copy is
+     *  out of sight in the market's document, and the removal is owed to it for when the
+     *  chart is back ({@link drawingRemovalsOwed}). A propagated peer removal re-enters
+     *  here under the busy guard and just cleans its own link key. */
     private propagateDrawingRemoval(originId: string, drawingId: string): void {
         if (this.destroyed) return;
-        const key = `${originId}\u0000${drawingId}`;
+        const origin = this.cellsById.get(originId);
+        if (!origin) return;
+        const market = this.drawingMarketOf(origin);
+        const key = this.drawingLinkKey(market, originId, drawingId);
+        this.drawingRemovalsOwed.delete(key);
         const group = this.drawingLinks.get(key);
         if (!group) return;
         this.drawingLinks.delete(key);
@@ -2134,11 +2884,15 @@ export class VelaWorkspace {
         if (this.drawingSyncBusy) return;
         const setting = this.syncOpts.drawings;
         if (!setting) return;
+        const present = new Set(this.drawingSyncTargets(originId, setting));
         this.drawingSyncBusy = true;
         try {
             for (const id of syncTargets(originId, setting, [...this.cellsById.keys()])) {
                 const peerId = group.get(id);
-                if (peerId != null) this.cellsById.get(id)?.chart.drawings.remove(peerId);
+                if (peerId == null) continue;
+                const peer = this.cellsById.get(id);
+                if (present.has(id)) peer?.chart.drawings.remove(peerId);
+                else if (peer?.chart.drawings.getClearOnSymbolChange()) this.drawingRemovalsOwed.add(this.drawingLinkKey(market, id, peerId));
             }
         } finally {
             this.drawingSyncBusy = false;
@@ -2161,7 +2915,12 @@ export class VelaWorkspace {
             if (origin.symbol) {
                 for (const id of syncTargets(originId, this.syncOpts.symbol, ids)) this.cellsById.get(id)?.setSymbol(origin.symbol);
             }
-            for (const id of syncTargets(originId, this.syncOpts.timeframe, ids)) this.cellsById.get(id)?.setTimeframe(origin.timeframe);
+            // The REQUESTED timeframe links, never a fallback a symbol's source forced; a
+            // follower that already requests it keeps whatever fallback its own symbol needs.
+            for (const id of syncTargets(originId, this.syncOpts.timeframe, ids)) {
+                const follower = this.cellsById.get(id);
+                if (follower && follower.requestedTimeframe !== origin.requestedTimeframe) follower.setTimeframe(origin.requestedTimeframe);
+            }
         } finally {
             this.syncBusy = false;
         }
@@ -2193,10 +2952,16 @@ export class VelaWorkspace {
      *  renderer actually applied. */
     private onCellPriceStyleChanged(id: string): void {
         this.markStateDirty();
+        this.projectCellPriceStyle(id);
+    }
+
+    /** The topbar style button/menu from the cell, if active: the style it draws and the
+     *  styles its symbol's data cannot draw (greyed). */
+    private projectCellPriceStyle(id: string): void {
         if (id !== this.activeId) return;
         const cell = this.cellsById.get(id);
         if (!cell) return;
-        this.topbar.setPriceStyle(cell.priceStyle);
+        this.topbar.setPriceStyle(cell.priceStyle, cell.unavailablePriceStyles());
     }
 
     /** Trigger ② — a cell's indicator ledger changed: count + picker only if active. */
@@ -2228,6 +2993,7 @@ export class VelaWorkspace {
      *  change). Close the open surfaces — a desktop card must not linger over the
      *  mobile chrome (and vice versa) — and re-present every cell's own chrome. */
     private onLayoutModeChange(mode: LayoutMode): void {
+        if (mode === 'mobile') this.setFullscreen(false); // a touch layout has no key to leave with
         this.symbolPicker.close();
         this.indicatorPicker?.close();
         this.tfDrawer?.close();
@@ -2243,6 +3009,45 @@ export class VelaWorkspace {
             cell.setControlsSuspended(mode === 'mobile'); // the mobile bar's maximize stop replaces the cluster
         }
         this.syncCellPresentation(); // the legend's overview override is mode-scoped
+        // A contributed action's `when` may read the layout: its bar stop is decided again.
+        this.mobileBar?.renderActions();
+    }
+
+    /** Whether a built-in topbar item shows: in the host's composition, and not hidden by a plugin. */
+    private topbarVisible(id: string): boolean {
+        return topbarHas(this.topbarComp, id) && !this.topbarHidden.has(id);
+    }
+
+    /** `ctx.topbar.setVisible` — the item and every other entry point of it (drawer row, bar stop, chord). */
+    private setTopbarItemVisible(id: string, visible: boolean): void {
+        if (id === 'actions' || !(TOPBAR_BUILTIN_IDS as readonly string[]).includes(id)) return;
+        if (visible === !this.topbarHidden.has(id)) return;
+        if (visible) this.topbarHidden.delete(id);
+        else this.topbarHidden.add(id);
+        this.topbar.setItemVisible(id, visible);
+        // The drawer reads the composition when it is built: the next open rebuilds it.
+        this.moreDrawer?.destroy();
+        this.moreDrawer = null;
+        if (id === 'indicators') this.mobileBar?.setIndicatorsVisible(visible);
+        if (id === 'alerts' && !visible) {
+            this.alertsMenu?.destroy();
+            this.alertsMenu = null;
+        }
+        if (id === 'screenshot') {
+            if (visible) this.registerScreenshotKey();
+            else {
+                // The binding's own disposer: a user's rebinding of the chord survives the hide.
+                this.screenshotKeyOff?.();
+                this.screenshotKeyOff = null;
+            }
+        }
+        if (id === 'fullscreen') {
+            if (visible) this.registerFullscreenKey();
+            else {
+                this.fullscreenKeyOff?.();
+                this.fullscreenKeyOff = null;
+            }
+        }
     }
 
     /** Push the layout-shape-dependent chrome onto every cell: multi-cell grids keep
@@ -2273,6 +3078,7 @@ export class VelaWorkspace {
                 this.bottombar?.setActiveRange(preset.id); // the desktop bar stays truthful across a mode flip
             },
             onOpenChange: (open) => this.trackDialog(open),
+            i18n: this.localeState,
         });
         this.tfDrawer.open();
     }
@@ -2286,28 +3092,34 @@ export class VelaWorkspace {
             onFavorite: (type, on) => this.active.chart.drawings.setFavorite(type, on),
             onSelect: (type) => this.active.chart.drawings.setTool(type),
             onOpenChange: (open) => this.trackDialog(open),
+            i18n: () => this.localeState,
         });
         this.drawingsDrawer.open();
     }
 
     private openMoreDrawer(): void {
-        // The drawer is the mobile counterpart of the topbar's tools — composition-
-        // hidden entries lose their drawer rows too (handlers omitted ⇒ rows omitted).
-        const has = (id: string): boolean => topbarHas(this.topbarComp, id);
+        // The drawer is the mobile counterpart of the topbar's tools — hidden entries (by
+        // the composition or a plugin) lose their drawer rows too (handlers omitted ⇒ rows omitted).
+        const has = (id: string): boolean => this.topbarVisible(id);
         this.moreDrawer ??= new MoreDrawer({
             host: this.root,
+            i18n: this.localeState,
             ...(has('undo-redo') ? { onUndo: () => this.active.history.undo(), onRedo: () => this.active.history.redo() } : {}),
             ...(has('screenshot')
                 ? { onScreenshot: this.screenshotOverride ? () => this.runOverride(this.screenshotOverride!) : () => this.downloadScreenshot() }
                 : {}),
             canUndo: () => this.active.history.canUndo,
             canRedo: () => this.active.history.canRedo,
-            priceStyles: () => priceStyleIds().map((id) => ({ id, label: priceStyleLabel(id), icon: priceStyleIcon(id) })),
+            priceStyles: () => {
+                const unavailable = new Set(this.active.unavailablePriceStyles());
+                const why = textOf(this.localeState, PRICE_STYLE_UNAVAILABLE);
+                return priceStyleIds().map((id) => ({ id, label: priceStyleLabel(id, this.localeState), icon: priceStyleIcon(id), ...(unavailable.has(id) ? { unavailable: true, title: why } : {}) }));
+            },
             priceStyle: () => this.active.priceStyle,
             onPriceStyle: (id) => this.active.setPriceStyle(id),
             panels: () => (has('panels') ? [...this.dock.list()] : []),
             onTogglePanel: (id) => this.dock.toggle(id),
-            ...(has('alerts') ? { alerts: () => this.alerts.map((a) => ({ title: `${a.source} · ${a.title}`, message: a.message, time: a.time })) } : {}),
+            ...(has('alerts') ? { alerts: () => this.alerts.map((a) => ({ title: this.t(TEXT.alertDrawerTitle, { source: a.source, title: a.title }), message: a.message, time: a.time })) } : {}),
             // Actions placed on the bottom bar (left-aligned by default) have their stop
             // there — only the menu-placed ones land in the drawer, or they would appear
             // twice: left (primary) ones with the primary rows, right ones at the end.
@@ -2322,17 +3134,12 @@ export class VelaWorkspace {
             layout: this.monoLayout || !has('layout') ? undefined : {
                 shape: () => layoutShape(this.def),
                 presets: () =>
-                    layouts()
+                    layouts(this.localeState)
                         .filter((l) => layoutShape(l) === null)
                         .map((l) => ({ id: l.id, label: l.label, checked: l.id === this.def.id })),
                 onSelectGrid: (rows, cols) => this.setLayout(layoutForGrid(rows, cols)),
                 onSelectPreset: (id) => this.setLayout(id),
-                syncs: () => [
-                    { id: 'symbol', label: 'Symbol', checked: this.syncOpts.symbol === true },
-                    { id: 'timeframe', label: 'Interval', checked: this.syncOpts.timeframe === true },
-                    { id: 'crosshair', label: 'Crosshair', checked: this.syncOpts.crosshair === true },
-                    { id: 'style', label: 'Style', checked: this.syncOpts.style === true },
-                ],
+                syncs: () => this.syncRows(),
                 onToggleSync: (id) => {
                     const kind = id as SyncKind;
                     this.sync.set(kind, this.syncOpts[kind] ? false : true);
@@ -2344,12 +3151,30 @@ export class VelaWorkspace {
         this.moreDrawer.open();
     }
 
-    /** The contributed topbar actions the mobile menu lists, from one cluster. */
+    /** The contributed actions the mobile menu lists, from one cluster — the sidebar's (hidden
+     *  on the mobile layout) close the right one. */
     private drawerActions(cluster: 'left' | 'right'): Array<{ label: string; icon?: string; run: () => void }> {
         const builtin = new Set<string>(TOPBAR_BUILTIN_IDS);
-        return widgetActions('topbar', this.context())
-            .filter((a) => mobilePlacement(a) === 'menu' && (a.align === 'left') === (cluster === 'left') && !builtin.has(a.id))
-            .map((a) => ({ label: a.label, icon: a.icon, run: () => a.run(this.context()) }));
+        const ctx = this.context();
+        const topbar = widgetActions('topbar', ctx).filter((a) => mobilePlacement(a) === 'menu' && (a.align === 'left') === (cluster === 'left') && !builtin.has(a.id));
+        // Only the sidebar actions that show there: the host's composition and runtime hiding decide.
+        const sidebar = this.sidebar && cluster === 'right' ? sidebarActions(ctx).filter((a) => this.sidebar!.isVisible(a.id)) : [];
+        return [...topbar, ...sidebar].map((a) => ({ label: this.t(a.label), icon: a.icon, run: () => a.run(this.context()) }));
+    }
+
+    /** Display text in the workspace's language. */
+    private t(text: MessageLike, values?: MessageArgs): string {
+        return textOf(this.localeState, text, values);
+    }
+
+    /** The layout SYNC switches (the topbar dropdown and the mobile drawer list the same). */
+    private syncRows(): Array<{ id: string; label: string; checked: boolean }> {
+        return [
+            { id: 'symbol', label: this.t(TEXT.syncSymbol), checked: this.syncOpts.symbol === true },
+            { id: 'timeframe', label: this.t(TEXT.syncInterval), checked: this.syncOpts.timeframe === true },
+            { id: 'crosshair', label: this.t(TEXT.syncCrosshair), checked: this.syncOpts.crosshair === true },
+            { id: 'style', label: this.t(TEXT.syncStyle), checked: this.syncOpts.style === true },
+        ];
     }
 
     private openTimezoneDrawer(): void {
@@ -2358,6 +3183,7 @@ export class VelaWorkspace {
             timezone: () => this.timezone,
             onTimezone: (zone) => this.setTimezone(zone),
             onOpenChange: (open) => this.trackDialog(open),
+            i18n: this.localeState,
         });
         this.timezoneDrawer.open();
     }
@@ -2379,10 +3205,10 @@ export class VelaWorkspace {
         const items = this.alerts.length
             ? this.alerts.map((a, i) => ({
                   id: String(i),
-                  label: `${a.source} · ${new Date(a.time).toLocaleTimeString()} · ${a.title}: ${a.message}`.slice(0, 80),
+                  label: sliceGraphemes(this.t(TEXT.alertRow, { source: a.source, time: eventTimeText(a.time, this.localeState), title: a.title, message: a.message }), ALERT_ROW_MAX),
               }))
-            : [{ id: 'none', label: 'No alerts yet', disabled: true }];
-        this.alertsMenu = new Menu({
+            : [{ id: 'none', label: this.t(TEXT.noAlerts), disabled: true }];
+        this.alertsMenu = new DropdownMenu({
             host: this.root,
             items,
             onSelect: (id) => {
@@ -2412,6 +3238,33 @@ export class VelaWorkspace {
         if (!action.when || action.when(ctx)) action.run(ctx);
     }
 
+    /** The screenshot chord, while the screenshot slot shows. */
+    private registerScreenshotKey(): void {
+        if (!this.topbarVisible('screenshot')) return;
+        const ov = this.screenshotOverride;
+        this.screenshotKeyOff = this.keymap.register({
+            id: 'chart.screenshot',
+            keys: 'mod+alt+s',
+            label: ov ? ov.label : TEXT.screenshot,
+            category: TEXT.categoryChart,
+            run: ov ? () => this.runOverride(ov) : () => this.downloadScreenshot(),
+        });
+    }
+
+    /** The full screen chord, while the full screen slot shows. `setFullscreen` works either way. */
+    private registerFullscreenKey(): void {
+        if (!this.topbarVisible('fullscreen')) return;
+        this.fullscreenKeyOff = this.keymap.register({
+            id: 'chart.fullscreen',
+            keys: 'alt+enter',
+            label: TEXT.fullscreen,
+            category: TEXT.categoryChart,
+            run: (ev) => {
+                if (!ev.repeat) this.toggleFullscreen();
+            },
+        });
+    }
+
     /** The default shortcut set — every binding acts on the ACTIVE cell. */
     private registerDefaultKeys(): void {
         // The screenshot chord belongs to the screenshot SLOT — a composition that
@@ -2419,34 +3272,26 @@ export class VelaWorkspace {
         // the chord over (a host replacing the surface must not keep the old behavior
         // reachable). Ctrl+Z/Y below are editing primitives and stay regardless of the
         // 'undo-redo' buttons.
-        if (topbarHas(this.topbarComp, 'screenshot')) {
-            const ov = this.screenshotOverride;
-            this.keymap.register({
-                id: 'chart.screenshot',
-                keys: 'mod+alt+s',
-                label: ov ? ov.label : 'Download a screenshot of the layout',
-                category: 'Chart',
-                run: ov ? () => this.runOverride(ov) : () => this.downloadScreenshot(),
-            });
-        }
-        this.keymap.register({ id: 'chart.reset-view', keys: 'alt+r', label: 'Reset view (all history)', category: 'Chart', run: () => this.active.chart.setVisibleRangePreset('ALL') });
-        this.keymap.register({ id: 'chart.toggle-log', keys: 'alt+l', label: 'Toggle logarithmic scale', category: 'Chart', run: () => this.active.chart.renderer.set('logScale', !this.active.chart.renderer.get('logScale')) });
+        this.registerScreenshotKey();
+        this.registerFullscreenKey(); // same rule: the chord goes with its slot
+        this.keymap.register({ id: 'chart.reset-view', keys: 'alt+r', label: TEXT.resetView, category: TEXT.categoryChart, run: () => this.active.resetView() });
+        this.keymap.register({ id: 'chart.toggle-log', keys: 'alt+l', label: TEXT.toggleLog, category: TEXT.categoryChart, run: () => this.active.chart.renderer.set('logScale', !this.active.chart.renderer.get('logScale')) });
         this.keymap.register({
             id: 'chart.toggle-percent',
             keys: 'alt+p',
-            label: 'Toggle percent scale',
-            category: 'Chart',
+            label: TEXT.togglePercent,
+            category: TEXT.categoryChart,
             run: () => {
                 const mode = this.active.chart.renderer.get('scaleMode');
                 this.active.chart.renderer.set('scaleMode', mode === 'percent' ? 'price' : 'percent');
             },
         });
-        this.keymap.register({ id: 'drawings.trendline', keys: 'alt+t', label: 'Arm the trend line tool', category: 'Drawings', run: () => this.active.chart.drawings.setTool('trendline') });
+        this.keymap.register({ id: 'drawings.trendline', keys: 'alt+t', label: TEXT.trendline, category: TEXT.categoryDrawings, run: () => this.active.chart.drawings.setTool('trendline') });
         this.keymap.register({
             id: 'drawings.hline-cursor',
             keys: 'alt+h',
-            label: 'Horizontal line at the cursor price',
-            category: 'Drawings',
+            label: TEXT.hlineCursor,
+            category: TEXT.categoryDrawings,
             run: () => {
                 const c = this.active;
                 if (c.lastCrossTime != null && c.lastCrossPrice != null) c.chart.drawings.add('hline', { anchors: [{ time: c.lastCrossTime, price: c.lastCrossPrice }] });
@@ -2455,35 +3300,35 @@ export class VelaWorkspace {
         this.keymap.register({
             id: 'drawings.vline-cursor',
             keys: 'alt+v',
-            label: 'Vertical line at the cursor time',
-            category: 'Drawings',
+            label: TEXT.vlineCursor,
+            category: TEXT.categoryDrawings,
             run: () => {
                 const c = this.active;
                 if (c.lastCrossTime != null && c.lastCrossPrice != null) c.chart.drawings.add('vline', { anchors: [{ time: c.lastCrossTime, price: c.lastCrossPrice }] });
             },
         });
-        this.keymap.register({ id: 'history.undo', keys: ['mod+z'], label: 'Undo (active chart)', category: 'Edit', run: () => this.active.history.undo() });
-        this.keymap.register({ id: 'history.redo', keys: ['mod+y', 'mod+shift+z'], label: 'Redo (active chart)', category: 'Edit', run: () => this.active.history.redo() });
-        this.keymap.register({ id: 'view.zoom-in', keys: 'mod+arrowup', label: 'Zoom in', category: 'Chart', run: () => this.glider.zoom(ZOOM_IN) });
-        this.keymap.register({ id: 'view.zoom-out', keys: 'mod+arrowdown', label: 'Zoom out', category: 'Chart', run: () => this.glider.zoom(ZOOM_OUT) });
+        this.keymap.register({ id: 'history.undo', keys: ['mod+z'], label: TEXT.undo, category: TEXT.categoryEdit, run: () => this.active.history.undo() });
+        this.keymap.register({ id: 'history.redo', keys: ['mod+y', 'mod+shift+z'], label: TEXT.redo, category: TEXT.categoryEdit, run: () => this.active.history.redo() });
+        this.keymap.register({ id: 'view.zoom-in', keys: 'mod+arrowup', label: TEXT.zoomIn, category: TEXT.categoryChart, run: () => this.glider.zoom(ZOOM_IN) });
+        this.keymap.register({ id: 'view.zoom-out', keys: 'mod+arrowdown', label: TEXT.zoomOut, category: TEXT.categoryChart, run: () => this.glider.zoom(ZOOM_OUT) });
         // Pan keys mirror a drag exactly (same clamp, same easing) — see Vela.panBy.
-        this.keymap.register({ id: 'view.pan-left', keys: 'mod+arrowleft', label: 'Pan toward history', category: 'Chart', run: () => this.active.chart.panBy(-PAN_FAST) });
-        this.keymap.register({ id: 'view.pan-right', keys: 'mod+arrowright', label: 'Pan toward now', category: 'Chart', run: () => this.active.chart.panBy(PAN_FAST) });
+        this.keymap.register({ id: 'view.pan-left', keys: 'mod+arrowleft', label: TEXT.panLeft, category: TEXT.categoryChart, run: () => this.active.chart.panBy(-PAN_FAST) });
+        this.keymap.register({ id: 'view.pan-right', keys: 'mod+arrowright', label: TEXT.panRight, category: TEXT.categoryChart, run: () => this.active.chart.panBy(PAN_FAST) });
         // `/` belongs to the indicators SLOT: it opens the built-in picker, or routes
         // to the slot's override — a replaced Indicators surface keeps its shortcut.
         const indOv = this.indicatorsOverride;
         if (indOv && topbarHas(this.topbarComp, 'indicators')) {
-            this.keymap.register({ id: 'indicators.open', keys: '/', label: indOv.label, category: 'Indicators', run: () => this.runOverride(indOv) });
+            this.keymap.register({ id: 'indicators.open', keys: '/', label: indOv.label, category: TEXT.categoryIndicators, run: () => this.runOverride(indOv) });
         } else if (this.indicatorPicker) {
-            this.keymap.register({ id: 'indicators.open', keys: '/', label: 'Open the indicator picker', category: 'Indicators', run: () => this.indicatorPicker?.open() });
+            this.keymap.register({ id: 'indicators.open', keys: '/', label: TEXT.openIndicators, category: TEXT.categoryIndicators, run: () => this.indicatorPicker?.open() });
         }
         this.keymap.register({
             id: 'help.shortcuts',
             keys: '?',
-            label: 'Show this shortcuts panel',
-            category: 'Help',
+            label: TEXT.showShortcuts,
+            category: TEXT.categoryHelp,
             run: () => {
-                this.shortcutsHelp ??= new ShortcutsHelp(this.keymap, this.root, (open) => this.trackDialog(open));
+                this.shortcutsHelp ??= new ShortcutsHelp(this.keymap, this.root, (open) => this.trackDialog(open), () => this.localeState, { symbolMenuFromKey: this.symbolMenuFromKey });
                 this.shortcutsHelp.open();
             },
         });
@@ -2493,8 +3338,10 @@ export class VelaWorkspace {
     private routeTyping(ev: KeyboardEvent): void {
         if (this.destroyed) return;
         if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+        // An input method composing a character (kana, hangul, pinyin) owns its keystrokes.
+        if (ev.isComposing || ev.key === 'Process') return;
         if (isEditableTarget(ev)) return; // never hijack a keystroke someone is TYPING
-        const hit = resolveTyping(ev.key, { dialogs: this.openDialogs, symbolSearch: this.symbolPicker.isOpen, timeframeEntry: this.tfQuick.isOpen });
+        const hit = resolveTyping(ev.key, { dialogs: this.openDialogs, symbolSearch: this.symbolPicker.isOpen, timeframeEntry: this.tfQuick.isOpen, symbolMenuFromKey: this.symbolMenuFromKey });
         if (!hit) return;
         ev.preventDefault();
         if (hit.target === 'symbol') this.symbolPicker.type(hit.text);

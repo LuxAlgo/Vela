@@ -1,3 +1,6 @@
+import { msg } from '../i18n/message';
+import { textOf } from '../i18n/text';
+import type { MessageLike, Translator } from '../i18n/types';
 import { Drawing, type DrawingTypeKey, type SerializedDrawing } from './Drawing';
 import type { DrawingStyle } from './style';
 import { DEFAULT_DRAWING_COLOR } from './style';
@@ -84,7 +87,8 @@ export interface DrawingTypeMeta {
     type: DrawingTypeKey;
     /** Toolbar group id (e.g. `'lines'`, `'shapes'`, `'annotations'`). */
     group: string;
-    label: string;
+    /** The tool's name (toolbar, settings, object tree); a message reads in the chart's language. */
+    label: MessageLike;
     /** Inline SVG markup for the toolbar button — no DOM, renderer paints it. */
     icon: string;
     defaultStyle: DrawingStyle;
@@ -94,7 +98,7 @@ export interface DrawingTypeMeta {
     coversSeries?: boolean;
     /** One short sentence prompting the placement gesture, shown by the renderer at the
      *  bottom of the chart while the tool is armed and no placement has started yet. */
-    placementHint?: string;
+    placementHint?: MessageLike;
     /** Build an instance from a (partial) serialized record. Serves create + deserialize. */
     create(init: Partial<SerializedDrawing> & { paneId: string }): Drawing;
 }
@@ -107,11 +111,35 @@ export function registerDrawingType(meta: DrawingTypeMeta): void {
     REGISTRY.set(meta.type, meta);
 }
 
-export function getDrawingType(type: string): DrawingTypeMeta | undefined {
+/** A registered type as the read APIs hand it out: its label and hint as plain text. */
+export type ResolvedDrawingTypeMeta = DrawingTypeMeta & { label: string; placementHint?: string };
+
+function resolved(meta: DrawingTypeMeta, i18n: Translator | undefined): ResolvedDrawingTypeMeta {
+    if (typeof meta.label === 'string' && (meta.placementHint === undefined || typeof meta.placementHint === 'string')) return meta as ResolvedDrawingTypeMeta;
+    const out: ResolvedDrawingTypeMeta = { ...meta, label: textOf(i18n, meta.label), placementHint: undefined };
+    if (meta.placementHint !== undefined) out.placementHint = textOf(i18n, meta.placementHint);
+    else delete out.placementHint;
+    return out;
+}
+
+/** A registered drawing type, its label and hint in `i18n`'s language (English without one). */
+export function getDrawingType(type: string, i18n?: Translator): ResolvedDrawingTypeMeta | undefined {
+    const meta = REGISTRY.get(type);
+    return meta ? resolved(meta, i18n) : undefined;
+}
+
+/** Every registered drawing type, labels in `i18n`'s language (English without one). */
+export function drawingTypes(i18n?: Translator): ResolvedDrawingTypeMeta[] {
+    return [...REGISTRY.values()].map((meta) => resolved(meta, i18n));
+}
+
+/** A registered type exactly as registered, its label still a message. */
+export function drawingTypeEntry(type: string): DrawingTypeMeta | undefined {
     return REGISTRY.get(type);
 }
 
-export function drawingTypes(): DrawingTypeMeta[] {
+/** Every registered type exactly as registered. */
+export function drawingTypeEntries(): DrawingTypeMeta[] {
     return [...REGISTRY.values()];
 }
 
@@ -160,7 +188,7 @@ const HLINE_ICON = svg24('<line x1="3" y1="12" x2="21" y2="12"/>');
 registerDrawingType({
     type: 'trendline',
     group: 'lines',
-    label: 'Trend Line',
+    label: msg('drawing.trendline.label', 'Trend Line'),
     icon: LINE_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 2, lineStyle: 'solid' },
     create: (init) => new TrendLine(init),
@@ -169,7 +197,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'hline',
     group: 'lines',
-    label: 'Horizontal Line',
+    label: msg('drawing.hline.label', 'Horizontal Line'),
     icon: HLINE_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 2, lineStyle: 'dashed' },
     create: (init) => new HorizontalLine(init),
@@ -182,7 +210,7 @@ const TEXT_ICON = svg24('<path d="M5 6h14M12 6v13"/>');
 registerDrawingType({
     type: 'ray',
     group: 'lines',
-    label: 'Ray',
+    label: msg('drawing.ray.label', 'Ray'),
     icon: RAY_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 2, lineStyle: 'solid' },
     create: (init) => new Ray(init),
@@ -203,7 +231,7 @@ const TRENDANGLE_ICON =
 registerDrawingType({
     type: 'extendedline',
     group: 'lines',
-    label: 'Extended Line',
+    label: msg('drawing.extendedline.label', 'Extended Line'),
     icon: EXTLINE_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 2, lineStyle: 'solid' },
     create: (init) => new ExtendedLine(init),
@@ -212,7 +240,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'vline',
     group: 'lines',
-    label: 'Vertical Line',
+    label: msg('drawing.vline.label', 'Vertical Line'),
     icon: VLINE_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 2, lineStyle: 'solid' },
     create: (init) => new VerticalLine(init),
@@ -221,7 +249,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'hray',
     group: 'lines',
-    label: 'Horizontal Ray',
+    label: msg('drawing.hray.label', 'Horizontal Ray'),
     icon: HRAY_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 2, lineStyle: 'solid' },
     create: (init) => new HorizontalRay(init),
@@ -230,7 +258,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'crossline',
     group: 'lines',
-    label: 'Cross Line',
+    label: msg('drawing.crossline.label', 'Cross Line'),
     icon: CROSSLINE_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new CrossLine(init),
@@ -239,7 +267,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'infoline',
     group: 'lines',
-    label: 'Info Line',
+    label: msg('drawing.infoline.label', 'Info Line'),
     icon: INFOLINE_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 2, lineStyle: 'solid' },
     create: (init) => new InfoLine(init),
@@ -248,7 +276,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'trendangle',
     group: 'lines',
-    label: 'Trend Angle',
+    label: msg('drawing.trendangle.label', 'Trend Angle'),
     icon: TRENDANGLE_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 2, lineStyle: 'solid' },
     create: (init) => new TrendAngle(init),
@@ -257,7 +285,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'box',
     group: 'shapes',
-    label: 'Rectangle',
+    label: msg('drawing.box.label', 'Rectangle'),
     icon: BOX_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid', fillColor: `${DEFAULT_DRAWING_COLOR}26` },
     create: (init) => new Box(init),
@@ -266,7 +294,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'text',
     group: 'annotations',
-    label: 'Text',
+    label: msg('drawing.text.label', 'Text'),
     icon: TEXT_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new TextLabel(init),
@@ -278,7 +306,7 @@ const CALLOUT_ICON =
 registerDrawingType({
     type: 'callout',
     group: 'annotations',
-    label: 'Callout',
+    label: msg('drawing.callout.label', 'Callout'),
     icon: CALLOUT_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid', fillColor: `${DEFAULT_DRAWING_COLOR}d9` },
     create: (init) => new Callout(init),
@@ -293,7 +321,7 @@ const SIGNPOST_ICON = svg24('<path d="M12 11.5V21"/><rect x="5" y="4" width="14"
 registerDrawingType({
     type: 'note',
     group: 'annotations',
-    label: 'Note',
+    label: msg('drawing.note.label', 'Note'),
     icon: NOTE_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid', fillColor: `${DEFAULT_DRAWING_COLOR}d9` },
     create: (init) => new Note(init),
@@ -302,7 +330,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'pricenote',
     group: 'annotations',
-    label: 'Price Note',
+    label: msg('drawing.pricenote.label', 'Price Note'),
     icon: PRICE_NOTE_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid', fillColor: `${DEFAULT_DRAWING_COLOR}d9` },
     create: (init) => new PriceNote(init),
@@ -311,7 +339,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'comment',
     group: 'annotations',
-    label: 'Comment',
+    label: msg('drawing.comment.label', 'Comment'),
     icon: COMMENT_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid', fillColor: `${DEFAULT_DRAWING_COLOR}d9` },
     create: (init) => new Comment(init),
@@ -320,7 +348,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'pricelabel',
     group: 'annotations',
-    label: 'Price Label',
+    label: msg('drawing.pricelabel.label', 'Price Label'),
     icon: PRICE_LABEL_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid', fillColor: `${DEFAULT_DRAWING_COLOR}d9` },
     create: (init) => new PriceLabel(init),
@@ -329,7 +357,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'signpost',
     group: 'annotations',
-    label: 'Signpost',
+    label: msg('drawing.signpost.label', 'Signpost'),
     icon: SIGNPOST_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid', fillColor: `${DEFAULT_DRAWING_COLOR}d9` },
     create: (init) => new Signpost(init),
@@ -346,7 +374,7 @@ const PITCHFORK_ICON =
 registerDrawingType({
     type: 'parallelchannel',
     group: 'channels',
-    label: 'Parallel Channel',
+    label: msg('drawing.parallelchannel.label', 'Parallel Channel'),
     icon: PARALLEL_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 2, lineStyle: 'solid', fillColor: `${DEFAULT_DRAWING_COLOR}1a` },
     create: (init) => new ParallelChannel(init),
@@ -355,7 +383,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'disjointchannel',
     group: 'channels',
-    label: 'Disjoint Channel',
+    label: msg('drawing.disjointchannel.label', 'Disjoint Channel'),
     icon: DISJOINT_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 2, lineStyle: 'solid', fillColor: `${DEFAULT_DRAWING_COLOR}1a` },
     create: (init) => new DisjointChannel(init),
@@ -367,7 +395,7 @@ const FLATTOP_ICON =
 registerDrawingType({
     type: 'flattopbottom',
     group: 'channels',
-    label: 'Flat Top/Bottom',
+    label: msg('drawing.flattopbottom.label', 'Flat Top/Bottom'),
     icon: FLATTOP_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 2, lineStyle: 'solid', fillColor: `${DEFAULT_DRAWING_COLOR}1a` },
     create: (init) => new FlatTopBottom(init),
@@ -379,7 +407,7 @@ const REGRESSION_ICON =
 registerDrawingType({
     type: 'regressionchannel',
     group: 'channels',
-    label: 'Linear Regression',
+    label: msg('drawing.regressionchannel.label', 'Linear Regression'),
     icon: REGRESSION_ICON,
     defaultStyle: { lineColor: NEUTRAL, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new RegressionChannel(init),
@@ -388,7 +416,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'pitchfork',
     group: 'pitchforks',
-    label: 'Pitchfork',
+    label: msg('drawing.pitchfork.label', 'Pitchfork'),
     icon: PITCHFORK_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 2, lineStyle: 'solid' },
     create: (init) => new Pitchfork(init),
@@ -404,7 +432,7 @@ const INSIDE_ICON =
 registerDrawingType({
     type: 'schiffpitchfork',
     group: 'pitchforks',
-    label: 'Schiff Pitchfork',
+    label: msg('drawing.schiffpitchfork.label', 'Schiff Pitchfork'),
     icon: SCHIFF_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 2, lineStyle: 'solid' },
     create: (init) => new SchiffPitchfork(init),
@@ -413,7 +441,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'modifiedschiffpitchfork',
     group: 'pitchforks',
-    label: 'Modified Schiff Pitchfork',
+    label: msg('drawing.modifiedschiffpitchfork.label', 'Modified Schiff Pitchfork'),
     icon: MODSCHIFF_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 2, lineStyle: 'solid' },
     create: (init) => new ModifiedSchiffPitchfork(init),
@@ -422,7 +450,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'insidepitchfork',
     group: 'pitchforks',
-    label: 'Inside Pitchfork',
+    label: msg('drawing.insidepitchfork.label', 'Inside Pitchfork'),
     icon: INSIDE_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 2, lineStyle: 'solid' },
     create: (init) => new InsidePitchfork(init),
@@ -438,7 +466,7 @@ const TRIANGLE_ICON =
 registerDrawingType({
     type: 'arrow',
     group: 'shapes',
-    label: 'Arrow',
+    label: msg('drawing.arrow.label', 'Arrow'),
     icon: ARROW_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 2, lineStyle: 'solid', arrowRight: true },
     create: (init) => new Arrow(init),
@@ -447,7 +475,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'ellipse',
     group: 'shapes',
-    label: 'Ellipse',
+    label: msg('drawing.ellipse.label', 'Ellipse'),
     icon: ELLIPSE_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 2, lineStyle: 'solid', fillColor: `${DEFAULT_DRAWING_COLOR}1a` },
     create: (init) => new Ellipse(init),
@@ -456,7 +484,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'triangle',
     group: 'shapes',
-    label: 'Triangle',
+    label: msg('drawing.triangle.label', 'Triangle'),
     icon: TRIANGLE_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 2, lineStyle: 'solid', fillColor: `${DEFAULT_DRAWING_COLOR}1a` },
     create: (init) => new Triangle(init),
@@ -472,7 +500,7 @@ const HIGHLIGHTER_ICON =
 registerDrawingType({
     type: 'polyline',
     group: 'shapes',
-    label: 'Polyline',
+    label: msg('drawing.polyline.label', 'Polyline'),
     icon: POLYLINE_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 2, lineStyle: 'solid' },
     create: (init) => new Polyline(init),
@@ -481,7 +509,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'freehand',
     group: 'shapes',
-    label: 'Brush',
+    label: msg('drawing.freehand.label', 'Brush'),
     icon: FREEHAND_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 2, lineStyle: 'solid' },
     create: (init) => new Freehand(init),
@@ -490,7 +518,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'highlighter',
     group: 'shapes',
-    label: 'Highlighter',
+    label: msg('drawing.highlighter.label', 'Highlighter'),
     icon: HIGHLIGHTER_ICON,
     // A marker: wide + translucent by default (the alpha in the color is the highlight's see-through).
     defaultStyle: { lineColor: `${MARKER}59`, lineWidth: 14, lineStyle: 'solid' },
@@ -512,7 +540,7 @@ const ARROW_DOWN_ICON =
 registerDrawingType({
     type: 'circle',
     group: 'shapes',
-    label: 'Circle',
+    label: msg('drawing.circle.label', 'Circle'),
     icon: CIRCLE_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 2, lineStyle: 'solid', fillColor: `${DEFAULT_DRAWING_COLOR}1a` },
     create: (init) => new Circle(init),
@@ -521,7 +549,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'rotatedrect',
     group: 'shapes',
-    label: 'Rotated Rectangle',
+    label: msg('drawing.rotatedrect.label', 'Rotated Rectangle'),
     icon: ROTRECT_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 2, lineStyle: 'solid', fillColor: `${DEFAULT_DRAWING_COLOR}26` },
     create: (init) => new RotatedRect(init),
@@ -530,7 +558,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'path',
     group: 'shapes',
-    label: 'Path',
+    label: msg('drawing.path.label', 'Path'),
     icon: PATH_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 2, lineStyle: 'solid' },
     create: (init) => new Path(init),
@@ -539,7 +567,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'arc',
     group: 'shapes',
-    label: 'Arc',
+    label: msg('drawing.arc.label', 'Arc'),
     icon: ARC_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 2, lineStyle: 'solid', fillColor: `${DEFAULT_DRAWING_COLOR}26` },
     create: (init) => new Arc(init),
@@ -548,7 +576,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'curve',
     group: 'shapes',
-    label: 'Curve',
+    label: msg('drawing.curve.label', 'Curve'),
     icon: CURVE_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 2, lineStyle: 'solid' },
     create: (init) => new Curve(init),
@@ -557,7 +585,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'arrowmarkup',
     group: 'shapes',
-    label: 'Arrow Mark Up',
+    label: msg('drawing.arrowmarkup.label', 'Arrow Mark Up'),
     icon: ARROW_UP_ICON,
     defaultStyle: { lineColor: BULLISH, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new ArrowMarkUp(init),
@@ -566,7 +594,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'arrowmarkdown',
     group: 'shapes',
-    label: 'Arrow Mark Down',
+    label: msg('drawing.arrowmarkdown.label', 'Arrow Mark Down'),
     icon: ARROW_DOWN_ICON,
     defaultStyle: { lineColor: BEARISH, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new ArrowMarkDown(init),
@@ -581,7 +609,7 @@ const ICON_STAMP_ICON =
 registerDrawingType({
     type: 'flagmark',
     group: 'stamps',
-    label: 'Flag',
+    label: msg('drawing.flagmark.label', 'Flag'),
     icon: FLAG_MARK_ICON,
     defaultStyle: { lineColor: ACCENT, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new FlagMark(init),
@@ -590,7 +618,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'iconstamp',
     group: 'stamps',
-    label: 'Icon',
+    label: msg('drawing.iconstamp.label', 'Icon'),
     icon: ICON_STAMP_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new IconStamp(init),
@@ -606,7 +634,7 @@ const FIB_EXTEND_ICON =
 registerDrawingType({
     type: 'fibretracement',
     group: 'fibonacci',
-    label: 'Fib Retracement',
+    label: msg('drawing.fibretracement.label', 'Fib Retracement'),
     icon: FIB_RETRACE_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new FibRetracement(init),
@@ -615,7 +643,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'fibextension',
     group: 'fibonacci',
-    label: 'Fib Extension',
+    label: msg('drawing.fibextension.label', 'Fib Extension'),
     icon: FIB_EXTEND_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new FibExtension(init),
@@ -627,7 +655,7 @@ const FIB_TREND_ICON =
 registerDrawingType({
     type: 'fibextensiontrend',
     group: 'fibonacci',
-    label: 'Trend-Based Fib Extension',
+    label: msg('drawing.fibextensiontrend.label', 'Trend-Based Fib Extension'),
     icon: FIB_TREND_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new FibExtensionTrend(init),
@@ -641,7 +669,7 @@ const FIB_TZ_ICON =
 registerDrawingType({
     type: 'fibfan',
     group: 'fibonacci',
-    label: 'Fib Fan',
+    label: msg('drawing.fibfan.label', 'Fib Fan'),
     icon: FIB_FAN_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new FibFan(init),
@@ -650,7 +678,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'fibtimezones',
     group: 'fibonacci',
-    label: 'Fib Time Zones',
+    label: msg('drawing.fibtimezones.label', 'Fib Time Zones'),
     icon: FIB_TZ_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'dashed' },
     create: (init) => new FibTimeZones(init),
@@ -666,7 +694,7 @@ const FIB_TRENDTIME_ICON =
 registerDrawingType({
     type: 'fibchannel',
     group: 'fibonacci',
-    label: 'Fib Channel',
+    label: msg('drawing.fibchannel.label', 'Fib Channel'),
     icon: FIB_CHANNEL_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new FibChannel(init),
@@ -675,7 +703,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'fibspeedfan',
     group: 'fibonacci',
-    label: 'Fib Speed Resistance Fan',
+    label: msg('drawing.fibspeedfan.label', 'Fib Speed Resistance Fan'),
     icon: FIB_SPEEDFAN_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new FibSpeedFan(init),
@@ -684,7 +712,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'trendfibtime',
     group: 'fibonacci',
-    label: 'Trend-Based Fib Time',
+    label: msg('drawing.trendfibtime.label', 'Trend-Based Fib Time'),
     icon: FIB_TRENDTIME_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'dashed' },
     create: (init) => new TrendFibTime(init),
@@ -702,7 +730,7 @@ const FIB_SPIRAL_ICON =
 registerDrawingType({
     type: 'fibcircles',
     group: 'fibonacci',
-    label: 'Fib Circles',
+    label: msg('drawing.fibcircles.label', 'Fib Circles'),
     icon: FIB_CIRCLES_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new FibCircles(init),
@@ -711,7 +739,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'fibarcs',
     group: 'fibonacci',
-    label: 'Fib Speed Resistance Arcs',
+    label: msg('drawing.fibarcs.label', 'Fib Speed Resistance Arcs'),
     icon: FIB_ARCS_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new FibArcs(init),
@@ -720,7 +748,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'fibwedge',
     group: 'fibonacci',
-    label: 'Fib Wedge',
+    label: msg('drawing.fibwedge.label', 'Fib Wedge'),
     icon: FIB_WEDGE_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new FibWedge(init),
@@ -729,7 +757,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'fibspiral',
     group: 'fibonacci',
-    label: 'Fib Spiral',
+    label: msg('drawing.fibspiral.label', 'Fib Spiral'),
     icon: FIB_SPIRAL_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 2, lineStyle: 'solid' },
     create: (init) => new FibSpiral(init),
@@ -744,7 +772,7 @@ const GANN_BOX_ICON =
 registerDrawingType({
     type: 'gannfan',
     group: 'fibonacci',
-    label: 'Gann Fan',
+    label: msg('drawing.gannfan.label', 'Gann Fan'),
     icon: GANN_FAN_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new GannFan(init),
@@ -753,7 +781,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'gannbox',
     group: 'fibonacci',
-    label: 'Gann Box',
+    label: msg('drawing.gannbox.label', 'Gann Box'),
     icon: GANN_BOX_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new GannBox(init),
@@ -765,7 +793,7 @@ const GANN_SQUARE_ICON =
 registerDrawingType({
     type: 'gannsquare',
     group: 'fibonacci',
-    label: 'Gann Square',
+    label: msg('drawing.gannsquare.label', 'Gann Square'),
     icon: GANN_SQUARE_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new GannSquare(init),
@@ -780,7 +808,7 @@ const DEDEKIND_ICON = svg24(
 registerDrawingType({
     type: 'dedekind',
     group: 'geometry',
-    label: 'Dedekind Tessellation',
+    label: msg('drawing.dedekind.label', 'Dedekind Tessellation'),
     icon: DEDEKIND_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new DedekindTessellation(init),
@@ -799,7 +827,7 @@ const SUPERSONIC_ICON = svg24(
 registerDrawingType({
     type: 'sonic',
     group: 'geometry',
-    label: 'Sonic',
+    label: msg('drawing.sonic.label', 'Sonic'),
     icon: SONIC_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new Sonic(init),
@@ -808,7 +836,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'supersonic',
     group: 'geometry',
-    label: 'Supersonic',
+    label: msg('drawing.supersonic.label', 'Supersonic'),
     icon: SUPERSONIC_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new Supersonic(init),
@@ -827,7 +855,7 @@ const GOLDEN_SUPERSONIC_ICON = svg24(
 registerDrawingType({
     type: 'goldensonic',
     group: 'geometry',
-    label: 'Golden Sonic',
+    label: msg('drawing.goldensonic.label', 'Golden Sonic'),
     icon: GOLDEN_SONIC_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new GoldenSonic(init),
@@ -836,7 +864,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'goldensupersonic',
     group: 'geometry',
-    label: 'Golden Supersonic',
+    label: msg('drawing.goldensupersonic.label', 'Golden Supersonic'),
     icon: GOLDEN_SUPERSONIC_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new GoldenSupersonic(init),
@@ -852,7 +880,7 @@ const HEAD_SHOULDERS_ICON = svg24('<path d="M3 18 6 12 9 16 12 5 15 16 18 12 21 
 registerDrawingType({
     type: 'xabcd',
     group: 'patterns',
-    label: 'XABCD Pattern',
+    label: msg('drawing.xabcd.label', 'XABCD Pattern'),
     icon: XABCD_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new XABCD(init),
@@ -861,7 +889,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'abcd',
     group: 'patterns',
-    label: 'ABCD Pattern',
+    label: msg('drawing.abcd.label', 'ABCD Pattern'),
     icon: ABCD_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new ABCDPattern(init),
@@ -870,7 +898,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'elliottimpulse',
     group: 'patterns',
-    label: 'Elliott Impulse Wave (1-5)',
+    label: msg('drawing.elliottimpulse.label', 'Elliott Impulse Wave (1-5)'),
     icon: ELLIOTT_IMPULSE_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new ElliottImpulse(init),
@@ -879,7 +907,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'elliottcorrection',
     group: 'patterns',
-    label: 'Elliott Correction Wave (ABC)',
+    label: msg('drawing.elliottcorrection.label', 'Elliott Correction Wave (ABC)'),
     icon: ELLIOTT_CORRECTION_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new ElliottCorrection(init),
@@ -888,7 +916,7 @@ registerDrawingType({
 registerDrawingType({
     type: 'headshoulders',
     group: 'patterns',
-    label: 'Head & Shoulders',
+    label: msg('drawing.headshoulders.label', 'Head & Shoulders'),
     icon: HEAD_SHOULDERS_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new HeadShoulders(init),
@@ -898,12 +926,12 @@ registerDrawingType({
 const HARMONIC_ICON = svg24('<path d="M3 17 7 6 12 14 17 5 21 16"/><path d="M3 17 21 16" opacity="0.45"/>');
 const harmonic = { group: 'patterns' as const, icon: HARMONIC_ICON, defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid' as const } };
 
-registerDrawingType({ type: 'gartley', label: 'Gartley', ...harmonic, create: (init) => new Gartley(init) });
-registerDrawingType({ type: 'bat', label: 'Bat', ...harmonic, create: (init) => new Bat(init) });
-registerDrawingType({ type: 'butterfly', label: 'Butterfly', ...harmonic, create: (init) => new Butterfly(init) });
-registerDrawingType({ type: 'crab', label: 'Crab', ...harmonic, create: (init) => new Crab(init) });
-registerDrawingType({ type: 'shark', label: 'Shark', ...harmonic, create: (init) => new Shark(init) });
-registerDrawingType({ type: 'cypher', label: 'Cypher', ...harmonic, create: (init) => new Cypher(init) });
+registerDrawingType({ type: 'gartley', label: msg('drawing.gartley.label', 'Gartley'), ...harmonic, create: (init) => new Gartley(init) });
+registerDrawingType({ type: 'bat', label: msg('drawing.bat.label', 'Bat'), ...harmonic, create: (init) => new Bat(init) });
+registerDrawingType({ type: 'butterfly', label: msg('drawing.butterfly.label', 'Butterfly'), ...harmonic, create: (init) => new Butterfly(init) });
+registerDrawingType({ type: 'crab', label: msg('drawing.crab.label', 'Crab'), ...harmonic, create: (init) => new Crab(init) });
+registerDrawingType({ type: 'shark', label: msg('drawing.shark.label', 'Shark'), ...harmonic, create: (init) => new Shark(init) });
+registerDrawingType({ type: 'cypher', label: msg('drawing.cypher.label', 'Cypher'), ...harmonic, create: (init) => new Cypher(init) });
 
 // ── measurement ──
 const MEASURE_ICON =
@@ -912,7 +940,7 @@ const MEASURE_ICON =
 registerDrawingType({
     type: 'datepricerange',
     group: 'measure',
-    label: 'Date & Price Range',
+    label: msg('drawing.datepricerange.label', 'Date & Price Range'),
     icon: MEASURE_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new DatePriceRange(init),
@@ -928,7 +956,7 @@ const POSITION_ICON = svg24(
 registerDrawingType({
     type: 'position',
     group: 'measure',
-    label: 'Long/Short Position',
+    label: msg('drawing.position.label', 'Long/Short Position'),
     icon: POSITION_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new PositionTool(init),
@@ -942,13 +970,13 @@ const MAGNIFIER_ICON = svg24(
 registerDrawingType({
     type: 'magnifier',
     group: 'measure',
-    label: 'Magnifier',
+    label: msg('drawing.magnifier.label', 'Magnifier'),
     icon: MAGNIFIER_ICON,
     // An empty border color means the THEME's contrast ink (white on dark, black on
     // light), resolved at paint time so it follows theme switches; a user pick wins.
     defaultStyle: { lineColor: '', lineWidth: 1, lineStyle: 'solid' },
     coversSeries: true, // the inset's backdrop must sit over the base candles it replaces
-    placementHint: 'Drag an area on the chart to view it at a lower timeframe',
+    placementHint: msg('drawing.magnifier.placementHint', 'Drag an area on the chart to view it at a lower timeframe'),
     create: (init) => new Magnifier(init),
 });
 
@@ -959,7 +987,7 @@ const VWAP_ICON =
 registerDrawingType({
     type: 'anchoredvwap',
     group: 'measure',
-    label: 'Anchored VWAP',
+    label: msg('drawing.anchoredvwap.label', 'Anchored VWAP'),
     icon: VWAP_ICON,
     defaultStyle: { lineColor: INFO, lineWidth: 2, lineStyle: 'solid' },
     create: (init) => new AnchoredVwap(init),
@@ -972,7 +1000,7 @@ const FRVP_ICON =
 registerDrawingType({
     type: 'fixedrangevp',
     group: 'measure',
-    label: 'Fixed Range Volume Profile',
+    label: msg('drawing.fixedrangevp.label', 'Fixed Range Volume Profile'),
     icon: FRVP_ICON,
     defaultStyle: { lineColor: BULLISH, lineWidth: 1, lineStyle: 'solid' },
     create: (init) => new FixedRangeVolumeProfile(init),
@@ -986,29 +1014,29 @@ const LIQUIDITY_ICON = svg24('<path d="M3 8h12" stroke-dasharray="2.5 2.5"/><pat
 registerDrawingType({
     type: 'fairvaluegap',
     group: 'priceaction',
-    label: 'Fair Value Gap',
+    label: msg('drawing.fairvaluegap.label', 'Fair Value Gap'),
     icon: FVG_ICON,
     defaultStyle: { lineColor: BULLISH, lineWidth: 1, lineStyle: 'solid' },
-    placementHint: 'Click the middle candle of a gap',
+    placementHint: msg('drawing.fairvaluegap.placementHint', 'Click the middle candle of a gap'),
     create: (init) => new FairValueGap(init),
 });
 
 registerDrawingType({
     type: 'orderblock',
     group: 'priceaction',
-    label: 'Order Block',
+    label: msg('drawing.orderblock.label', 'Order Block'),
     icon: ORDER_BLOCK_ICON,
     defaultStyle: { lineColor: BULLISH, lineWidth: 1, lineStyle: 'solid' },
-    placementHint: 'Click the candle that forms the block',
+    placementHint: msg('drawing.orderblock.placementHint', 'Click the candle that forms the block'),
     create: (init) => new OrderBlock(init),
 });
 
 registerDrawingType({
     type: 'liquidity',
     group: 'priceaction',
-    label: 'Liquidity',
+    label: msg('drawing.liquidity.label', 'Liquidity'),
     icon: LIQUIDITY_ICON,
     defaultStyle: { lineColor: WARNING, lineWidth: 1, lineStyle: 'solid' },
-    placementHint: "Click near a candle's high or low",
+    placementHint: msg('drawing.liquidity.placementHint', "Click near a candle's high or low"),
     create: (init) => new Liquidity(init),
 });

@@ -1,3 +1,6 @@
+import { msg } from '../../i18n/message';
+import { sourceText } from '../../i18n/text';
+import type { MessageLike } from '../../i18n/types';
 import { Drawing, type AnchorSlot } from '../Drawing';
 import type { Projector } from '../geometry';
 import { handleAt, pointInBox } from '../hittest';
@@ -12,14 +15,18 @@ const SIZE_PX: Record<string, number> = { tiny: 10, small: 12, normal: 14, large
  * price range are all common.
  */
 export abstract class PinnedLabel extends Drawing {
-    /** The placeholder string when no text has been entered yet. */
-    protected defaultLabel(): string {
-        return 'Text';
+    /** The placeholder text when no text has been entered yet. */
+    protected defaultLabel(): MessageLike {
+        return msg('drawing.text.placeholder', 'Text');
+    }
+
+    override placeholderText(): MessageLike | null {
+        return this.defaultLabel();
     }
 
     /** The string used to size the approximate hit box (subclasses with computed text override it). */
     protected labelText(): string {
-        return this.text?.value ?? this.defaultLabel();
+        return this.text?.value ?? sourceText(this.defaultLabel());
     }
 
     anchorSchema(): { min: number; max: number; slots: AnchorSlot[] } {

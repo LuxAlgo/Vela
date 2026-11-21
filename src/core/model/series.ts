@@ -1,3 +1,4 @@
+import type { MessageLike } from '../i18n/types';
 import type { Millis } from './time';
 import type { OHLCV } from './ohlcv';
 
@@ -80,7 +81,11 @@ export interface SeriesDisplay {
 interface SeriesBase {
     /** Content-addressed, stable across re-runs of identical source (see identity.ts). */
     id: string;
+    /** The series' name: its identity for engines and hosts (output keys, series ids). */
     title: string;
+    /** What the legend, the data window and the settings show instead of {@link title}, in
+     *  the chart's language. Absent ⇒ {@link title}. */
+    displayTitle?: MessageLike;
     /** Pane this series belongs to; resolved by the orchestrator. */
     paneId: string;
     /** Declared draw-order intent; the renderer owns final z-ordering. */
@@ -98,6 +103,12 @@ interface SeriesBase {
 
 export interface LineLikeSeries extends SeriesBase {
     kind: LineLikeKind;
+    /**
+     * One entry per bar the indicator ran over, index-aligned to the bars: entry `i` draws on
+     * bar `i`, whatever its `time`. Entries past the last bar draw on the bar slots after it,
+     * one per slot, so a series shifted forward continues into the chart's right whitespace;
+     * give them the times those slots would have. A gap is a `value: null` entry.
+     */
     points: SeriesPoint[];
     style: LineLikeStyle;
 }

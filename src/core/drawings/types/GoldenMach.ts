@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/message';
 import type { SerializedDrawing } from '../Drawing';
 import type { SettingsSchema } from '../schema';
 import { LINE_FIELDS, TEXT_FIELDS } from '../schema';
@@ -64,7 +65,7 @@ export class GoldenSupersonic extends MachFigure {
                 ...LINE_FIELDS,
                 {
                     path: 'mach',
-                    label: 'Mach number',
+                    label: msg('drawing.goldensupersonic.mach', 'Mach number'),
                     kind: 'number',
                     min: 1.5,
                     max: 5,

@@ -10,6 +10,7 @@
 // layer's render args every frame.
 import type { OHLCV } from '../../core/model/ohlcv';
 import type { VelaTheme } from '../../core/options';
+import type { Translator } from '../../core/i18n/types';
 import type { CoordinateSystem, PriceScale, PaneBounds } from './core/CoordinateSystem';
 
 /** Everything a layer needs to paint one frame. */
@@ -37,6 +38,9 @@ export interface RendererLayerArgs {
      *  that hover-test set `repaintOnCursor` on their definition so pointer moves repaint
      *  them (only data-tier frames repaint layers otherwise). */
     cursor: { x: number; y: number } | null;
+    /** The chart's translator: `i18n.t(msg(...))` for text a layer paints, and
+     *  `i18n.format` for its numbers and dates, in the chart's locale. */
+    i18n: Translator;
 }
 
 /** How a layer dims/slims the BASE painting under it (see

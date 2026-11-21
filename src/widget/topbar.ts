@@ -1,47 +1,56 @@
 // Topbar — symbol label, timeframe dropdown, and the price-style dropdown (built-ins +
 // every chart type registered through the plugin SDK, labels from the registry).
-import { Menu, type MenuItemDescriptor } from '../ui/components/menu';
-import { Tooltip } from '../ui/components/tooltip';
+import { PRICE_STYLE_UNAVAILABLE, priceStyleMessage } from '../chart-types/labels';
+import { textOf } from '../core/i18n/text';
+import { msg } from '../core/i18n/message';
+import type { MessageArgs, MessageLike, Translator } from '../core/i18n/types';
+import { DropdownMenu, type MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
+import { Tooltip } from '@luxalgo/vela-ui/tooltip';
 import { LayoutPicker, type LayoutPickerShape } from './layout-picker';
-import { iconEl, iconMarkup, registerIcon } from '../ui/icons';
-import { injectStyles } from '../ui/styles';
+import { iconEl, iconMarkup, registerIcon } from '@luxalgo/vela-ui/icons';
+import { injectChromeStyles } from '../ui/chromeStyles';
 import { chartType } from '../chart-types/registry';
 import { topbarActionOverride, widgetActions, type SidePanelButton, type WidgetContext } from './contributions';
 import { resolveTopbarComposition, topbarHas, TOPBAR_BUILTIN_IDS, type ResolvedTopbarComposition, type TopbarComposition } from './topbar-composition';
 import { BUILTIN_PRICE_STYLES, priceStyleIds } from '../renderers/native/core/chartConfig';
 import { favoriteTimeframeChips, timeframeLabel } from './timeframe';
 import { parseSymbol } from '../data/ProviderRegistry';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 // The component owns its stylesheet (id-guarded, injected at construction) so EVERY
 // host that mounts a Topbar — the widget, a multi-chart workspace — gets the same look.
 const STYLE_ID = 'vela-topbar';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
+.vela-widget-topbar [data-topbar-hidden] { display: none !important; }
 .vela-widget-topbar {
     display: flex;
     align-items: center;
-    gap: var(--vela-space-1);
-    padding: var(--vela-space-1) var(--vela-space-2);
-    border-bottom: 1px solid var(--vela-border-soft);
-    color: var(--vela-fg);
-    font-size: var(--vela-font-size-md);
+    gap: ${t.space[1]};
+    padding: ${t.space[1]} ${t.space[2]};
+    border-bottom: 1px solid ${t.border.soft};
+    color: ${t.fg};
+    font-size: ${t.fontSize.md};
     flex: none;
 }
 .vela-widget-symbol, .vela-widget-tf, .vela-widget-style, .vela-widget-indicators, .vela-widget-action-left {
     all: unset;
+    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     gap: 6px;
     height: 30px;
     padding: 0 9px;
-    border-radius: 4px;
+    border-radius: ${t.radius.sm};
     cursor: pointer;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
     font-size: 13px;
     font-weight: 550;
     white-space: nowrap;
 }
 .vela-widget-symbol {
-    color: var(--vela-fg-bright);
+    color: ${t.fg.bright};
     font-size: 15px;
     font-weight: 600;
     letter-spacing: 0.3px;
@@ -49,28 +58,29 @@ const CSS = `
     gap: 7px;
 }
 .vela-widget-tf, .vela-widget-style, .vela-widget-indicators, .vela-widget-action-left {
-    color: var(--vela-fg-bright);
+    color: ${t.fg.bright};
 }
-.vela-widget-symbol:hover, .vela-widget-tf:hover, .vela-widget-style:hover, .vela-widget-indicators:hover, .vela-widget-action-left:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
+.vela-widget-symbol:hover, .vela-widget-tf:hover, .vela-widget-style:hover, .vela-widget-indicators:hover, .vela-widget-action-left:hover { background: ${t.hover}; color: ${t.fg.bright}; }
 /* Timeframe cluster: duration-sorted favorite chips, highlight in place, caret
    opening the full dropdown. With no favorites the caret is the merged trigger
    (label + chevron). An unstarred current value sits as an extra chip by the caret. */
 .vela-widget-tf-group { display: inline-flex; align-items: center; gap: 2px; }
 .vela-widget-tf-chips { display: inline-flex; align-items: center; gap: 2px; }
 .vela-widget-tf-chips:empty { display: none; }
-.vela-widget-tf[data-current='1'] { background: var(--vela-hover-strong); color: var(--vela-fg-bright); }
+.vela-widget-tf[data-current='1'] { background: ${t.hover.strong}; color: ${t.fg.bright}; }
 .vela-widget-tf-caret {
     all: unset;
+    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 18px;
     height: 30px;
-    border-radius: 4px;
+    border-radius: ${t.radius.sm};
     cursor: pointer;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
 }
-.vela-widget-tf-caret:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
+.vela-widget-tf-caret:hover { background: ${t.hover}; color: ${t.fg.bright}; }
 /* The merged trigger is a plain button (hover feedback only) — the highlight
    background marks the CURRENT chip among favorites, and a lone trigger with a
    permanent highlight would read as stuck-pressed. */
@@ -78,7 +88,7 @@ const CSS = `
     width: auto;
     padding: 0 6px 0 9px;
     gap: 4px;
-    color: var(--vela-fg-bright);
+    color: ${t.fg.bright};
     font-size: 13px;
     font-weight: 550;
     white-space: nowrap;
@@ -88,17 +98,17 @@ const CSS = `
 /* Width is set in syncHairlines() to exactly one device pixel — a CSS 1px at
    fractional DPR (1.25, 1.5…) straddles two physical pixels and siblings end
    up looking like different thicknesses depending on subpixel placement. */
-.vela-sep { height: 22px; margin: 0 2px; flex: none; background: var(--vela-border-strong); }
+.vela-sep { height: 22px; margin: 0 2px; flex: none; background: ${t.border.strong}; }
 .vela-alerts-badge {
     position: absolute;
     top: 2px;
-    right: 2px;
+    inset-inline-end: 2px;
     min-width: 13px;
     height: 13px;
     padding: 0 3px;
     border-radius: 7px;
-    background: var(--vela-accent);
-    color: var(--vela-fg-on-fill);
+    background: ${t.accent};
+    color: ${t.fg.onFill};
     font-size: 9px;
     font-weight: 700;
     display: inline-flex;
@@ -107,53 +117,49 @@ const CSS = `
 }
 /* The right side of the bar — whatever the composition puts there rides this one
    auto-margin push (the flow-actions host used to carry it; composition can omit it). */
-.vela-topbar-right { margin-left: auto; display: inline-flex; align-items: center; gap: var(--vela-space-1); }
-.vela-widget-actions { display: inline-flex; gap: var(--vela-space-1); }
+.vela-topbar-right { margin-inline-start: auto; display: inline-flex; align-items: center; gap: ${t.space[1]}; }
+.vela-widget-actions { display: inline-flex; gap: ${t.space[1]}; }
 /* Left-aligned contributed actions — the primary-chrome cluster after the dropdowns. */
-.vela-widget-actions-left { display: inline-flex; align-items: center; gap: var(--vela-space-1); }
+.vela-widget-actions-left { display: inline-flex; align-items: center; gap: ${t.space[1]}; }
 /* One PINNED contributed action's slot (a composition entry naming the action's id). */
 .vela-widget-action-pin { display: inline-flex; align-items: center; }
 /* The side-panel toggles, one per docked panel — a group so the dock can rebuild them
    without disturbing the tools around it. */
-.vela-widget-panels { display: inline-flex; align-items: center; gap: var(--vela-space-1); }
+.vela-widget-panels { display: inline-flex; align-items: center; gap: ${t.space[1]}; }
 .vela-widget-tool {
     all: unset;
+    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 32px;
     height: 30px;
-    border-radius: 4px;
+    border-radius: ${t.radius.sm};
     cursor: pointer;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
     font-size: 14px;
 }
-.vela-widget-tool:hover:not(:disabled) { background: var(--vela-hover); color: var(--vela-fg-bright); }
+.vela-widget-tool:hover:not(:disabled) { background: ${t.hover}; color: ${t.fg.bright}; }
 .vela-widget-tool:disabled { opacity: 0.35; cursor: default; }
-.vela-widget-tool[data-active='1'] { background: var(--vela-hover); color: var(--vela-fg-bright); }
+.vela-widget-tool[data-active='1'] { background: ${t.hover}; color: ${t.fg.bright}; }
 .vela-widget-action {
     all: unset;
+    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     gap: 6px;
     padding: 4px 8px;
-    border-radius: var(--vela-radius-sm);
+    border-radius: ${t.radius.sm};
     cursor: pointer;
-    color: var(--vela-fg);
+    color: ${t.fg};
 }
-.vela-widget-action:hover { background: var(--vela-hover); }
-`;
+.vela-widget-action:hover { background: ${t.hover}; }
 
-const BUILTIN_STYLE_LABELS: Record<string, string> = {
-    candles: 'Candles',
-    bars: 'Bars',
-    line: 'Line',
-    area: 'Area',
-    baseline: 'Baseline',
-};
+}`;
 
-export function priceStyleLabel(id: string): string {
-    return chartType(id)?.label ?? BUILTIN_STYLE_LABELS[id] ?? id;
+/** A price style's name, in `i18n`'s language (English without one). */
+export function priceStyleLabel(id: string, i18n?: Translator | null): string {
+    return textOf(i18n, priceStyleMessage(id));
 }
 
 /** Icon id for a price style — registers a plugin type's `icon` markup on first use. */
@@ -207,6 +213,8 @@ export interface TopbarOptions {
     onUndoClick?: () => void;
     onRedoClick?: () => void;
     onScreenshotClick?: () => void;
+    /** Omitted ⇒ no full screen button: the shell has no full screen to enter. */
+    onFullscreenClick?: () => void;
     onAlertsClick?: (anchor: HTMLElement) => void;
     /** Live widget context for contributed actions (topbar target). */
     getContext?: () => WidgetContext;
@@ -215,7 +223,26 @@ export interface TopbarOptions {
      *  The shell that owns this bar also gates the matching mobile entries and
      *  keyboard chords on the same composition — the bar only handles its own DOM. */
     composition?: TopbarComposition;
+    /** The shell's translator (labels, tooltips, menus). Absent: English. */
+    i18n?: Translator;
 }
+
+const TEXT = {
+    timeframes: msg('widget.topbar.timeframes', 'Timeframes'),
+    indicators: msg('widget.topbar.indicators', 'Indicators'),
+    undo: msg('widget.topbar.undo', 'Undo'),
+    redo: msg('widget.topbar.redo', 'Redo'),
+    screenshot: msg('widget.topbar.screenshot', 'Download screenshot'),
+    fullscreen: msg('widget.topbar.fullscreen', 'Full screen'),
+    alerts: msg('widget.topbar.alerts', 'Alerts'),
+    timeframe: msg('widget.topbar.timeframe', 'Timeframe'),
+    chartStyle: msg('widget.topbar.chartStyle', 'Chart style'),
+    layout: msg('widget.topbar.layout', 'Layout'),
+    switchTimeframe: msg('widget.topbar.switchTimeframe', 'Switch timeframe to {timeframe}'),
+    currentTimeframe: msg('widget.topbar.currentTimeframe', 'Timeframe — {timeframe}'),
+    currentLayout: msg('widget.topbar.currentLayout', 'Layout — {layout}'),
+    currentStyle: msg('widget.topbar.currentStyle', 'Chart style — {style}'),
+};
 
 export class Topbar {
     readonly el: HTMLElement;
@@ -228,8 +255,8 @@ export class Topbar {
     private layoutButton: HTMLElement | null = null;
     private layoutPicker: LayoutPicker | null = null;
     private layoutId: string | null = null;
-    private readonly tfMenu: Menu;
-    private readonly styleMenu: Menu;
+    private readonly tfMenu: DropdownMenu;
+    private readonly styleMenu: DropdownMenu;
     private readonly tooltips: Tooltip[] = [];
     private readonly actionsHost: HTMLElement;
     /** Left-aligned contributed actions (`align: 'left'`) — right after the dropdowns. */
@@ -247,6 +274,8 @@ export class Topbar {
     private alertsBadge!: HTMLElement;
     /** The resolved composition (defaults applied) — what renders, where, in order. */
     private readonly comp: ResolvedTopbarComposition;
+    /** Each rendered built-in item's elements (its trailing hairline included), for runtime hiding. */
+    private readonly itemEls = new Map<string, HTMLElement[]>();
     /** Pinned contributed-action slots, by action id (composition entries that name one,
      *  plus built-in slots taken over by an override). */
     private readonly pinned = new Map<string, { host: HTMLElement; left: boolean }>();
@@ -261,6 +290,8 @@ export class Topbar {
     private readonly opts: TopbarOptions;
     private timeframe: string;
     private priceStyle: string;
+    /** Style ids the current symbol's data cannot draw: listed greyed, not selectable. */
+    private unavailableStyles: ReadonlySet<string> = new Set();
     private readonly onHairlineSync = (): void => {
         if (this.hairlineRaf) return;
         const win = this.el.ownerDocument.defaultView;
@@ -271,6 +302,16 @@ export class Topbar {
     };
     private hairlineRo: ResizeObserver | null = null;
     private hairlineRaf = 0;
+    /** Re-apply each fixed label in the current language (see {@link relocalize}). */
+    private readonly relabels: Array<() => void> = [];
+
+    private get i18n(): Translator | null {
+        return this.opts.i18n ?? null;
+    }
+
+    private t(m: MessageLike, values?: MessageArgs): string {
+        return textOf(this.i18n, m, values);
+    }
 
     constructor(host: HTMLElement, opts: TopbarOptions) {
         this.opts = opts;
@@ -280,7 +321,7 @@ export class Topbar {
         this.comp = resolveTopbarComposition(opts.composition);
         const vis = (id: string): boolean => topbarHas(this.comp, id);
         const doc = host.ownerDocument;
-        injectStyles(STYLE_ID, CSS, doc);
+        injectChromeStyles(STYLE_ID, CSS, doc);
 
         this.el = doc.createElement('div');
         this.el.className = 'vela-widget-topbar';
@@ -298,7 +339,7 @@ export class Topbar {
         this.tfCaret = doc.createElement('button');
         this.tfCaret.className = 'vela-widget-tf-caret';
         this.tfCaret.appendChild(iconEl('chevron-down', doc));
-        this.tfCaret.setAttribute('aria-label', 'Timeframes');
+        this.tfCaret.setAttribute('aria-label', this.t(TEXT.timeframes));
         const tfGroup = doc.createElement('span');
         tfGroup.className = 'vela-widget-tf-group';
         tfGroup.append(this.tfChipsHost, this.tfCaret);
@@ -313,34 +354,37 @@ export class Topbar {
         if (opts.onIndicatorsClick && !topbarActionOverride('indicators')) {
             indicatorsBtn = doc.createElement('button');
             indicatorsBtn.className = 'vela-widget-indicators';
-            indicatorsBtn.append(iconEl('indicators', doc), doc.createTextNode('Indicators'));
+            const label = doc.createTextNode(this.t(TEXT.indicators));
+            indicatorsBtn.append(iconEl('indicators', doc), label);
+            this.relabels.push(() => (label.textContent = this.t(TEXT.indicators)));
             indicatorsBtn.addEventListener('click', opts.onIndicatorsClick);
         }
 
         // Right-hand cluster: contributed actions, then icon-only tools — the side-panel
-        // toggles (filled by the dock) and screenshot. Labels live in their tooltips.
+        // toggles (filled by the dock), screenshot and full screen. Labels live in their tooltips.
         this.actionsHost = doc.createElement('span');
         this.actionsHost.className = 'vela-widget-actions';
         this.leftActionsHost = doc.createElement('span');
         this.leftActionsHost.className = 'vela-widget-actions-left';
         this.panelsHost = doc.createElement('span');
         this.panelsHost.className = 'vela-widget-panels';
-        const tool = (cls: string, icon: string, tip: string, onClick?: () => void): HTMLButtonElement =>
+        const tool = (cls: string, icon: string, tip: MessageLike, onClick?: () => void): HTMLButtonElement =>
             this.toolButton(cls, icon, tip, onClick, this.tooltips);
         // Hidden tools get a DETACHED bare button instead: the state setters
         // (setHistoryState, setAlertCount) stay safe no-ops, and no tooltip machine
         // ever binds to chrome the composition removed.
         // Undo/redo sit beside Indicators (same icon-tool chrome as the right cluster).
         if (vis('undo-redo')) {
-            this.undoBtn = tool('vela-widget-undo', 'undo', 'Undo', opts.onUndoClick);
-            this.redoBtn = tool('vela-widget-redo', 'redo', 'Redo', opts.onRedoClick);
+            this.undoBtn = tool('vela-widget-undo', 'undo', TEXT.undo, opts.onUndoClick);
+            this.redoBtn = tool('vela-widget-redo', 'redo', TEXT.redo, opts.onRedoClick);
         } else {
             this.undoBtn = doc.createElement('button');
             this.redoBtn = doc.createElement('button');
         }
         this.setHistoryState(false, false);
-        const screenshotBtn = vis('screenshot') && !topbarActionOverride('screenshot') ? tool('vela-widget-screenshot', 'camera', 'Download screenshot', opts.onScreenshotClick) : null;
-        this.alertsBtn = vis('alerts') ? tool('vela-widget-alerts', 'bell', 'Alerts') : doc.createElement('button');
+        const screenshotBtn = vis('screenshot') && !topbarActionOverride('screenshot') ? tool('vela-widget-screenshot', 'camera', TEXT.screenshot, opts.onScreenshotClick) : null;
+        const fullscreenBtn = vis('fullscreen') && opts.onFullscreenClick ? tool('vela-widget-fullscreen', 'maximize', TEXT.fullscreen, opts.onFullscreenClick) : null;
+        this.alertsBtn = vis('alerts') ? tool('vela-widget-alerts', 'bell', TEXT.alerts) : doc.createElement('button');
         this.alertsBtn.style.position = 'relative';
         if (opts.onAlertsClick) this.alertsBtn.addEventListener('click', () => opts.onAlertsClick!(this.alertsBtn));
         this.alertsBadge = doc.createElement('span');
@@ -414,17 +458,22 @@ export class Topbar {
                     return [this.panelsHost];
                 case 'screenshot':
                     return overridden(id, left) ?? (screenshotBtn ? [screenshotBtn] : []);
+                case 'fullscreen':
+                    return fullscreenBtn ? [fullscreenBtn] : [];
                 default:
                     return pinSlot(id, left);
             }
         };
+        const builtin = new Set<string>(TOPBAR_BUILTIN_IDS);
         const sideEls = (list: readonly string[], left: boolean): HTMLElement[] => {
             const out: HTMLElement[] = [];
             for (const [i, id] of list.entries()) {
                 const els = elementsFor(id, left);
                 if (els.length === 0) continue;
-                out.push(...els);
-                if (primaries.has(id) && i < list.length - 1) out.push(sep());
+                const item = [...els];
+                if (primaries.has(id) && i < list.length - 1) item.push(sep());
+                out.push(...item);
+                if (builtin.has(id) && id !== 'actions') this.itemEls.set(id, item);
             }
             return out;
         };
@@ -441,14 +490,15 @@ export class Topbar {
         doc.defaultView?.addEventListener('resize', this.onHairlineSync);
         this.renderActions();
 
-        this.tooltips.push(new Tooltip(this.tfCaret, { content: 'Timeframe', triggerId: 'vela-topbar-tf', host }));
-        this.tooltips.push(new Tooltip(this.styleButton, { content: 'Chart style', triggerId: 'vela-topbar-style', host }));
+        this.labeledTooltip(this.tfCaret, TEXT.timeframe, 'vela-topbar-tf', this.tooltips);
+        this.labeledTooltip(this.styleButton, TEXT.chartStyle, 'vela-topbar-style', this.tooltips);
         if (this.layoutButton && opts.layout) {
-            this.tooltips.push(new Tooltip(this.layoutButton, { content: 'Layout', triggerId: 'vela-topbar-layout', host }));
+            this.labeledTooltip(this.layoutButton, TEXT.layout, 'vela-topbar-layout', this.tooltips);
             const layout = opts.layout;
             this.layoutPicker = new LayoutPicker({
                 trigger: this.layoutButton,
                 host,
+                ...(opts.i18n ? { i18n: opts.i18n } : {}),
                 shape: () => layout.shape(),
                 presets: () => layout.presets().map((p) => ({ ...p, checked: p.id === this.layoutId })),
                 onSelectGrid: (rows, cols) => layout.onSelectGrid(rows, cols),
@@ -457,10 +507,11 @@ export class Topbar {
                 onToggleSync: (id) => layout.onToggleSync(id),
             });
         }
-        this.tfMenu = new Menu({
+        this.tfMenu = new DropdownMenu({
             trigger: this.tfCaret,
             triggerId: 'vela-topbar-tf',
             host,
+            i18n: opts.i18n ?? null,
             items: this.tfItems(),
             onSelect: (id) => opts.onTimeframe(id),
             onFavorite: (id, on) => opts.onTimeframeFavorite?.(id, on),
@@ -468,7 +519,7 @@ export class Topbar {
             // stylesheet's default min-width would leave the list mostly empty.
             minWidth: '84px',
         });
-        this.styleMenu = new Menu({
+        this.styleMenu = new DropdownMenu({
             trigger: this.styleButton,
             triggerId: 'vela-topbar-style',
             host,
@@ -507,13 +558,13 @@ export class Topbar {
         for (const tf of shown) {
             const b = doc.createElement('button');
             b.className = 'vela-widget-tf';
-            const label = timeframeLabel(tf);
+            const label = timeframeLabel(tf, this.i18n);
             b.textContent = label;
             if (tf === this.timeframe) {
                 b.dataset.current = '1';
                 b.setAttribute('aria-current', 'true');
             } else {
-                b.setAttribute('aria-label', `Switch timeframe to ${label}`);
+                b.setAttribute('aria-label', this.t(TEXT.switchTimeframe, { timeframe: label }));
                 b.addEventListener('click', () => this.opts.onTimeframe(tf));
             }
             this.tfChipsHost.appendChild(b);
@@ -521,18 +572,21 @@ export class Topbar {
         this.tfCaret.replaceChildren();
         if (chips.length === 0) {
             this.tfCaret.dataset.solo = '1';
-            this.tfCaret.append(doc.createTextNode(timeframeLabel(this.timeframe)), iconEl('chevron-down', doc));
-            this.tfCaret.setAttribute('aria-label', `Timeframe — ${timeframeLabel(this.timeframe)}`);
+            this.tfCaret.append(doc.createTextNode(timeframeLabel(this.timeframe, this.i18n)), iconEl('chevron-down', doc));
+            this.tfCaret.setAttribute('aria-label', this.t(TEXT.currentTimeframe, { timeframe: timeframeLabel(this.timeframe, this.i18n) }));
         } else {
             delete this.tfCaret.dataset.solo;
             this.tfCaret.appendChild(iconEl('chevron-down', doc));
-            this.tfCaret.setAttribute('aria-label', 'Timeframes');
+            this.tfCaret.setAttribute('aria-label', this.t(TEXT.timeframes));
         }
         this.onHairlineSync(); // the cluster width changed
     }
 
-    setPriceStyle(style: string): void {
+    /** Reflect the style the chart draws, and the styles its symbol's data cannot draw
+     *  (greyed in the menu with a tooltip saying why; omitted ⇒ none). */
+    setPriceStyle(style: string, unavailable: readonly string[] = []): void {
         this.priceStyle = style;
+        this.unavailableStyles = new Set(unavailable);
         this.renderStyleButton(this.styleButton.ownerDocument);
         this.styleMenu.setItems(this.styleItems());
     }
@@ -558,7 +612,7 @@ export class Topbar {
         } else {
             this.layoutButton.appendChild(doc.createTextNode(this.layoutId ?? ''));
         }
-        this.layoutButton.setAttribute('aria-label', `Layout — ${this.layoutId ?? ''}`);
+        this.layoutButton.setAttribute('aria-label', this.t(TEXT.currentLayout, { layout: this.layoutId ?? '' }));
     }
 
     private renderStyleButton(doc: Document): void {
@@ -567,8 +621,8 @@ export class Topbar {
         // Icon-only entry (like the reference app); the label lives in the tooltip and the
         // dropdown rows. Unknown plugin styles without an icon fall back to their label.
         if (icon) this.styleButton.appendChild(iconEl(icon, doc));
-        else this.styleButton.appendChild(doc.createTextNode(priceStyleLabel(this.priceStyle)));
-        this.styleButton.setAttribute('aria-label', `Chart style — ${priceStyleLabel(this.priceStyle)}`);
+        else this.styleButton.appendChild(doc.createTextNode(priceStyleLabel(this.priceStyle, this.i18n)));
+        this.styleButton.setAttribute('aria-label', this.t(TEXT.currentStyle, { style: priceStyleLabel(this.priceStyle, this.i18n) }));
     }
 
     /** Re-project the contributed topbar actions (call after registrations change).
@@ -607,13 +661,15 @@ export class Topbar {
             // icon-only ones on the right take the native 32px TOOL chrome outright,
             // so a slot override is pixel-faithful to the button it replaces.
             b.className = left ? 'vela-widget-action-left' : iconOnly ? 'vela-widget-tool' : 'vela-widget-action';
+            b.dataset.actionId = action.id;
             if (action.icon) b.appendChild(iconEl(action.icon, doc));
+            const label = textOf(ctx?.i18n ?? this.i18n, action.label);
             if (iconOnly) {
                 // The label still speaks — as the accessible name and the hover tooltip.
-                b.setAttribute('aria-label', action.label);
-                this.actionTooltips.push(new Tooltip(b, { content: action.label, triggerId: `vela-action-${action.id}`, host: this.host }));
+                b.setAttribute('aria-label', label);
+                this.actionTooltips.push(new Tooltip(b, { content: label, triggerId: `vela-action-${action.id}`, host: this.host }));
             } else {
-                b.appendChild(doc.createTextNode(action.label));
+                b.appendChild(doc.createTextNode(label));
             }
             b.addEventListener('click', () => {
                 const c = this.opts.getContext?.();
@@ -627,6 +683,15 @@ export class Topbar {
 
     setIndicatorCount(_n: number): void {
         // Count badge intentionally hidden — kept as a no-op so hosts can keep calling it.
+    }
+
+    /** Hide or show a rendered built-in item (and its trailing hairline). An item the
+     *  composition left out has nothing to show; the call is a no-op for it. */
+    setItemVisible(id: string, visible: boolean): void {
+        for (const el of this.itemEls.get(id) ?? []) {
+            if (visible) delete el.dataset.topbarHidden;
+            else el.dataset.topbarHidden = '1';
+        }
     }
 
     /** Enable/disable the undo and redo tools from the host's unified history. */
@@ -677,18 +742,42 @@ export class Topbar {
     }
 
     /** One icon-only tool button with its kit tooltip, parked in `sink` for disposal. */
-    private toolButton(cls: string, icon: string, tip: string, onClick: (() => void) | undefined, sink: Tooltip[]): HTMLButtonElement {
+    private toolButton(cls: string, icon: string, tip: MessageLike, onClick: (() => void) | undefined, sink: Tooltip[]): HTMLButtonElement {
         const doc = this.el.ownerDocument;
         const b = doc.createElement('button');
         b.className = `vela-widget-tool ${cls}`;
         b.appendChild(iconEl(icon, doc));
-        b.setAttribute('aria-label', tip);
+        b.setAttribute('aria-label', this.t(tip));
         // Kit tooltip only — a native `title` on top of it double-tooltips. Explicit host: at
         // construction the topbar is NOT in the DOM yet, so the closest('.vela-ui') fallback
         // would portal to <body> — outside the theme vars.
-        sink.push(new Tooltip(b, { content: tip, triggerId: `vela-tool-${cls}`, host: this.host }));
+        const tooltip = new Tooltip(b, { content: this.t(tip), triggerId: `vela-tool-${cls}`, host: this.host });
+        sink.push(tooltip);
+        this.relabels.push(() => {
+            b.setAttribute('aria-label', this.t(tip));
+            tooltip.setContent(this.t(tip));
+        });
         if (onClick) b.addEventListener('click', onClick);
         return b;
+    }
+
+    /** A kit tooltip whose text follows the language. */
+    private labeledTooltip(el: HTMLElement, text: MessageLike, triggerId: string, sink: Tooltip[]): void {
+        const tooltip = new Tooltip(el, { content: this.t(text), triggerId, host: this.host });
+        sink.push(tooltip);
+        this.relabels.push(() => tooltip.setContent(this.t(text)));
+    }
+
+    /** Re-read every label, tooltip and menu in the current language. */
+    relocalize(): void {
+        for (const relabel of this.relabels) relabel();
+        this.renderTfChips();
+        this.renderStyleButton(this.styleButton.ownerDocument);
+        if (this.layoutButton) this.renderLayoutButton(this.layoutButton.ownerDocument);
+        this.tfMenu.setItems(this.tfItems());
+        this.styleMenu.setItems(this.styleItems());
+        this.layoutPicker?.relabel();
+        this.renderActions();
     }
 
     /** Paint each `.vela-sep` as exactly one device pixel, snapped to the pixel grid. */
@@ -710,7 +799,7 @@ export class Topbar {
         const stars = this.opts.onTimeframeFavorite !== undefined;
         return this.opts.timeframes.map((tf) => ({
             id: tf,
-            label: timeframeLabel(tf),
+            label: timeframeLabel(tf, this.i18n),
             checked: tf === this.timeframe,
             ...(stars ? { favorite: this.tfFavs.includes(tf) } : {}),
         }));
@@ -723,10 +812,11 @@ export class Topbar {
         // read as two distinct families.
         return priceStyleIds().map((id, i) => ({
             id,
-            label: priceStyleLabel(id),
+            label: priceStyleLabel(id, this.i18n),
             icon: priceStyleIcon(id),
             checked: id === this.priceStyle,
             separatorBefore: i === BUILTIN_PRICE_STYLES.length,
+            ...(this.unavailableStyles.has(id) ? { disabled: true, title: this.t(PRICE_STYLE_UNAVAILABLE) } : {}),
         }));
     }
 }

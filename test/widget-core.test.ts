@@ -433,6 +433,24 @@ describe('legend action contributions', () => {
         expect(seen[0]?.source).toBe('v2');
         unregisterLegendAction('src-live');
     });
+
+    it('the row info names the engine language — the gate for an action only one language supports', () => {
+        const seen: LegendIndicatorInfo[] = [];
+        registerLegendAction({ id: 'pine-editor', icon: 'code', tooltip: 'Edit', when: (ind) => ind.language === 'pine', run: (_ctx, ind) => void seen.push(ind) });
+        const chart = {
+            indicators: () => [
+                { id: 'ind-1', title: 'EMA', source: 'plot(close)', language: 'pine' },
+                { id: 'ind-2', title: 'Remote', source: 'pointer', language: 'other' },
+                { id: 'native-1', title: 'Volume', nativeType: 'volume' },
+            ],
+        } as never;
+        const provider = legendActionsProviderFor(chart, () => ({}) as never);
+        expect(provider('ind-2')).toHaveLength(0); // another engine's script
+        expect(provider('native-1')).toHaveLength(0); // a native has no language
+        provider('ind-1')[0]!.run();
+        expect(seen).toEqual([{ id: 'ind-1', title: 'EMA', source: 'plot(close)', language: 'pine' }]);
+        unregisterLegendAction('pine-editor');
+    });
 });
 
 describe('glide math (reference port)', () => {
@@ -526,6 +544,35 @@ describe('WidgetHistory late-resolves the current chart', () => {
         expect(a.drawings.undo).not.toHaveBeenCalled(); // never the destroyed instance
         h.redo();
         expect(b.drawings.redo).toHaveBeenCalledTimes(1);
+    });
+
+    it('a replaced drawings document takes its drawing steps out, and leaves the other steps in order', async () => {
+        const { WidgetHistory } = await import('../src/widget/history');
+        const chart = fakeChart();
+        const h = new WidgetHistory(() => chart as never);
+        h.onChart(chart as never);
+        const ran: string[] = [];
+        const changes: Array<{ undo: boolean; redo: boolean }> = [];
+        h.onChange(() => changes.push({ undo: h.canUndo, redo: h.canRedo }));
+        chart.emit('drawing:created');
+        h.push({ undo: () => ran.push('undo indicator'), redo: () => ran.push('redo indicator') });
+        chart.emit('drawing:edited');
+        h.undo(); // the edit goes to the redo side
+        expect(chart.drawings.undo).toHaveBeenCalledTimes(1);
+        // The chart's symbol changed, or a document was loaded: the core's drawing history is empty now.
+        chart.emit('drawing:replaced');
+        expect(changes[changes.length - 1]).toEqual({ undo: true, redo: false });
+        h.undo();
+        expect(ran).toEqual(['undo indicator']);
+        expect(chart.drawings.undo).toHaveBeenCalledTimes(1); // no dead step took the Ctrl+Z
+        expect(h.canUndo).toBe(false);
+        h.redo();
+        expect(ran).toEqual(['undo indicator', 'redo indicator']);
+        expect(chart.drawings.redo).not.toHaveBeenCalled();
+        // With no drawing step left, another replaced document announces nothing.
+        const before = changes.length;
+        chart.emit('drawing:replaced');
+        expect(changes).toHaveLength(before);
     });
 
     it('onChange reports canUndo / canRedo for the topbar tools', async () => {

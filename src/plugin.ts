@@ -14,6 +14,51 @@
 //
 // UI contributions (style-picker entries, settings sections, shortcuts) arrive with the
 // widget SDK — contributions are DATA descriptors, never DOM.
+
+// LOCALIZATION: `msg()` declares a translatable message (stable id + English text), a
+// `LocalePack` carries one language's messages and `registerLocale` adds it (a call, never
+// an import side effect). Every chart, workspace and widget context carries a `Translator`
+// (`chart.i18n`, `ctx.i18n`, renderer-layer `args.i18n`) that resolves messages and
+// formats numbers and dates for the chart's locale.
+export {
+    msg,
+    withValues,
+    registerLocale,
+    registeredLocales,
+    createTranslator,
+    type MessageDescriptor,
+    type MessageLike,
+    type MessageValues,
+    type MessageArgs,
+    type LocalePack,
+    type VelaMessageCatalog,
+    type VelaMessageId,
+    type TextDirection,
+    type LocalizationOptions,
+    type Translator,
+    type LocaleChangedEvent,
+} from './core/i18n';
+export type {
+    FormatSurface,
+    FormatContext,
+    TimeTickUnit,
+    PriceFormatOptions,
+    PercentFormatOptions,
+    CompactFormatOptions,
+    TimeTickFormatOptions,
+    TimeStampFormatOptions,
+    DurationFormatOptions,
+    ClockFormatOptions,
+    ClockFormatContext,
+    PriceFormatContext,
+    PercentFormatContext,
+    CompactFormatContext,
+    TimeTickFormatContext,
+    TimeStampFormatContext,
+    DurationFormatContext,
+    ResolvedFormatters,
+    VelaFormatters,
+} from './core/format';
 export {
     registerChartType,
     unregisterChartType,
@@ -40,8 +85,10 @@ export {
     type SeriesDataEngine,
     type SeriesDataEngineHost,
 } from './chart-types/registry';
+export { priceStyleApplies, shownPriceStyle } from './chart-types/applicability';
 export type { BarTransform } from './core/price-styles/BarTransform';
 export { registerRendererDefaults, unregisterRendererDefaults, rendererDefaults } from './core/renderer-defaults';
+export { registerShellDefaults, unregisterShellDefaults, shellDefaults, type ShellDefaults } from './widget/shell-defaults';
 export {
     registerNativeIndicator,
     unregisterNativeIndicator,
@@ -78,6 +125,9 @@ export {
     registerLegendCallout,
     unregisterLegendCallout,
     legendCallouts,
+    registerDrawingAction,
+    unregisterDrawingAction,
+    drawingActions,
     registerDefaultEngine,
     unregisterDefaultEngine,
     resolveEngines,
@@ -99,6 +149,8 @@ export {
     type LegendCalloutContent,
     type LegendCalloutItem,
     type LegendIndicatorInfo,
+    type DrawingActionDescriptor,
+    type DrawingActionSurface,
     type WidgetActionDescriptor,
     type WidgetActionTarget,
     type WidgetAttachment,
@@ -108,17 +160,30 @@ export {
     type SidePanelHandle,
     type SidePanelHeader,
     type SidePanelButton,
+    type TopbarItems,
+    type TopbarItemId,
+    type PanelDockView,
+    type DockedPanelInfo,
+    type DockStripOptions,
+    type DockedStrip,
+    type SidebarControl,
+    type FullscreenControl,
 } from './widget/contributions';
+export { composeSidebar, SIDEBAR_DEFAULT_TOP, SIDEBAR_DEFAULT_BOTTOM, type SidebarComposition } from './widget/sidebar-composition';
 // Where the built-in right-click rows sit in the sort `context:*` actions share with them.
 export { CONTEXT_MENU_BUILTIN_ORDER } from './widget/context-menu-model';
 // A plugin panel gets the shell's own column; these bounds are what `resizable` clamps to.
 export { clampPanelWidth, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_MIN_WIDTH, DEFAULT_PANEL_MAX_WIDTH, type SidePanelOptions } from './widget/side-panel';
 export { drawingTypes, getDrawingType, type DrawingTypeMeta } from './core/drawings/registry';
 export type { DrawingTypeKey } from './core/drawings/Drawing';
-export { registerIcon, iconMarkup } from './ui/icons';
+export { registerIcon, iconMarkup } from '@luxalgo/vela-ui/icons';
 export type { KeyBindingDescriptor, ResolvedBinding } from './ui/keymap';
 export type { PriceStyle } from './core/options';
 export type { DataProvider, ProviderInfo, ProviderCapabilities, SymbolDescriptor } from './core/ports/DataProvider';
+// A provider's PERMANENT refusal of a series (a timeframe finer than the series' own): throw
+// it from `getBars`; engines detect it on a rejected `fetchSeries` with the guard, which reads
+// the name, never the class (a provider may bundle its own copy of Vela).
+export { DataUnavailableError, isDataUnavailableError, type DataUnavailableReason, type DataUnavailableDetails } from './core/data-unavailable';
 
 // SCRIPTING ENGINES (`chart.registerEngine` / the widget's `engines` option): a language
 // runtime implementing the `ScriptingEngine` port — prepare/execute sessions over bars
@@ -141,7 +206,7 @@ export type {
     EngineContextSnapshot,
     ContextSelect,
 } from './core/ports/ScriptingEngine';
-export type { MarketDataFeed, SymbolInfo, BarRange } from './core/ports/MarketDataFeed';
+export type { MarketDataFeed, SymbolInfo, SymbolFacts, BarRange } from './core/ports/MarketDataFeed';
 // What an engine fills so a host can read a running strategy (`EngineContextSnapshot.strategy`
 // / `.trades`) and what the core reshapes it into (`script:run`, `chart.runScript()`).
 export type { StrategyState, StrategyTrade, StrategyFill } from './core/model/strategy';

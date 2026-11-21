@@ -1,3 +1,6 @@
+import { msg } from '../../i18n/message';
+import { sourceText } from '../../i18n/text';
+import type { MessageLike } from '../../i18n/types';
 import { Drawing, type AnchorSlot, type SerializedDrawing } from '../Drawing';
 import type { DrawingPoint, Projector } from '../geometry';
 import type { SettingsSchema } from '../schema';
@@ -20,17 +23,22 @@ export abstract class CalloutBase extends Drawing {
         // `defaultLabel()` dispatches to the subclass (a prototype method, available during super()).
         // No color seed: the interactive creation path fixes a theme-contrast ink on the
         // fresh drawing; until then the painter auto-contrasts (`undefined` semantics).
-        if (!this.text) this.text = defaultText(this.defaultLabel());
+        if (!this.text) this.text = defaultText(sourceText(this.defaultLabel()));
     }
 
     /** The placeholder text seeded for a fresh annotation. */
-    protected defaultLabel(): string {
-        return 'Callout';
+    protected defaultLabel(): MessageLike {
+        return msg('drawing.callout.placeholder', 'Callout');
+    }
+
+    override placeholderText(): MessageLike | null {
+        const label = this.defaultLabel();
+        return sourceText(label) === '' ? null : label;
     }
 
     /** The string used to size the approximate hit box (auto-text subclasses override it). */
     protected labelText(): string {
-        return this.text?.value ?? this.defaultLabel();
+        return this.text?.value ?? sourceText(this.defaultLabel());
     }
 
     anchorSchema(): { min: number; max: number; slots: AnchorSlot[] } {

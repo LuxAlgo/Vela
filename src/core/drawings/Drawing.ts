@@ -2,6 +2,7 @@ import type { DrawingPoint, FreeAxis, Projector } from './geometry';
 import type { DrawingStyle, DrawingText } from './style';
 import { defaultStyle, defaultText } from './style';
 import type { SettingsSchema } from './schema';
+import type { MessageLike } from '../i18n/types';
 import { sanitizeShowOn } from './visibility';
 
 /**
@@ -190,6 +191,19 @@ export abstract class Drawing {
     }
 
     /**
+     * Move handle `index` to `pt`. By default handle `i` IS anchor `i`, moved along the axes its slot
+     * frees; a type with more handles than anchors (a box's edge midpoints) maps each extra handle
+     * onto the anchor coordinates it edits.
+     */
+    dragHandle(index: number, pt: DrawingPoint): void {
+        const a = this.anchors[index];
+        if (!a) return;
+        const free = this.anchorSchema().slots[index]?.free ?? 'both';
+        if (free === 'both' || free === 'x') a.time = pt.time;
+        if (free === 'both' || free === 'y') a.price = pt.price;
+    }
+
+    /**
      * After a single handle (anchor `index`) is dragged, re-impose any cross-anchor invariant —
      * e.g. a position keeps its stop and target on opposite sides of the entry, flipping the
      * non-dragged side across the entry when a drag would put them on the same side. Default: no-op.
@@ -237,6 +251,13 @@ export abstract class Drawing {
 
     // ── settings (data-driven) ──
     abstract schema(): SettingsSchema;
+
+    /** The text a fresh drawing of this type starts with ("Note", "Callout"), as a message,
+     *  or null for a type that seeds none. A new drawing stores its English source; the chart
+     *  that places one interactively writes it in its own language instead. */
+    placeholderText(): MessageLike | null {
+        return null;
+    }
 
     /**
      * Editable per-level config for a rich "gear" settings panel (Fibonacci levels):

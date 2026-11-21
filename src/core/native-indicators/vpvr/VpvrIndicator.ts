@@ -1,3 +1,5 @@
+import { msg } from '../../i18n/message';
+import { localizeInput } from '../localize';
 import type { InputSchema, InputValue } from '../../model/inputs';
 import type { VpvrLayerData } from '../../model/volume-layers';
 import type { NativeIndicator, NativeIndicatorContext, NativeIndicatorDescriptor } from '../NativeIndicator';
@@ -80,17 +82,26 @@ class VpvrIndicator implements NativeIndicator {
 /** Descriptor for the built-in visible-range volume profile. Bar volume needs no capability probe. */
 export const vpvrDescriptor: NativeIndicatorDescriptor = {
     type: 'vpvr',
-    title: 'Visible Range Volume Profile',
-    shortTitle: 'VRVP',
+    title: msg('indicator.vpvr.title', 'Visible Range Volume Profile'),
+    shortTitle: msg('indicator.vpvr.shortTitle', 'VRVP'),
     paneHint: 'price',
     overlay: true,
     inputsSchema: (): InputSchema[] => [
-        { key: 'rows', title: 'Rows', type: 'int', defval: DEFAULT_ROWS, min: 2, max: 400, step: 1 },
-        { key: 'widthPct', title: 'Width %', type: 'int', defval: DEFAULT_WIDTH_PCT, min: 5, max: 90, step: 1, tooltip: 'Pane width the largest row occupies' },
-        { key: 'upColor', title: 'Up color', type: 'color', defval: DEFAULT_UP },
-        { key: 'downColor', title: 'Down color', type: 'color', defval: DEFAULT_DOWN },
-        { key: 'showPoc', title: 'Point of control', type: 'bool', defval: true },
-        { key: 'valueAreaPct', title: 'Value area %', type: 'int', defval: DEFAULT_VALUE_AREA_PCT, min: 0, max: 100, step: 1 },
+        localizeInput({ key: 'rows', title: msg('indicator.vpvr.rows', 'Rows'), type: 'int', defval: DEFAULT_ROWS, min: 2, max: 400, step: 1 }),
+        localizeInput({
+            key: 'widthPct',
+            title: msg('indicator.vpvr.widthPct', 'Width %'),
+            type: 'int',
+            defval: DEFAULT_WIDTH_PCT,
+            min: 5,
+            max: 90,
+            step: 1,
+            tooltip: msg('indicator.vpvr.widthPct.tooltip', 'Panel width the largest row occupies.'),
+        }),
+        localizeInput({ key: 'upColor', title: msg('indicator.vpvr.upColor', 'Up color'), type: 'color', defval: DEFAULT_UP }),
+        localizeInput({ key: 'downColor', title: msg('indicator.vpvr.downColor', 'Down color'), type: 'color', defval: DEFAULT_DOWN }),
+        localizeInput({ key: 'showPoc', title: msg('indicator.vpvr.showPoc', 'Point of control'), type: 'bool', defval: true }),
+        localizeInput({ key: 'valueAreaPct', title: msg('indicator.vpvr.valueAreaPct', 'Value area %'), type: 'int', defval: DEFAULT_VALUE_AREA_PCT, min: 0, max: 100, step: 1 }),
     ],
     defaultInputs: (): Record<string, InputValue> => ({
         rows: DEFAULT_ROWS,

@@ -6,9 +6,11 @@ import type { SeriesSpec, LineLikeSeries, CandleSeries, LineStyle, CandleBarColo
 import { isLineLikeSeries, seriesShownOn } from '../../../core/model/series';
 import type { CoordinateSystem } from '../core/CoordinateSystem';
 import type { SceneGraph, PaneNode } from '../core/SceneGraph';
-import { candleTier, wickWidth, candleGeometry, snapY, aggregateCandleColumns } from './candle-lod';
-import { BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, withAlpha, effectiveCandlePaint } from '../core/chartConfig';
+import { candleTier, wickWidth, candleGeometry, snapY, aggregateCandleColumns, candleStickExtent, candleStickColor } from './candle-lod';
+import { BASELINE_TOP_LINE, BASELINE_BOTTOM_LINE, BASELINE_FILL_ALPHA, BASELINE_FILL_ALPHA_FAR, COLUMNS_FILL_ALPHA, withAlpha, effectiveCandlePaint } from '../core/chartConfig';
+import { lineMarkerRadius, lineMarkersVisible, columnIsUp, columnGeometry, snapStroke, closeRuns, stepVertices } from './close-styles';
 import type { IRenderBackend } from './IRenderBackend';
+import { beginPlotFrame } from '../core/plotDirection';
 
 /**
  * Canvas2d GEOMETRY backend (L0) — the PRIMARY native backend and the WebGL2
@@ -45,7 +47,7 @@ export class Canvas2dBackend implements IRenderBackend {
         const fullH = canvas.height / dpr;
         const dataW = coords.width; // excludes the right price-axis strip
 
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        beginPlotFrame(ctx, dpr);
         ctx.clearRect(0, 0, fullW, fullH);
 
         const n = coords.barCount;
@@ -54,6 +56,9 @@ export class Canvas2dBackend implements IRenderBackend {
         const i0 = Math.max(0, Math.floor(vr.from));
         const i1 = Math.min(n - 1, Math.ceil(vr.to));
         if (i1 < i0) return;
+        // Indicator series and fills may carry points past the last bar (a plot shifted
+        // forward), so they paint through the visible right whitespace too.
+        const s1 = Math.max(i1, Math.ceil(vr.to));
 
         const barColorMap = mergeBarColors(scene.indicators);
         const panes = scene.orderedPanes();
@@ -125,8 +130,8 @@ export class Canvas2dBackend implements IRenderBackend {
                 // Fills paint at the model's z slot, under its own series — a band between
                 // two plots sits behind the plot lines, and the whole model moves as one
                 // unit when its object-tree row is reordered.
-                for (const f of m.fills) if (f.overlay !== true) this.drawFill(ctx, m, f, mp, coords, i0, i1, off);
-                for (const s of m.series) if (s.overlay !== true) this.drawSeries(ctx, s, mp, coords, i0, i1, theme, off);
+                for (const f of m.fills) if (f.overlay !== true) this.drawFill(ctx, m, f, mp, coords, i0, s1, off);
+                for (const s of m.series) if (s.overlay !== true) this.drawSeries(ctx, s, mp, coords, i0, s1, theme, off);
             }
             if (drawCandles && !candleDrawn) {
                 drawSlicesUpTo(scene.candleZ);
@@ -140,11 +145,11 @@ export class Canvas2dBackend implements IRenderBackend {
                 ctx.globalAlpha = this.modelAlpha;
                 for (const m of scene.indicators.values()) {
                     const off = scene.offsetOf(m.id);
-                    for (const f of m.fills) if (f.overlay === true) this.drawFill(ctx, m, f, pane, coords, i0, i1, off);
+                    for (const f of m.fills) if (f.overlay === true) this.drawFill(ctx, m, f, pane, coords, i0, s1, off);
                 }
                 for (const m of scene.indicators.values()) {
                     const off = scene.offsetOf(m.id);
-                    for (const s of m.series) if (s.overlay === true) this.drawSeries(ctx, s, pane, coords, i0, i1, theme, off);
+                    for (const s of m.series) if (s.overlay === true) this.drawSeries(ctx, s, pane, coords, i0, s1, theme, off);
                 }
             }
             // Stack-top slices: the topmost indicator's drawings, force_overlay drawings,
@@ -168,7 +173,8 @@ export class Canvas2dBackend implements IRenderBackend {
     // ── base price series (chart type) ──
     /**
      * Draw the base price series in the configured style: candlesticks, OHLC bars,
-     * line, area, or baseline. All stay time-indexed.
+     * line (plain, with markers, or stepped), area, baseline, or columns. All stay
+     * time-indexed.
      */
     private drawPriceSeries(
         ctx: CanvasRenderingContext2D,
@@ -191,6 +197,15 @@ export class Canvas2dBackend implements IRenderBackend {
             case 'line':
                 this.drawPriceLine(ctx, bars, i0, i1, coords, pane, st.line.color ?? theme.upColor, st.line.width);
                 return;
+            case 'linemarkers': {
+                const color = st.line.color ?? theme.upColor;
+                this.drawPriceLine(ctx, bars, i0, i1, coords, pane, color, st.line.width);
+                this.drawLineMarkers(ctx, bars, i0, i1, coords, pane, color, st.line.width);
+                return;
+            }
+            case 'stepline':
+                this.drawStepLine(ctx, bars, i0, i1, coords, pane, st.line.color ?? theme.upColor, st.line.width);
+                return;
             case 'area': {
                 const lineColor = st.area.lineColor ?? theme.upColor;
                 this.drawPriceArea(ctx, bars, i0, i1, coords, pane, st.area.topColor ?? lineColor, st.area.bottomColor ?? 'rgba(0,0,0,0)');
@@ -200,6 +215,12 @@ export class Canvas2dBackend implements IRenderBackend {
             case 'baseline':
                 this.drawBaseline(ctx, bars, i0, i1, coords, pane, scene, theme, dataW);
                 return;
+            case 'columns': {
+                const up = st.columns.upColor ?? withAlpha(theme.upColor, COLUMNS_FILL_ALPHA);
+                const down = st.columns.downColor ?? withAlpha(theme.downColor, COLUMNS_FILL_ALPHA);
+                this.drawColumns(ctx, bars, i0, i1, coords, pane, up, down, barColors);
+                return;
+            }
             default: // 'candles' + candle-drawn styles (a plugin style may fade candles to reveal its
                 // order-flow layer) and 'heikinashi' (the bars themselves arrive already transformed)
                 this.drawCandles(ctx, scene, bars, i0, i1, coords, pane, theme, barColors);
@@ -275,6 +296,76 @@ export class Canvas2dBackend implements IRenderBackend {
         }
         ctx.stroke();
         ctx.lineCap = 'butt';
+    }
+
+    /** Line with markers: a filled dot on each bar's close, once bars are spaced enough
+     *  to tell the dots apart (see {@link lineMarkersVisible}). One path, so dots that
+     *  touch never darken a translucent color where they overlap. */
+    private drawLineMarkers(ctx: CanvasRenderingContext2D, bars: OHLCV[], i0: number, i1: number, coords: CoordinateSystem, pane: PaneNode, color: string, width: number): void {
+        const r = lineMarkerRadius(width);
+        if (!lineMarkersVisible(coords.pxPerBar(), r)) return;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        for (let i = Math.max(0, i0 - 1); i <= i1; i += 1) {
+            const b = bars[i];
+            if (!b) continue;
+            const x = coords.logicalToX(i);
+            const y = coords.priceToY(b.close, pane.scale, pane.bounds);
+            ctx.moveTo(x + r, y);
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+        }
+        ctx.fill();
+    }
+
+    /** Step line: each close held flat to the next bar, then a vertical step to its close.
+     *  Vertices snap so the runs cover whole device pixels; square caps and miter joins
+     *  give the corners and ends the same square shape the WebGL2 backend builds. */
+    private drawStepLine(ctx: CanvasRenderingContext2D, bars: OHLCV[], i0: number, i1: number, coords: CoordinateSystem, pane: PaneNode, color: string, width: number): void {
+        const dpr = coords.dpr;
+        ctx.lineWidth = width;
+        ctx.lineJoin = 'miter';
+        ctx.lineCap = 'square';
+        ctx.strokeStyle = color;
+        ctx.beginPath();
+        const runs = closeRuns(Math.max(0, i0 - 1), i1, (i) => {
+            const b = bars[i];
+            return b ? { x: snapStroke(coords.logicalToX(i), width, dpr), y: snapStroke(coords.priceToY(b.close, pane.scale, pane.bounds), width, dpr) } : null;
+        });
+        for (const run of runs) {
+            const vs = stepVertices(run);
+            ctx.moveTo(vs[0]!.x, vs[0]!.y);
+            for (let k = 1; k < vs.length; k += 1) ctx.lineTo(vs[k]!.x, vs[k]!.y);
+        }
+        ctx.stroke();
+        ctx.lineCap = 'butt';
+    }
+
+    /** Columns: one per bar from the pane's bottom edge up to its close, colored by the
+     *  close against the previous close ({@link columnIsUp}); barcolor() tints a column
+     *  as it tints a candle body. */
+    private drawColumns(
+        ctx: CanvasRenderingContext2D,
+        bars: OHLCV[],
+        i0: number,
+        i1: number,
+        coords: CoordinateSystem,
+        pane: PaneNode,
+        up: string,
+        down: string,
+        barColors: ReadonlyMap<number, string>,
+    ): void {
+        const spacing = coords.bodySpacing();
+        const dpr = coords.dpr;
+        const bottom = snapY(pane.bounds.top + pane.bounds.height, dpr);
+        for (let i = i0; i <= i1; i += 1) {
+            const b = bars[i];
+            if (!b) continue;
+            const top = snapY(coords.priceToY(b.close, pane.scale, pane.bounds), dpr);
+            if (!(top < bottom)) continue;
+            const g = columnGeometry(coords.logicalToX(i), spacing, dpr);
+            ctx.fillStyle = barColors.get(b.time) ?? (columnIsUp(bars, i) ? up : down);
+            ctx.fillRect(g.left, top, g.width, bottom - top);
+        }
     }
 
     /** Filled area under the close line: a vertical gradient from `topColor` (at the
@@ -429,16 +520,22 @@ export class Canvas2dBackend implements IRenderBackend {
         // the shared candles block); built-ins pass through untouched.
         const paint = effectiveCandlePaint(scene.style.candle, scene.candleOverride, theme.upColor, theme.downColor);
         const cs = paint.candle;
+        // Too thin for a body, the stick IS the candle: it spans whatever part is still
+        // visible, so hiding the wick alone never empties the pane at these zooms.
+        const stick = candleStickExtent(cs);
+        if (stick === 'none') return; // every part hidden: nothing to paint at any zoom
+        // A body stick stands for the body (or for its border when the body is hidden).
+        const bodyStickAlpha = cs.bodyVisible ? this.candleBodyAlpha : this.candleStructureAlpha;
         if (tier === 'aggregate') {
-            // The stick IS the candle, so a bar's paint resolves as in the stick-only tier
-            // below: the wick color setting wins, then barcolor(), then the direction color.
+            if (stick === 'body') ctx.globalAlpha = bodyStickAlpha;
             this.drawCandlesAggregated(ctx, bars, i0, i1, coords, pane, (b) => {
                 const up = b.close >= b.open;
-                return (up ? cs.wickUpColor : cs.wickDownColor) ?? barColors.get(b.time) ?? (up ? paint.up : paint.down);
-            });
+                return candleStickColor(cs, stick, up, barColors.get(b.time) ?? (up ? paint.up : paint.down));
+            }, stick);
             return;
         }
         const drawBody = tier === 'full';
+        const bodyStick = !drawBody && stick === 'body';
         // When a fading style drops the body below the structure, draw a body outline even
         // if no border is configured — so the candle keeps a visible (hollow) skeleton.
         const fading = this.candleStructureAlpha > this.candleBodyAlpha + 0.001;
@@ -456,7 +553,7 @@ export class Canvas2dBackend implements IRenderBackend {
             // Body geometry up front so the wick can be clipped to it when the body is hollow.
             let top = 0;
             let bodyH = 0;
-            if (drawBody) {
+            if (drawBody || bodyStick) {
                 const oY = coords.priceToY(b.open, pane.scale, pane.bounds);
                 const cY = coords.priceToY(b.close, pane.scale, pane.bounds);
                 // Both edges snapped to the device grid so the horizontal edges rasterize
@@ -464,7 +561,15 @@ export class Canvas2dBackend implements IRenderBackend {
                 top = snapY(Math.min(oY, cY), coords.dpr);
                 bodyH = Math.max(1 / coords.dpr, snapY(Math.max(oY, cY), coords.dpr) - top);
             }
-            if (cs.wickVisible) {
+            if (bodyStick) {
+                ctx.globalAlpha = bodyStickAlpha;
+                ctx.strokeStyle = candleStickColor(cs, 'body', up, color);
+                ctx.lineWidth = g.wickW;
+                ctx.beginPath();
+                ctx.moveTo(x, top);
+                ctx.lineTo(x, top + bodyH);
+                ctx.stroke();
+            } else if (cs.wickVisible) {
                 // barcolor() recolors only the BODY (TV semantics): the wick keeps the
                 // direction color while a body is drawn. At stick-only zoom the stick IS
                 // the candle, so it keeps the barcolor tint.
@@ -513,12 +618,13 @@ export class Canvas2dBackend implements IRenderBackend {
     }
 
     /**
-     * Sub-pixel LOD: bars sharing a rounded pixel column collapse into high-low
-     * sticks (one per contiguous SAME-COLOR coverage run — see
-     * {@link aggregateCandleColumns}), so draw cost is bounded by screen width (not
-     * bar count) when zoomed far out, a price gap inside the column stays a void, and
-     * every bar's extent keeps its own color. `colorOf` is the calling style's per-bar
-     * paint rule (candles and OHLC bars resolve theirs differently).
+     * Sub-pixel LOD: bars sharing a rounded pixel column collapse into sticks (one
+     * per contiguous SAME-COLOR coverage run — see {@link aggregateCandleColumns}),
+     * so draw cost is bounded by screen width (not bar count) when zoomed far out, a
+     * price gap inside the column stays a void, and every bar's extent keeps its own
+     * color. `colorOf` is the calling style's per-bar paint rule (candles and OHLC
+     * bars resolve theirs differently); `extent` is what each bar covers — high to
+     * low, or open to close for candles whose wick is hidden.
      */
     private drawCandlesAggregated(
         ctx: CanvasRenderingContext2D,
@@ -528,15 +634,19 @@ export class Canvas2dBackend implements IRenderBackend {
         coords: CoordinateSystem,
         pane: PaneNode,
         colorOf: (bar: OHLCV) => string,
+        extent: 'range' | 'body' = 'range',
     ): void {
         const yOf = (price: number): number => coords.priceToY(price, pane.scale, pane.bounds);
+        // A body can be flat (a doji): it keeps one device pixel, as a wide candle's does.
+        const minH = extent === 'body' ? 1 / coords.dpr : 0;
         ctx.lineWidth = 1;
-        for (const s of aggregateCandleColumns(bars, i0, i1, (i) => coords.logicalToX(i), yOf, colorOf)) {
+        for (const s of aggregateCandleColumns(bars, i0, i1, (i) => coords.logicalToX(i), yOf, colorOf, extent)) {
             const x = s.x + 0.5;
+            const top = yOf(s.hi);
             ctx.strokeStyle = s.color;
             ctx.beginPath();
-            ctx.moveTo(x, yOf(s.hi));
-            ctx.lineTo(x, yOf(s.lo));
+            ctx.moveTo(x, top);
+            ctx.lineTo(x, Math.max(top + minH, yOf(s.lo)));
             ctx.stroke();
         }
     }

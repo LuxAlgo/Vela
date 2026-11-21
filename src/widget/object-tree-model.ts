@@ -6,12 +6,25 @@
 import type { PaneInfo } from '../core/options';
 import type { SerializedDrawing } from '../core/drawings/Drawing';
 import { getDrawingType } from '../core/drawings/registry';
+import { msg } from '../core/i18n/message';
+import { sourceText, textOf } from '../core/i18n/text';
+import type { Translator } from '../core/i18n/types';
+
+const TEXT = {
+    mainChart: msg('widget.objectTree.mainChart', 'Main chart'),
+    pane: msg('widget.objectTree.pane', 'Panel {n}'),
+    drawingWithText: msg('widget.objectTree.drawingWithText', '{name} — {text}'),
+    group: msg('widget.objectTree.group', 'Group {n}'),
+};
 
 /** A user-made bundle of drawings that hide, lock, delete and move as one. */
 export interface DrawGroup {
     id: string;
     name: string;
     ids: string[];
+    /** The pane an EMPTY group sits in. A group made before it holds anything has no member to
+     *  take a pane from; once drawings join, theirs is where it shows. Absent: the main chart. */
+    pane?: string;
 }
 
 /** The candles. */
@@ -60,6 +73,8 @@ export interface TreePane {
 /** Everything the layout needs, pulled from the chart by the panel before it renders. */
 export interface TreeSnapshot {
     panes: readonly PaneInfo[];
+    /** The shell's translator (pane names). Absent: English. */
+    i18n?: Translator | null;
     /** Live visibility per indicator id — the pane model doesn't carry it. */
     indicatorVisible: (id: string) => boolean;
     /** A handle's title, used only as a FALLBACK: the pane model carries the resolved display
@@ -83,30 +98,31 @@ export interface TreeSnapshot {
 }
 
 export const PRICE_PANE_ID = 'price';
-export const PRICE_PANE_LABEL = 'Main chart';
+/** The price pane's name in English (the tree shows it in the shell's language). */
+export const PRICE_PANE_LABEL = sourceText(TEXT.mainChart);
 
 /** A drawing type's display name and icon markup, from the type registry. Unregistered
  *  types fall back to a title-cased key so a plugin drawing still reads as a name. */
-export function drawingMeta(type: string): { label: string; icon: string | null } {
-    const meta = getDrawingType(type);
+export function drawingMeta(type: string, i18n?: Translator | null): { label: string; icon: string | null } {
+    const meta = getDrawingType(type, i18n ?? undefined);
     if (meta) return { label: meta.label, icon: meta.icon };
     return { label: String(type || 'drawing').replace(/(^|\s)\S/g, (c) => c.toUpperCase()), icon: null };
 }
 
 /** A drawing's row label — its type's name, plus its own text when it carries any. */
-export function drawingLabel(d: SerializedDrawing): string {
-    const { label } = drawingMeta(d.type);
+export function drawingLabel(d: SerializedDrawing, i18n?: Translator | null): string {
+    const { label } = drawingMeta(d.type, i18n);
     const text = d.text?.value?.trim();
-    return text ? `${label} — ${text}` : label;
+    return text ? textOf(i18n, TEXT.drawingWithText, { name: label, text }) : label;
 }
 
 /** A pane's display name: the price pane is the main chart, a study pane borrows the title
  *  of the indicator that owns its scale (falling back to its slot number). */
-export function paneLabel(pane: PaneInfo, fallbackTitle: (id: string) => string | undefined): string {
-    if (pane.kind === 'price') return PRICE_PANE_LABEL;
+export function paneLabel(pane: PaneInfo, fallbackTitle: (id: string) => string | undefined, i18n?: Translator | null): string {
+    if (pane.kind === 'price') return textOf(i18n, TEXT.mainChart);
     const master = pane.indicators.find((i) => !i.ownScale) ?? pane.indicators[0];
     if (master) return indicatorLabel(master, fallbackTitle);
-    return `Pane ${pane.order + 1}`;
+    return textOf(i18n, TEXT.pane, { n: String(pane.order + 1) });
 }
 
 /** An indicator's full display name. */
@@ -258,21 +274,33 @@ export function canGroup(ids: readonly string[], groups: readonly DrawGroup[]): 
     return ids.length > 0 && ids.every((id) => groupOf(groups, id) === null);
 }
 
-/** The next default group name: the lowest `Group N` no existing group has taken. */
-export function nextGroupName(groups: readonly DrawGroup[]): string {
+/** The next default group name: the lowest `Group N` no existing group has taken. The name is
+ *  the user's from then on (it persists, and can be renamed), so it is written once, in the
+ *  shell's language at the time. */
+export function nextGroupName(groups: readonly DrawGroup[], i18n?: Translator | null): string {
     const taken = new Set(groups.map((g) => g.name));
+    const nameOf = (n: number): string => textOf(i18n, TEXT.group, { n: String(n) });
     // One of the first n+1 candidates is always free, since n groups can occupy at most n.
     for (let n = 1; n <= groups.length; n += 1) {
-        const name = `Group ${n}`;
+        const name = nameOf(n);
         if (!taken.has(name)) return name;
     }
-    return `Group ${groups.length + 1}`;
+    return nameOf(groups.length + 1);
 }
 
-/** Rebuild a group list with only the members that pass `keep`. A group left with nobody in
- *  it disappears rather than lingering as an empty row. */
+/** Whether a group survives a membership change. One the change emptied disappears rather
+ *  than lingering as an empty row; one that was empty all along is a fresh group still waiting
+ *  for its first drawing, and stays. */
+function survives(before: DrawGroup, after: DrawGroup): boolean {
+    return after.ids.length > 0 || before.ids.length === 0;
+}
+
+/** Rebuild a group list with only the members that pass `keep`. */
 function withMembers(groups: readonly DrawGroup[], keep: (id: string) => boolean): DrawGroup[] {
-    return groups.map((g) => ({ ...g, ids: g.ids.filter(keep) })).filter((g) => g.ids.length > 0);
+    return groups.flatMap((g) => {
+        const next = { ...g, ids: g.ids.filter(keep) };
+        return survives(g, next) ? [next] : [];
+    });
 }
 
 /** Drop members that no longer exist, and the groups left empty by that. */
@@ -290,11 +318,21 @@ export function removeFromGroups(groups: readonly DrawGroup[], ids: readonly str
  *  exclusive, so a drawing can never show up under two groups at once. */
 export function assignToGroup(groups: readonly DrawGroup[], groupId: string, ids: readonly string[]): DrawGroup[] {
     const moving = new Set(ids);
-    const next = groups.map((g) => {
+    return groups.flatMap((g) => {
         const kept = g.ids.filter((id) => !moving.has(id));
-        return { ...g, ids: g.id === groupId ? [...kept, ...ids] : kept };
+        const next = { ...g, ids: g.id === groupId ? [...kept, ...ids] : kept };
+        return survives(g, next) ? [next] : [];
     });
-    return next.filter((g) => g.ids.length > 0);
+}
+
+/** The groups still waiting for their first drawing that sit in this pane. Like an orphaned
+ *  drawing, one whose pane is gone folds into the main chart. */
+export function emptyGroupsIn(groups: readonly DrawGroup[], paneId: string, paneIds: ReadonlySet<string>): DrawGroup[] {
+    return groups.filter((g) => {
+        if (g.ids.length > 0) return false;
+        const at = g.pane ?? PRICE_PANE_ID;
+        return paneId === PRICE_PANE_ID ? at === PRICE_PANE_ID || !paneIds.has(at) : at === paneId;
+    });
 }
 
 /**
@@ -320,10 +358,11 @@ export function drawingUnits(paneDraws: readonly SerializedDrawing[], groups: re
 }
 
 /** A unit's z key: its front-most member's. That is the slot a group surfaces at, so a
- *  bundle whose members straddle a series still reads as one block. */
+ *  bundle whose members straddle a series still reads as one block. An empty group has no
+ *  member to go by and leads the pane, where a new group is easiest to find. */
 function unitZ(u: DrawUnit): number {
     if (u.kind === 'draw') return u.drawing.zIndex;
-    return u.members[0]?.zIndex ?? 0;
+    return u.members[0]?.zIndex ?? Infinity;
 }
 
 /**
@@ -371,11 +410,14 @@ export function buildTree(snap: TreeSnapshot): TreePane[] {
     return snap.panes.map((pane) => ({
         id: pane.id,
         kind: pane.kind,
-        label: paneLabel(pane, snap.handleTitle),
+        label: paneLabel(pane, snap.handleTitle, snap.i18n),
         order: pane.order,
         collapsed: pane.collapsed,
         maximized: pane.maximized,
-        items: paneItems(snap, pane, drawingUnits(paneDrawings(snap.drawings, pane.id, paneIds), snap.groups)),
+        items: paneItems(snap, pane, [
+            ...emptyGroupsIn(snap.groups, pane.id, paneIds).map((group): DrawUnit => ({ kind: 'group', group, members: [] })),
+            ...drawingUnits(paneDrawings(snap.drawings, pane.id, paneIds), snap.groups),
+        ]),
     }));
 }
 

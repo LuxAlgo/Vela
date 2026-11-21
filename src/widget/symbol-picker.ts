@@ -2,12 +2,18 @@
 // (`chart.data.symbols()`). Kit Dialog + a lightweight ranked filter; selection reports
 // the ticker upward (the widget rebuilds the chart on it).
 import type { SymbolDescriptor } from '../core/ports/DataProvider';
-import { Dialog } from '../ui/components/dialog';
-import { injectStyles } from '../ui/styles';
-import { iconEl } from '../ui/icons';
+import { msg } from '../core/i18n/message';
+import { textOf } from '../core/i18n/text';
+import type { MessageDescriptor, Translator } from '../core/i18n/types';
+import { Dialog } from '@luxalgo/vela-ui/dialog';
+import { createTabs, type TabsHandle } from '@luxalgo/vela-ui/tabs';
+import { injectChromeStyles } from '../ui/chromeStyles';
+import { iconEl } from '@luxalgo/vela-ui/icons';
 import { tickerIconEl, baseOf } from './symbol-icon';
 import { symbolRanking } from './contributions';
 import { isGroupRow, groupKeyOf, groupMembers, defaultMemberOf } from '../data/symbol-groups';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
 
 /** First occurrence wins, keyed by venue+ticker — a ranking hook may inject an entry
  *  that also exists later in the pool; the injected one keeps position AND data. */
@@ -120,67 +126,50 @@ export function filterSymbols(list: readonly SymbolDescriptor[], query: string, 
 }
 
 const STYLE_ID = 'vela-widget-symbolpicker';
-const CSS = `
+const CSS = css`@layer vela.chrome {
+
 /* The dialog body is flush (a flex column): search + market tabs are a fixed head
    and the result list is the ONLY scroller, in both layouts. A sticky head over a
    scrolling padded body is not an option — browsers pin sticky boxes to the
    scroller's content box, so the head lands one padding below the top and covers
    the first row. */
-.vela-sp-head { flex: none; padding: var(--vela-space-4) var(--vela-space-4) 0; }
+.vela-sp-head { flex: none; padding: ${t.space[4]} ${t.space[4]} 0; }
 .vela-sp-searchrow {
     display: flex;
     align-items: center;
     gap: 8px;
     height: 40px;
     padding: 0 12px;
-    background: var(--vela-surface-elev);
-    border: 1px solid var(--vela-border);
+    background: ${t.surface.elev};
+    border: 1px solid ${t.border};
     border-radius: 8px;
 }
-.vela-sp-searchrow:focus-within { border-color: var(--vela-border-strong); }
-.vela-sp-searchrow .vela-icon { color: var(--vela-fg-muted); }
+.vela-sp-searchrow:focus-within { border-color: ${t.border.strong}; }
+.vela-sp-searchrow .vela-icon { color: ${t.fg.muted}; }
 .vela-sp-input {
     flex: 1;
     background: transparent;
-    color: var(--vela-fg);
+    color: ${t.fg};
     border: none;
     font-size: 14px;
     outline: none;
     text-transform: uppercase;
 }
 .vela-sp-input::placeholder { text-transform: none; }
-.vela-sp-tabs { display: flex; gap: 14px; margin: 12px 2px 0; border-bottom: 1px solid var(--vela-border); padding-bottom: 8px; }
+.vela-sp-tabs { display: flex; gap: 14px; margin: 12px 2px 0; border-bottom: 1px solid ${t.border}; padding-bottom: 8px; }
 /* Mobile (fullscreen dialog): the asset-class strip scrolls sideways instead of
    overflowing the body, and the result list stops capping itself — it fills the
    rest of the screen. The bottom inset (+ safe area) is the kit's: every mobile
    dialog body carries it, flush or not, so the list adds none of its own. */
 [data-layout='mobile'] .vela-sp-tabs { overflow-x: auto; scrollbar-width: none; gap: 6px; }
 [data-layout='mobile'] .vela-sp-tabs::-webkit-scrollbar { display: none; }
-[data-layout='mobile'] .vela-sp-tab { flex: none; padding: 7px 10px; }
+[data-layout='mobile'] .vela-sp-tabs > .vela-tab { flex: none; padding: 7px 10px; }
 [data-layout='mobile'] .vela-sp-list { flex: 1 1 auto; max-height: none; margin-bottom: 0; }
-.vela-sp-tab {
-    all: unset;
-    padding: 3px 10px;
-    border-radius: 5px;
-    cursor: pointer;
-    color: var(--vela-fg-muted);
-    font-size: 13px;
-    font-weight: 600;
-}
-.vela-sp-tab:hover { color: var(--vela-fg); }
-.vela-sp-tab[data-active] { background: var(--vela-selected-bg); color: var(--vela-selected-fg); }
 .vela-sp-list {
     min-height: 0;
-    margin: var(--vela-space-2) var(--vela-space-4) var(--vela-space-4);
+    margin: ${t.space[2]} ${t.space[4]} ${t.space[4]};
     max-height: 46vh;
     overflow: auto;
-}
-.vela-sp-list::-webkit-scrollbar { width: 8px; }
-.vela-sp-list::-webkit-scrollbar-thumb {
-    background: var(--vela-scroll);
-    border-radius: 4px;
-    border: 2px solid transparent;
-    background-clip: padding-box;
 }
 .vela-sp-row {
     display: flex;
@@ -190,7 +179,7 @@ const CSS = `
     border-radius: 8px;
     cursor: pointer;
 }
-.vela-sp-row:hover, .vela-sp-row[data-highlighted] { background: var(--vela-hover); }
+.vela-sp-row:hover, .vela-sp-row[data-highlighted] { background: ${t.hover}; }
 .vela-sp-avatar {
     width: 28px;
     height: 28px;
@@ -199,20 +188,20 @@ const CSS = `
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: var(--vela-fg-on-fill);
-    font-size: var(--vela-font-size-md);
+    color: ${t.fg.onFill};
+    font-size: ${t.fontSize.md};
     font-weight: 700;
 }
 .vela-sp-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.vela-sp-ticker { font-weight: 700; color: var(--vela-fg-bright); font-size: 14px; text-transform: uppercase; }
-.vela-sp-desc { color: var(--vela-fg-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vela-sp-ticker { font-weight: 700; color: ${t.fg.bright}; font-size: 14px; text-transform: uppercase; }
+.vela-sp-desc { color: ${t.fg.muted}; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vela-sp-badge {
     flex: none;
     padding: 2px 8px;
-    border-radius: 4px;
-    background: var(--vela-surface-elev);
-    border: 1px solid var(--vela-border);
-    color: var(--vela-fg-muted);
+    border-radius: ${t.radius.sm};
+    background: ${t.surface.elev};
+    border: 1px solid ${t.border};
+    color: ${t.fg.muted};
     font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.06em;
@@ -221,10 +210,11 @@ const CSS = `
 /* Provider brand marks — fixed by the venue, deliberately outside the theme palette. */
 .vela-sp-badge[data-p='binance'] { color: #f0b90b; } /* palette-exempt: venue brand mark */
 .vela-sp-badge[data-p='hyperliquid'] { color: #50d2c1; } /* palette-exempt: venue brand mark */
-.vela-sp-empty { padding: var(--vela-space-3); color: var(--vela-fg-muted); text-align: center; }
+.vela-sp-empty { padding: ${t.space[3]}; color: ${t.fg.muted}; text-align: center; }
 /* Grouped listings (futures roots): the chevron unfolds members inline, indented. */
 .vela-sp-expander {
     all: unset;
+    box-sizing: border-box;
     flex: none;
     display: inline-flex;
     align-items: center;
@@ -233,11 +223,12 @@ const CSS = `
     height: 22px;
     border-radius: 5px;
     cursor: pointer;
-    color: var(--vela-fg-muted);
+    color: ${t.fg.muted};
 }
-.vela-sp-expander:hover { background: var(--vela-surface-elev); color: var(--vela-fg); }
-.vela-sp-row[data-member] { padding-left: 34px; }
-`;
+.vela-sp-expander:hover { background: ${t.surface.elev}; color: ${t.fg}; }
+.vela-sp-row[data-member] { padding-inline-start: 34px; }
+
+}`;
 
 export interface SymbolPickerOptions {
     /** `provider` is the venue of the chosen row — absent only for a source that has none. */
@@ -249,7 +240,40 @@ export interface SymbolPickerOptions {
     /** The row's icon URL — routed to the descriptor's OWNING provider
      *  (`resolveSymbolIcon`). Absent or `undefined` per row ⇒ the initials badge. */
     iconFor?: (d: SymbolDescriptor) => string | undefined;
+    /** The shell's translator. Absent: English. */
+    i18n?: Translator;
 }
+
+const TEXT = {
+    title: msg('widget.symbolPicker.title', 'Symbol Search'),
+    search: msg('widget.symbolPicker.search', 'Search symbol…'),
+    noMatch: msg('widget.symbolPicker.noMatch', 'No symbols match.'),
+    empty: msg('widget.symbolPicker.empty', 'No symbols available yet.'),
+    showContracts: msg('widget.symbolPicker.showContracts', 'Show contracts'),
+};
+
+type SymbolTab = 'all' | 'stocks' | 'etfs' | 'crypto' | 'futures' | 'forex' | 'commodities';
+
+/** The type tabs, keyed by id; the label is display text only. */
+const TABS: ReadonlyArray<{ id: SymbolTab; label: MessageDescriptor }> = [
+    { id: 'all', label: msg('widget.symbolPicker.tab.all', 'All') },
+    { id: 'stocks', label: msg('widget.symbolPicker.tab.stocks', 'Stocks') },
+    { id: 'etfs', label: msg('widget.symbolPicker.tab.etfs', 'ETFs') },
+    { id: 'crypto', label: msg('widget.symbolPicker.tab.crypto', 'Crypto') },
+    { id: 'futures', label: msg('widget.symbolPicker.tab.futures', 'Futures') },
+    { id: 'forex', label: msg('widget.symbolPicker.tab.forex', 'Forex') },
+    { id: 'commodities', label: msg('widget.symbolPicker.tab.commodities', 'Commodities') },
+];
+
+/** The descriptor types each tab lists (crypto adds perpetual futures, below). */
+const TAB_TYPES: Readonly<Record<Exclude<SymbolTab, 'all'>, readonly string[]>> = {
+    crypto: ['crypto'],
+    stocks: ['stock'],
+    etfs: ['etf'],
+    futures: ['futures', 'root'],
+    forex: ['forex'],
+    commodities: ['commodity'],
+};
 
 /** Rows rendered per page — the list GROWS by this much every time the scroll nears the
  *  bottom, so a 13k-symbol venue browses whole without ever rendering 13k rows up front. */
@@ -263,8 +287,8 @@ export class SymbolPicker {
     private rows: SymbolDescriptor[] = [];
     private highlighted = 0;
     private seed = '';
-    private activeTab = 'All';
-    private tabs!: HTMLElement;
+    private activeTab: SymbolTab = 'all';
+    private tabs!: TabsHandle;
     private visible = PAGE;
     /** The last filter pass returned fewer raw rows than asked — the pool is drained
      *  (checked BEFORE folding: folding shortens pages without meaning exhaustion). */
@@ -277,33 +301,29 @@ export class SymbolPicker {
 
     constructor(private readonly opts: SymbolPickerOptions) {
         const doc = (opts.host ?? document.body).ownerDocument;
-        injectStyles(STYLE_ID, CSS, doc);
+        injectChromeStyles(STYLE_ID, CSS, doc);
 
         this.input = doc.createElement('input');
         this.input.className = 'vela-sp-input';
-        this.input.placeholder = 'Search symbol…';
+        this.input.placeholder = textOf(opts.i18n, TEXT.search);
         this.input.setAttribute('spellcheck', 'false');
         const searchRow = doc.createElement('div');
         searchRow.className = 'vela-sp-searchrow';
         searchRow.append(iconEl('search', doc), this.input);
-        this.tabs = doc.createElement('div');
-        this.tabs.className = 'vela-sp-tabs';
+        // The asset-class strip filters the one result list: tabs without panels.
+        this.tabs = createTabs({
+            variant: 'filled',
+            className: 'vela-sp-tabs',
+            items: TABS.map((tab) => ({ value: tab.id, label: textOf(opts.i18n, tab.label) })),
+            defaultValue: this.activeTab,
+            onValueChange: (id) => {
+                this.activeTab = id as SymbolTab;
+                this.refresh();
+            },
+        });
         const head = doc.createElement('div');
         head.className = 'vela-sp-head';
-        for (const t of ['All', 'Stocks', 'ETFs', 'Crypto', 'Futures', 'Forex', 'Commodities']) {
-            const b = doc.createElement('button');
-            b.className = 'vela-sp-tab';
-            b.textContent = t;
-            if (t === this.activeTab) b.dataset.active = '1';
-            b.addEventListener('click', () => {
-                this.activeTab = t;
-                for (const c of this.tabs.children) delete (c as HTMLElement).dataset.active;
-                b.dataset.active = '1';
-                this.refresh();
-            });
-            this.tabs.appendChild(b);
-        }
-        head.append(searchRow, this.tabs);
+        head.append(searchRow, this.tabs.el);
         this.list = doc.createElement('div');
         this.list.className = 'vela-sp-list';
         // Infinite scroll: nearing the bottom grows the page and APPENDS the new rows —
@@ -318,13 +338,15 @@ export class SymbolPicker {
         });
 
         this.dialog = new Dialog({
-            title: 'Symbol Search',
+            title: textOf(opts.i18n, TEXT.title),
+            ...(opts.i18n ? { i18n: opts.i18n } : {}),
             host: opts.host,
             closeOnInteractOutside: true,
             flush: true,
             content: (body) => body.append(head, this.list),
             onOpenChange: (open) => {
                 if (open) {
+                    this.relabel();
                     this.input.value = this.seed.toUpperCase();
                     this.seed = '';
                     this.refresh();
@@ -483,13 +505,19 @@ export class SymbolPicker {
         return this.ranked?.result ?? raw;
     }
 
+    /** The dialog's fixed text in the shell's language, re-read on every open. */
+    relabel(): void {
+        const i18n = this.opts.i18n;
+        this.dialog.titleEl.textContent = textOf(i18n, TEXT.title);
+        this.dialog.setI18n(i18n ?? null);
+        this.input.placeholder = textOf(i18n, TEXT.search);
+        this.tabs.setItems(TABS.map((tab) => ({ value: tab.id, label: textOf(i18n, tab.label) })));
+    }
+
     private computeRows(): SymbolDescriptor[] {
-        const TAB_TYPES: Record<string, string[]> = { Crypto: ['crypto'], Stocks: ['stock'], ETFs: ['etf'], Futures: ['futures', 'root'], Forex: ['forex'], Commodities: ['commodity'] };
         const all = this.pool();
-        const pool =
-            this.activeTab === 'All'
-                ? all
-                : all.filter((s) => TAB_TYPES[this.activeTab]?.includes((s.type ?? '').toLowerCase()) || (this.activeTab === 'Crypto' && (s.type ?? '').toLowerCase() === 'futures'));
+        const tab = this.activeTab;
+        const pool = tab === 'all' ? all : all.filter((s) => TAB_TYPES[tab].includes((s.type ?? '').toLowerCase()) || (tab === 'crypto' && (s.type ?? '').toLowerCase() === 'futures'));
         // A registered ranking OWNS the empty-query head — the built-in majors pin
         // stands down and the pool's own order shows.
         const filtered = filterSymbols(pool, this.input.value, this.visible, symbolRanking() ? false : TOP_TICKERS);
@@ -523,7 +551,7 @@ export class SymbolPicker {
         if (!this.rows.length) {
             const empty = doc.createElement('div');
             empty.className = 'vela-sp-empty';
-            empty.textContent = this.input.value ? 'No symbols match.' : 'No symbols indexed (provider still loading?).';
+            empty.textContent = textOf(this.opts.i18n, this.input.value ? TEXT.noMatch : TEXT.empty);
             this.list.appendChild(empty);
             return;
         }
@@ -566,7 +594,7 @@ export class SymbolPicker {
             row.dataset.group = '1';
             const expander = doc.createElement('button');
             expander.className = 'vela-sp-expander';
-            expander.setAttribute('aria-label', 'Show contracts');
+            expander.setAttribute('aria-label', textOf(this.opts.i18n, TEXT.showContracts));
             expander.appendChild(iconEl(this.expanded.has(groupKeyOf(s)) ? 'chevron-down' : 'chevron-right', doc));
             row.appendChild(expander);
         } else if (s.group != null && this.expanded.has(groupKeyOf(s))) row.dataset.member = '1';

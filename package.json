@@ -1,6 +1,6 @@
 {
   "name": "@luxalgo/vela",
-  "version": "0.8.4",
+  "version": "0.10.14",
   "description": "The open-source core of Vela by LuxAlgo: a charting library with a native high-performance renderer, drawing tools, pluggable chart types and pluggable scripting engines.",
   "keywords": [
     "charting library",
@@ -26,7 +26,7 @@
   "homepage": "https://velacharts.dev",
   "repository": {
     "type": "git",
-    "url": "https://github.com/luxalgo/vela.git"
+    "url": "https://github.com/LuxAlgo/Vela.git"
   },
   "bugs": {
     "url": "https://github.com/luxalgo/vela/issues"
@@ -75,10 +75,19 @@
       "types": "./dist/workspace.d.ts",
       "import": "./dist/workspace.js",
       "require": "./dist/workspace.cjs"
+    },
+    "./locales/*": {
+      "types": "./dist/locales/*.d.ts",
+      "import": "./dist/locales/*.js",
+      "require": "./dist/locales/*.cjs"
     }
   },
   "files": [
     "dist",
+    "docs",
+    "skills",
+    "llms.txt",
+    "CHANGELOG.md",
     "NOTICE",
     "LICENSE",
     "README.md"
@@ -86,18 +95,26 @@
   "author": "LuxAlgo",
   "sideEffects": false,
   "scripts": {
-    "build": "tsup",
-    "prepare": "tsup",
+    "build": "npm run build -w @luxalgo/vela-ui && tsup",
+    "prepare": "npm run build",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint .",
-    "playground": "vite"
+    "lint": "eslint . && node scripts/lint-css.mjs",
+    "playground": "vite",
+    "i18n:extract": "node scripts/i18n-extract.mjs",
+    "i18n:check": "node scripts/i18n-extract.mjs --check",
+    "lint:css": "node scripts/lint-css.mjs",
+    "new-component": "node packages/vela-ui/scripts/new-component.mjs"
   },
   "devDependencies": {
     "eslint": "^9.0.0",
     "jsdom": "^29.1.1",
+    "lightningcss": "^1.33.0",
+    "postcss-lit": "^1.4.1",
+    "stylelint": "^18.0.0",
+    "stylelint-config-recommended": "^19.0.0",
     "tsup": "^8.0.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.0.0",
@@ -105,12 +122,12 @@
     "vitest": "^4.1.0"
   },
   "dependencies": {
-    "@zag-js/core": "^1.42.0",
-    "@zag-js/dialog": "^1.42.0",
-    "@zag-js/dom-query": "^1.42.0",
-    "@zag-js/menu": "^1.42.0",
-    "@zag-js/tooltip": "^1.42.0",
-    "@zag-js/types": "^1.42.0",
-    "@zag-js/vanilla": "^1.42.0"
-  }
+    "@luxalgo/vela-ui": "^0.4.3"
+  },
+  "skills": [
+    "npm:@luxalgo/vela-ui"
+  ],
+  "workspaces": [
+    "packages/*"
+  ]
 }

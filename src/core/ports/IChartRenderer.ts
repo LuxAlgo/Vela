@@ -4,11 +4,19 @@ import type { IndicatorModel } from '../model/indicator';
 import type { ScenePatch } from '../model/patch';
 import type { InputValue, SymbolPickerFn } from '../model/inputs';
 import type { Millis } from '../model/time';
-import type { VelaTheme, ThemeName, MoveTarget, PriceStyle } from '../options';
+import type { VelaTheme, ThemeId, MoveTarget, PriceStyle } from '../options';
 import type { Unsubscribe } from '../util/types';
 import type { WallClock } from '../util/wall-clock';
 import type { IDrawingsRendererPort } from '../drawings/port';
 import type { MarkClickEvent, MarkGroup, TimelineMark } from '../marks/types';
+import type { SymbolFacts } from './MarketDataFeed';
+import type { MessageLike, TextDirection, Translator } from '../i18n/types';
+
+/** The language and direction attributes of a renderer's root element (`null` = unset). */
+export interface RendererRootAttributes {
+    lang: string | null;
+    dir: TextDirection | null;
+}
 
 /** What a rendering backend supports — drives graceful degradation + warnings. */
 export interface RendererCapabilities {
@@ -67,6 +75,24 @@ export interface LegendActionView {
     /** Icon id in the core icon registry (`registerIcon`). */
     icon: string;
     tooltip: string;
+    run(): void;
+}
+
+/**
+ * One HOST-CONTRIBUTED action of a drawing, resolved by the shell for one drawing: an icon
+ * button on the drawing's selection toolbar and a labelled button in its settings dialog.
+ * Plain data plus a bound `run` thunk, like {@link LegendActionView}.
+ */
+export interface DrawingActionView {
+    id: string;
+    /** Icon id in the core icon registry (`registerIcon`). */
+    icon: string;
+    /** The toolbar button's tooltip and accessible name, and the settings dialog button's text. */
+    label: string;
+    /** Show it on the selection toolbar. */
+    toolbar: boolean;
+    /** Show it in the settings dialog. */
+    settings: boolean;
     run(): void;
 }
 
@@ -210,6 +236,12 @@ export interface VisibleRange {
     to: Millis;
 }
 
+/** How {@link IChartRenderer.setVisibleRange} frames a range. */
+export interface VisibleRangeOptions {
+    /** Keep the configured right margin (whitespace past `range.to`) inside the frame. */
+    rightMargin?: boolean;
+}
+
 /** A user-initiated pane action reported by the renderer (hover buttons / double-clicks). */
 export type PaneAction =
     | { type: 'move'; paneId: string; dir: 'up' | 'down' }
@@ -238,6 +270,14 @@ export interface IChartRenderer {
 
     mount(container: HTMLElement, theme: VelaTheme): void;
     setTheme(theme: VelaTheme): void;
+    /**
+     * Adopt the chart's localization: render text through `i18n` and numbers and dates
+     * through `i18n.format`, then repaint. Called once after `mount` and again after every
+     * `chart.setLocale`. `lang` and `dir` are what the renderer's root element should carry
+     * (`null` = leave the attribute alone, the host page decides). Optional: a renderer
+     * without it keeps English text and formatting.
+     */
+    setLocalization?(i18n: Translator, root: RendererRootAttributes): void;
     resize(): void;
     destroy(): void;
 
@@ -257,6 +297,16 @@ export interface IChartRenderer {
      * (or absent) ⇒ the renderer falls back to its zoom-derived decimals. Optional.
      */
     setPricePrecision?(mintick: number | undefined): void;
+
+    /**
+     * Set the facts about the active symbol that decide which price styles can draw it
+     * (`SymbolFacts`, derived from `SymbolInfo`): passed when they land and again on every
+     * symbol change, `null` while unknown. A renderer draws a style the facts rule out
+     * (candles for `ohlc: false`) with a close-based fallback instead, keeping the chosen
+     * style as its `priceStyle`, and greys such styles in its own pickers. Optional — a
+     * renderer without it draws whatever style is set.
+     */
+    setSymbolFacts?(facts: SymbolFacts | null): void;
 
     /**
      * Push a bespoke NATIVE-LAYER render payload, keyed by layer `type`. Visuals that aren't
@@ -358,6 +408,15 @@ export interface IChartRenderer {
     setLegendActions?(provider: ((indicatorId: string) => LegendActionView[]) | null): void;
 
     /**
+     * Supply the HOST-CONTRIBUTED actions of each drawing (the shells wire the plugin
+     * registry through this — see `registerDrawingAction`). The provider is called with the
+     * drawing's id each time its selection toolbar or settings dialog opens, so `when()`
+     * gates and late registrations resolve then; an open toolbar keeps the buttons it
+     * opened with. Optional — a renderer without it never shows contributed drawing actions.
+     */
+    setDrawingActions?(provider: ((drawingId: string) => DrawingActionView[]) | null): void;
+
+    /**
      * Supply the HOST-CONTRIBUTED callout bubbles of each legend row (the shells wire
      * the plugin registry through this — see `registerLegendCallout`). Same contract as
      * {@link setLegendActions}: the provider is called per row, lazily; calling this
@@ -393,8 +452,9 @@ export interface IChartRenderer {
     setIndicatorVisible?(handle: IndicatorRenderHandle, visible: boolean): void;
 
     /**
-     * The renderer tells core when the base price style changes — from ANY source (the
-     * `priceStyle` feature, the in-chart settings dialog, an applied config template).
+     * The renderer tells core when the base price style it DRAWS changes — from ANY source
+     * (the `priceStyle` feature, the in-chart settings dialog, an applied config template,
+     * symbol facts that rule the chosen style out: see {@link setSymbolFacts}).
      * Display state stays renderer-owned; the core listens because some styles carry a
      * DATA requirement (a plugin style may need its data engine running). Optional —
      * a renderer without runtime style switching omits it.
@@ -443,7 +503,13 @@ export interface IChartRenderer {
     getDataWindowReadout?(): DataWindowReadout;
 
     getVisibleRange(): VisibleRange | null;
-    setVisibleRange(range: VisibleRange): void;
+    /**
+     * Frame `range` across the plot width. With `opts.rightMargin`, the renderer also
+     * leaves its configured right margin (whitespace past `range.to`, in bars) inside the
+     * frame — how a named preset frames the newest bars, so a preset (and "Reset chart
+     * view") never drops that margin. A renderer without a right margin ignores the option.
+     */
+    setVisibleRange(range: VisibleRange, opts?: VisibleRangeOptions): void;
     /**
      * Pan by a fraction of the visible width at constant zoom (positive ⇒ toward the
      * latest bars), behaving exactly like a pointer drag: same pan limits (including the
@@ -488,12 +554,12 @@ export interface IChartRenderer {
 
     /**
      * The renderer reports a user request to switch the APP THEME, made from its own
-     * in-chart UI (the settings dialog's Canvas → Theme row). The core owns the
-     * canonical theme: it resolves the name, calls {@link setTheme}, and emits
-     * `theme:changed` so host chrome follows. Optional — a renderer without an
-     * in-chart theme control omits it.
+     * in-chart UI (the settings dialog's Canvas → Theme row): a built-in theme's name or
+     * a registered theme's id. The core owns the canonical theme: it resolves the id,
+     * calls {@link setTheme}, and emits `theme:changed` so host chrome follows.
+     * Optional — a renderer without an in-chart theme control omits it.
      */
-    onThemeSelect?(cb: (theme: ThemeName) => void): Unsubscribe;
+    onThemeSelect?(cb: (theme: ThemeId) => void): Unsubscribe;
 
     /**
      * Move keyboard focus onto the chart's interactive surface (the element its keyboard
@@ -519,7 +585,7 @@ export interface IChartRenderer {
     onChartTypeSettingsChange?(cb: (typeId: string, values: Record<string, unknown>) => void): Unsubscribe;
     /** Host-app settings tabs (callback rows) shown by the renderer's settings dialog.
      *  `id` names a section for the visibility policy (defaults to the title's slug). */
-    setSettingsSections?(sections: ReadonlyArray<{ title: string; rows: readonly unknown[]; id?: string }>): void;
+    setSettingsSections?(sections: ReadonlyArray<{ title: MessageLike; rows: readonly unknown[]; id?: string }>): void;
     /** Settings-dialog visibility policy: `hidden` lists setting ids to hide (a tab, a
      *  group, or a row — subtree semantics). Presentation-only: hidden values keep
      *  being stored and applied. Optional — a renderer without a settings dialog omits it. */

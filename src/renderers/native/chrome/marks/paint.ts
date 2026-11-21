@@ -8,6 +8,7 @@
 // frame after a cache miss paints the bare token and the renderer repaints when the image
 // lands.
 import { iconMarkup } from '../../../../core/icons';
+import { sliceGraphemes } from '../../../../core/i18n/text';
 import type { MarkShape } from '../../../../core/marks/types';
 import type { MarkLaneLayout } from './layout';
 
@@ -85,11 +86,12 @@ export function paintMarkLane(ctx: CanvasRenderingContext2D, layout: MarkLaneLay
             const img = deps.icons.get(mark.glyph.icon, ink, symbolPx, deps.dpr);
             if (img) ctx.drawImage(img, center.x - symbolPx / 2, center.y - symbolPx / 2, symbolPx, symbolPx);
         } else if (mark.glyph.letter) {
-            const letter = mark.glyph.letter.slice(0, 2);
+            // Two characters at most, never half of one (an accented letter, an emoji).
+            const letter = sliceGraphemes(mark.glyph.letter, 2);
             ctx.fillStyle = ink;
             let px = letterFontPx(size, letter);
             ctx.font = `600 ${px}px ${deps.fontFamily}`;
-            if (letter.length > 1) {
+            if (isLetterPair(letter)) {
                 // The pair ratio was measured in one font and the host may set another: measure
                 // the pair as drawn and shrink it if it would still run over the outline.
                 px = fitLetterPx(px, ctx.measureText(letter).width, symbolInnerWidth(shape, size));
@@ -111,7 +113,12 @@ export function paintMarkLane(ctx: CanvasRenderingContext2D, layout: MarkLaneLay
  * or a wider host font are caught by {@link fitLetterPx} at paint time.
  */
 export function letterFontPx(size: number, letter: string): number {
-    return Math.round(size * (letter.length > 1 ? 0.38 : 0.58));
+    return Math.round(size * (isLetterPair(letter) ? 0.38 : 0.58));
+}
+
+/** Two characters rather than one (graphemes: `é` written with a combining accent is one). */
+function isLetterPair(letter: string): boolean {
+    return sliceGraphemes(letter, 1) !== letter;
 }
 
 /** The width a token's symbol may use: the head for a pin, the whole token otherwise, less the 1.5 px outline each side. */

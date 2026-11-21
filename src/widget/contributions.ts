@@ -3,11 +3,14 @@
 // chrome — topbar buttons, context-menu items — so any future view layer (React) can
 // project the same descriptors. Register at import time, before widgets are constructed.
 import type { Vela } from '../Vela';
-import type { LegendActionView, LegendCalloutView } from '../core/ports/IChartRenderer';
+import type { DrawingActionView, LegendActionView, LegendCalloutView } from '../core/ports/IChartRenderer';
+import type { SerializedDrawing } from '../core/drawings';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import type { SymbolDescriptor } from '../core/ports/DataProvider';
 import type { InputValue } from '../core/model/inputs';
 import type { IndicatorHandle } from '../core/IndicatorHandle';
+import type { MessageLike, Translator } from '../core/i18n/types';
+import { textOf } from '../core/i18n/text';
 import { TOPBAR_BUILTIN_IDS } from './topbar-composition';
 
 /** The runtime surface an action's `when`/`run` receives. */
@@ -32,14 +35,23 @@ export interface WidgetContext {
      *  are ignored. The seam a plugin uses to open ITS OWN panel programmatically. */
     togglePanel(id: string, open?: boolean): void;
     /** Dock `el` as a full-width strip in the shell's layout, between the chart area and
-     *  the bottom bar — the charts shrink to make room. Strips stack in docking order.
-     *  Returns the undock (removes `el`; a no-op once it has left the strip area). The
-     *  caller owns `el`, its content and styling. */
-    dockStrip(el: HTMLElement): () => void;
+     *  the bottom bar (or under the bottom bar, see {@link DockStripOptions}) — the charts
+     *  shrink to make room. Strips stack in docking order. Returns the undock (removes
+     *  `el`; a no-op once it has left the strip area), which also carries `cover(on)` (see
+     *  {@link DockedStrip}). The caller owns `el`, its content and styling. */
+    dockStrip(el: HTMLElement, opts?: DockStripOptions): DockedStrip;
+    /** Dock `el` at the shell's outer right edge, full height — beside the chart column and
+     *  any `placement: 'column'` panel, outside both (a rail of toggles). Edge elements
+     *  stack left to right in docking order and keep their own width. Returns the undock. */
+    dockEdge(el: HTMLElement, side: 'right'): () => void;
     /** The widget's root element — pass it as `host` when mounting kit components
      *  (Dialog/Menu/Tooltip) from an action; without an explicit host they portal to
      *  the body, OUTSIDE the theme variables. A multi-chart shell hands its own root. */
     host: HTMLElement;
+    /** The shell's translator: `i18n.t(msg(...))` for text an action or panel renders,
+     *  `i18n.format` for its numbers and dates, `i18n.direction` for its layout. It follows
+     *  `setLocale`; listen to the shell's `locale:changed` to re-render. */
+    i18n: Translator;
     /** The widget's feedback pill (bottom-center, auto-hides). */
     toast(message: string, kind?: 'info' | 'success' | 'error'): void;
     /** Add a SCRIPT indicator to the active chart THROUGH THE SHELL — unlike the raw
@@ -56,10 +68,117 @@ export interface WidgetContext {
      *  `state:changed` + storage write follows). Only needed for state with no shell
      *  event of its own — indicator adds/removals already trigger the save cycle. */
     stateChanged(): void;
+    /** The shell's built-in topbar items, shown or hidden at runtime — for a plugin that
+     *  hosts one of those controls elsewhere (its own alerts surface, a rail of panel
+     *  toggles). See {@link TopbarItems}. */
+    topbar: TopbarItems;
+    /** The shell's side-panel dock as data: which panels it holds (built-ins included),
+     *  which one is open, and a change event. See {@link PanelDockView}. */
+    panels: PanelDockView;
+    /** The shell's right-edge toolbar (the `sidebar` option): badges on its entries, its
+     *  entries hidden or shown at runtime, and a redraw after a sidebar action's `active` or
+     *  `when` changed. See {@link SidebarControl}. */
+    sidebar: SidebarControl;
+    /** The shell's full screen: whether it is on, entering and leaving it, and a change
+     *  event — for a plugin that docked something around the charts and steps aside with
+     *  the shell's bars. See {@link FullscreenControl}. */
+    fullscreen: FullscreenControl;
     /** Where the right-click that opened a context menu landed. Set on the context handed
      *  to `context:*` actions (`when` and `run`); absent everywhere else. */
     pointer?: ContextMenuPointer;
 }
+
+/**
+ * The shell's full screen ({@link WidgetContext.fullscreen}): the charts alone, the shell's
+ * bars hidden and its open side panel closed. The shell hides only what is its own. What a
+ * plugin docked around the charts (a strip, an edge element) stays until the plugin that
+ * owns it steps aside, which this is for.
+ */
+export interface FullscreenControl {
+    /** Whether the shell is in full screen right now. */
+    isOn(): boolean;
+    /** Enter (`true`) or leave (`false`). Entering is ignored on the mobile layout. */
+    set(on: boolean): void;
+    /** Called after the shell enters or leaves full screen, by any path: its key, its topbar
+     *  button, Esc, code. Returns the unsubscribe. */
+    onDidChange(cb: (on: boolean) => void): () => void;
+}
+
+/**
+ * The shell's right-edge toolbar ({@link WidgetContext.sidebar}). Its entries are the
+ * side-panel toggles and the actions registered with `target: 'sidebar'`. Every method is
+ * a no-op while the shell shows no sidebar (the option is off, or the layout is mobile).
+ */
+export interface SidebarControl {
+    /** Whether the shell was built with a sidebar. */
+    readonly enabled: boolean;
+    /** A small count or mark on an entry (a panel id or a sidebar action id). `null`, `0`
+     *  and `''` clear it; numbers above 99 show as `99+`. */
+    setBadge(id: string, badge: string | number | null): void;
+    /** Redraw the entries: re-read each sidebar action's `active` and `when`. */
+    refresh(): void;
+    /** Whether an entry (a panel id or a sidebar action id) shows right now: placed by the
+     *  host's composition, available, and not hidden at runtime. */
+    isVisible(id: string): boolean;
+    /** Hide an entry (`false`) or give it back (`true`), as `ctx.topbar.setVisible` does for
+     *  the topbar. It never adds an entry the composition left out, and it is not saved with
+     *  the layout: a plugin applies it again when it mounts. */
+    setVisible(id: string, visible: boolean): void;
+}
+
+/** A built-in topbar item a plugin can hide at runtime — every built-in id but the `'actions'` flow slot. */
+export type TopbarItemId = Exclude<(typeof TOPBAR_BUILTIN_IDS)[number], 'actions'>;
+
+/**
+ * Runtime visibility of the shell's built-in topbar items ({@link WidgetContext.topbar}).
+ * It narrows the host's `topbar` composition and follows the same rule: hiding an item
+ * removes its other entry points with it — its row in the mobile three-dots menu, its
+ * bottom-bar stop, its keyboard chord. It never adds an item the composition left out,
+ * and it is not saved with the layout: a plugin applies it again when it mounts.
+ */
+export interface TopbarItems {
+    /** Whether the item shows right now: in the composition, and not hidden at runtime. */
+    isVisible(id: TopbarItemId): boolean;
+    /** Hide the item (`false`) or give it back (`true`). Unknown ids are ignored. */
+    setVisible(id: TopbarItemId, visible: boolean): void;
+}
+
+/** One panel the dock holds, as {@link PanelDockView.list} reports it. */
+export interface DockedPanelInfo {
+    id: string;
+    /** The panel's title in the shell's language. */
+    title: string;
+    icon: string;
+    /** The shell's own panel (object tree, data window) rather than a contributed one. */
+    builtIn: boolean;
+}
+
+/** The side-panel dock as data ({@link WidgetContext.panels}); `ctx.togglePanel` acts on it. */
+export interface PanelDockView {
+    /** Every docked panel, built-ins included, in dock order. */
+    list(): ReadonlyArray<DockedPanelInfo>;
+    /** The open panel's id, or null when the column is closed. */
+    openId(): string | null;
+    /** Whether the panel covers the shell's charts right now (see `maximizable`). */
+    isMaximized(id: string): boolean;
+    /** Called after a panel opens, closes, maximizes or restores, and after panels are
+     *  added or removed. Returns the unsubscribe. */
+    onDidChange(cb: () => void): () => void;
+}
+/** Where {@link WidgetContext.dockStrip} places a strip. */
+export interface DockStripOptions {
+    /** `'above-bottombar'` (default): between the charts and the bottom bar.
+     *  `'below-bottombar'`: under the bottom bar, at the foot of the chart column. */
+    position?: 'above-bottombar' | 'below-bottombar';
+}
+
+/**
+ * A docked strip: call it to undock. `cover(true)` lays the strip over the whole chart
+ * column — the topbar, the charts, the strips and the bottom bar — but not over a
+ * `placement: 'column'` panel, an edge element ({@link WidgetContext.dockEdge}) or the
+ * mobile layout's bottom bar; `cover(false)` puts it back in its place in the column.
+ */
+export type DockedStrip = (() => void) & { cover(on: boolean): void };
 
 /**
  * What the chart's crosshair reported when a context menu opened ({@link WidgetContext.pointer}),
@@ -105,16 +224,18 @@ export interface ExternalIndicatorEntry {
 }
 
 /** Where an action is projected. */
-export type WidgetActionTarget = 'topbar' | 'context:body' | 'context:price-axis' | 'context:time-axis';
+export type WidgetActionTarget = 'topbar' | 'sidebar' | 'context:body' | 'context:price-axis' | 'context:time-axis';
 
 export interface WidgetActionDescriptor {
     /** Stable id — re-registering an id replaces it. */
     id: string;
     target: WidgetActionTarget;
     /** Always required, even icon-only: it is the button's aria-label and tooltip, the
-     *  mobile drawer row's text, and the context-menu item's label. */
-    label: string;
-    /** Icon id from the `vela/ui` icon registry (register yours with `registerIcon`). */
+     *  mobile drawer row's text, and the context-menu item's label. A message
+     *  (`msg(id, 'English')`) follows the shell's language; a plain string shows as is. */
+    label: MessageLike;
+    /** Icon id from the `vela/ui` icon registry (register yours with `registerIcon`). The
+     *  axis context menus carry no icons, so a row added there shows without it. */
     icon?: string;
     /** Topbar only: render the DESKTOP button icon-only, like the built-in tools — the
      *  `label` moves to the aria-label and a kit tooltip instead of button text (mobile
@@ -124,7 +245,7 @@ export interface WidgetActionDescriptor {
      *  that makes a `'screenshot'` slot override pixel-faithful to the native button. */
     iconOnly?: boolean;
     /** Sort key (ascending; default 0; ties keep registration order). On the topbar it orders
-     *  the contributed group. In a context menu (`context:*`) contributed rows sort TOGETHER
+     *  the contributed group, and on the sidebar the `'actions'` flow slot. In a context menu (`context:*`) contributed rows sort TOGETHER
      *  with the menu's built-in rows, which sit at the ranks of `CONTEXT_MENU_BUILTIN_ORDER`:
      *  the built-in actions below 0 and the settings row at 1000. So an action without
      *  `order` lands after the built-in actions and before the settings row, `order: -100`
@@ -142,6 +263,10 @@ export interface WidgetActionDescriptor {
     mobile?: 'bar' | 'menu';
     /** Runtime gate — omitted ⇒ always shown. */
     when?: (ctx: WidgetContext) => boolean;
+    /** Sidebar only: the pressed look of a toggle that is on (a panel of the plugin's own,
+     *  a mode). Read whenever the sidebar redraws — call `ctx.sidebar.refresh()` after the
+     *  state behind it changed. */
+    active?: (ctx: WidgetContext) => boolean;
     run: (ctx: WidgetContext) => void;
 }
 
@@ -187,12 +312,15 @@ export interface SidePanelHeader {
     slot: HTMLElement;
     /** Replace the header title (an empty string hides it). The topbar toggle keeps the
      *  DECLARED `title` as its tooltip. */
-    setTitle(title: string): void;
+    setTitle(title: MessageLike): void;
     /** Whether the panel covers every chart right now (see `maximizable`). */
     readonly maximized: boolean;
     /** Maximize the panel over the shell's charts, or restore it — what its header button
      *  does. A no-op unless the descriptor is `maximizable`. Closing restores it too. */
     setMaximized(maximized: boolean): void;
+    /** Close the panel — what the header's close button does. A panel declared
+     *  `header: 'none'` wires its own close control to this. */
+    close(): void;
 }
 
 /**
@@ -208,8 +336,8 @@ export interface SidePanelHeader {
 export interface SidePanelDescriptor {
     /** Stable id — re-registering an id replaces it. Also the key its width persists under. */
     id: string;
-    /** Header title, and the tooltip of its topbar button. */
-    title: string;
+    /** Header title, and the tooltip of its topbar button. A message follows the shell's language. */
+    title: MessageLike;
     /** Icon id from the `vela/ui` icon registry (register yours with `registerIcon`). */
     icon: string;
     /** Sort key among the panel buttons (ascending; default 100 — after the built-ins). */
@@ -229,6 +357,16 @@ export interface SidePanelDescriptor {
      *  it (default false). For panels that are sometimes the main work surface, like an
      *  editor; the contribution can drive it too ({@link SidePanelHeader.setMaximized}). */
     maximizable?: boolean;
+    /** `'none'` drops the shell's header row (title, header buttons, close) so the panel
+     *  draws its own in its body, wiring its close control to {@link SidePanelHeader.close}
+     *  (default `'default'`). On the mobile layout the header's close is the panel's only
+     *  way out, so a headless panel must provide one. */
+    header?: 'default' | 'none';
+    /** `'chart'` (default): a column in the chart row, beside the charts only. `'column'`: a
+     *  full-height column at the shell's right, beside the topbar, the charts, the strips and
+     *  the bottom bar, which all narrow to make room. On the mobile layout both kinds cover
+     *  the chart area alike; maximized, a `'column'` panel covers the chart column too. */
+    placement?: 'chart' | 'column';
     mount(ctx: WidgetContext, body: HTMLElement, header: SidePanelHeader): SidePanelHandle | void;
 }
 
@@ -338,6 +476,10 @@ export interface LegendIndicatorInfo {
      *  update shows through); undefined for a NATIVE (core-computed) indicator. The usual
      *  `when` gate for source-centric actions. */
     source?: string;
+    /** The language id of the engine running the script (`IndicatorHandle.language`);
+     *  undefined for a NATIVE indicator. The `when` gate for actions that only make sense
+     *  for one language, such as opening the row in that language's editor. */
+    language?: string;
 }
 
 /**
@@ -352,7 +494,8 @@ export interface LegendActionDescriptor {
     id: string;
     /** Icon id from the `vela/ui` icon registry (register yours with `registerIcon`). */
     icon: string;
-    tooltip: string;
+    /** Hover text. A message follows the chart's language. */
+    tooltip: MessageLike;
     /** Sort key within the contributed group (ascending; default 0). */
     order?: number;
     /** Per-indicator gate — omitted ⇒ shown on every row. */
@@ -379,6 +522,16 @@ export function legendActions(): LegendActionDescriptor[] {
     return [...legendRegistry.values()].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 }
 
+/** The {@link LegendIndicatorInfo} of one indicator — natives carry neither `source` nor `language`. */
+function legendInfoOf(h: IndicatorHandle): LegendIndicatorInfo {
+    return {
+        id: h.id,
+        title: h.title,
+        ...(h.source !== undefined ? { source: h.source } : {}),
+        ...(h.language !== undefined ? { language: h.language } : {}),
+    };
+}
+
 /**
  * The provider a shell hands to `chart.renderer.setLegendActions` — resolves the row's
  * indicator on THAT chart, gates each descriptor, and binds `run` to a fresh context per
@@ -387,15 +540,14 @@ export function legendActions(): LegendActionDescriptor[] {
 export function legendActionsProviderFor(chart: Vela, context: () => WidgetContext): (indicatorId: string) => LegendActionView[] {
     return (indicatorId) => {
         const find = (): IndicatorHandle | undefined => chart.indicators().find((h) => h.id === indicatorId);
-        const infoOf = (h: IndicatorHandle): LegendIndicatorInfo => ({ id: h.id, title: h.title, ...(h.source !== undefined ? { source: h.source } : {}) });
         const handle = find();
         if (!handle) return [];
-        const info = infoOf(handle);
+        const info = legendInfoOf(handle);
         // `run` reads the indicator AGAIN at click time: rows are built once, and an
         // in-place code update since then must not hand the action the old source.
         return legendActions()
             .filter((d) => !d.when || d.when(info))
-            .map((d) => ({ id: d.id, icon: d.icon, tooltip: d.tooltip, run: () => d.run(context(), infoOf(find() ?? handle)) }));
+            .map((d) => ({ id: d.id, icon: d.icon, tooltip: textOf(chart.i18n, d.tooltip), run: () => d.run(context(), legendInfoOf(find() ?? handle)) }));
     };
 }
 
@@ -405,10 +557,10 @@ export function legendActionsProviderFor(chart: Vela, context: () => WidgetConte
  *  button whose `run` receives the shell's {@link WidgetContext} and the row's
  *  indicator — the same signature as a legend action's `run`. */
 export type LegendCalloutItem =
-    | { type: 'text'; text: string }
+    | { type: 'text'; text: MessageLike }
     | {
           type: 'button';
-          label: string;
+          label: MessageLike;
           /** Emphasized (selection-colored) button — the panel's main action. */
           primary?: boolean;
           /** Close the panel after `run` (default true). */
@@ -418,7 +570,7 @@ export type LegendCalloutItem =
 
 /** The panel a clickable callout deploys: an optional heading over ordered blocks. */
 export interface LegendCalloutContent {
-    title?: string;
+    title?: MessageLike;
     items: LegendCalloutItem[];
 }
 
@@ -430,8 +582,8 @@ export interface LegendCalloutSpec {
     background: string;
     /** Icon ink (default: the legend row's text color). */
     color?: string;
-    /** Hover text; also the bubble's accessible name. */
-    tooltip: string;
+    /** Hover text; also the bubble's accessible name. A message follows the chart's language. */
+    tooltip: MessageLike;
     /** Deployed panel — presence makes the bubble clickable. */
     content?: LegendCalloutContent;
 }
@@ -486,8 +638,9 @@ export function legendCalloutsProviderFor(chart: Vela, context: () => WidgetCont
     return (indicatorId) => {
         const handle = chart.indicators().find((h) => h.id === indicatorId);
         if (!handle) return [];
-        const info: LegendIndicatorInfo = { id: handle.id, title: handle.title, ...(handle.source !== undefined ? { source: handle.source } : {}) };
+        const info = legendInfoOf(handle);
         const views: LegendCalloutView[] = [];
+        const t = (m: MessageLike): string => textOf(chart.i18n, m);
         for (const d of legendCallouts()) {
             const spec = d.callout(info);
             if (!spec) continue;
@@ -496,17 +649,17 @@ export function legendCalloutsProviderFor(chart: Vela, context: () => WidgetCont
                 icon: spec.icon,
                 background: spec.background,
                 ...(spec.color !== undefined ? { color: spec.color } : {}),
-                tooltip: spec.tooltip,
+                tooltip: t(spec.tooltip),
                 ...(spec.content !== undefined
                     ? {
                           content: {
-                              ...(spec.content.title !== undefined ? { title: spec.content.title } : {}),
+                              ...(spec.content.title !== undefined ? { title: t(spec.content.title) } : {}),
                               items: spec.content.items.map((item) =>
                                   item.type === 'text'
-                                      ? item
+                                      ? { type: 'text' as const, text: t(item.text) }
                                       : {
                                             type: 'button' as const,
-                                            label: item.label,
+                                            label: t(item.label),
                                             ...(item.primary !== undefined ? { primary: item.primary } : {}),
                                             ...(item.close !== undefined ? { close: item.close } : {}),
                                             run: () => item.run(context(), info),
@@ -518,6 +671,83 @@ export function legendCalloutsProviderFor(chart: Vela, context: () => WidgetCont
             });
         }
         return views;
+    };
+}
+
+// ── Drawing actions ────────────────────────────────────────────────────────────────
+
+/** Where a contributed drawing action shows: the selection toolbar that floats by a
+ *  selected drawing, and the drawing's settings dialog. */
+export type DrawingActionSurface = 'toolbar' | 'settings';
+
+/**
+ * A contributed DRAWING action: an icon button on the toolbar that floats by a selected
+ * drawing, placed before its settings wheel, and a labelled button at the start of the
+ * drawing's settings dialog footer. It acts on one drawing, so a multi-selection's toolbar
+ * leaves it out. `when` gates per drawing (its type, its anchors); `run` receives the
+ * shell's {@link WidgetContext} and the drawing as it is at click time.
+ */
+export interface DrawingActionDescriptor {
+    /** Stable id — re-registering an id replaces it. */
+    id: string;
+    /** Icon id from the `vela/ui` icon registry (register yours with `registerIcon`). */
+    icon: string;
+    /** The toolbar button's tooltip and accessible name, and the settings dialog button's
+     *  text. A message (`msg(id, 'English')`) follows the chart's language. */
+    label: MessageLike;
+    /** Sort key within the contributed group (ascending; default 0; ties keep registration order). */
+    order?: number;
+    /** Where the action shows (default: both). */
+    surfaces?: readonly DrawingActionSurface[];
+    /** Per-drawing gate — omitted ⇒ shown on every drawing. */
+    when?: (drawing: SerializedDrawing) => boolean;
+    run(ctx: WidgetContext, drawing: SerializedDrawing): void;
+}
+
+const drawingActionRegistry = new Map<string, DrawingActionDescriptor>();
+
+/** Register (or replace) a drawing action. Returns an unregister disposer. */
+export function registerDrawingAction(desc: DrawingActionDescriptor): () => void {
+    drawingActionRegistry.set(desc.id, desc);
+    return () => {
+        if (drawingActionRegistry.get(desc.id) === desc) drawingActionRegistry.delete(desc.id);
+    };
+}
+
+export function unregisterDrawingAction(id: string): void {
+    drawingActionRegistry.delete(id);
+}
+
+/** Every registered drawing action, `order`-sorted (registration order breaks ties). */
+export function drawingActions(): DrawingActionDescriptor[] {
+    return [...drawingActionRegistry.values()].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+}
+
+/**
+ * The provider a shell hands to `chart.renderer.setDrawingActions` — resolves the drawing
+ * on THAT chart, gates each descriptor, and binds `run` to a fresh context per click (never
+ * a cached one; the widget context rule). Both shells wire exactly this.
+ */
+export function drawingActionsProviderFor(chart: Vela, context: () => WidgetContext): (drawingId: string) => DrawingActionView[] {
+    return (drawingId) => {
+        if (!chart.drawings.supported) return [];
+        const find = (): SerializedDrawing | undefined => chart.drawings.all().find((d) => d.id === drawingId);
+        const drawing = find();
+        if (!drawing) return [];
+        return drawingActions()
+            .filter((d) => !d.when || d.when(drawing))
+            .map((d) => {
+                const on = d.surfaces ?? ['toolbar', 'settings'];
+                return {
+                    id: d.id,
+                    icon: d.icon,
+                    label: textOf(chart.i18n, d.label),
+                    toolbar: on.includes('toolbar'),
+                    settings: on.includes('settings'),
+                    // Read the drawing AGAIN at click time: the toolbar outlives drags and edits.
+                    run: () => d.run(context(), find() ?? drawing),
+                };
+            });
     };
 }
 

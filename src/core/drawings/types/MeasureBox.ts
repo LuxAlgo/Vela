@@ -1,8 +1,18 @@
+import { msg } from '../../i18n/message';
+import { localizeNumberText, textOf } from '../../i18n/text';
+import { englishTranslator } from '../../i18n/translator';
+import type { Translator } from '../../i18n/types';
 import { Drawing, type AnchorSlot, type SerializedDrawing } from '../Drawing';
 import type { Projector } from '../geometry';
 import type { SettingsSchema } from '../schema';
 import { LINE_FIELDS, TEXT_SIZE_OPTIONS } from '../schema';
 import { pointInBox, handleAt } from '../hittest';
+
+/** The measurement lines; numbers come formatted (`count` picks the plural form). */
+const MEASURE_TEXT = {
+    priceChange: msg('drawing.measure.priceChange', '{change} ({percent}%)'),
+    barsAndDuration: msg('drawing.measure.barsAndDuration', '{count, plural, one {{bars} bar} other {{bars} bars}}, {duration}'),
+};
 
 /** Signed value with 2 decimals (e.g. "+523.45"). */
 function signed(n: number): string {
@@ -57,11 +67,12 @@ export abstract class MeasureBox extends Drawing {
     // Placed click-move-click (the inherited 'click' mode): first click sets a corner, the second
     // sets the opposite one — consistent with the box/Gann tools.
 
-    /** The measurement lines, filtered by the enabled toggles. */
-    measureLabel(proj: Projector): string[] {
+    /** The measurement lines, filtered by the enabled toggles, in `i18n`'s language
+     *  (English without one). */
+    measureLabel(proj: Projector, i18n?: Translator): string[] {
         const lines: string[] = [];
-        if (this.showPrice) lines.push(this.priceLabel());
-        if (this.showDate) lines.push(this.timeLabel(proj));
+        if (this.showPrice) lines.push(this.priceLabel(i18n));
+        if (this.showDate) lines.push(this.timeLabel(proj, i18n));
         return lines;
     }
 
@@ -73,23 +84,23 @@ export abstract class MeasureBox extends Drawing {
     }
 
     /** Formatted `Δprice (Δ%)` between the two anchors. */
-    protected priceLabel(): string {
+    protected priceLabel(i18n?: Translator): string {
         const a = this.anchors[0];
         const b = this.anchors[1];
         if (!a || !b) return '';
         const delta = b.price - a.price;
         const percent = a.price !== 0 ? (delta / a.price) * 100 : 0;
-        return `${signed(delta)} (${signed(percent)}%)`;
+        return textOf(i18n, MEASURE_TEXT.priceChange, { change: localizeNumberText(signed(delta), i18n), percent: localizeNumberText(signed(percent), i18n) });
     }
 
     /** Formatted `N bars, duration` between the two anchors (bars only when the projector knows). */
-    protected timeLabel(proj: Projector): string {
+    protected timeLabel(proj: Projector, i18n?: Translator): string {
         const a = this.anchors[0];
         const b = this.anchors[1];
         if (!a || !b) return '';
-        const duration = formatDuration(b.time - a.time);
+        const duration = (i18n ?? englishTranslator()).format.duration(b.time - a.time, { style: 'span', surface: 'drawing' });
         const bars = proj.barsBetween ? Math.round(proj.barsBetween(a.time, b.time)) : null;
-        return bars != null ? `${bars} bars, ${duration}` : duration;
+        return bars != null ? textOf(i18n, MEASURE_TEXT.barsAndDuration, { count: bars, bars: localizeNumberText(String(bars), i18n), duration }) : duration;
     }
 
     private rect(proj: Projector): { x1: number; y1: number; x2: number; y2: number } | null {
@@ -132,11 +143,11 @@ export abstract class MeasureBox extends Drawing {
     schema(): SettingsSchema {
         return {
             fields: [
-                { path: 'showPrice', label: 'Show price', kind: 'boolean', group: 'behavior' },
-                { path: 'showDate', label: 'Show date', kind: 'boolean', group: 'behavior' },
+                { path: 'showPrice', label: msg('drawing.measure.showPrice', 'Show price'), kind: 'boolean', group: 'behavior' },
+                { path: 'showDate', label: msg('drawing.measure.showDate', 'Show date'), kind: 'boolean', group: 'behavior' },
                 ...LINE_FIELDS.filter((f) => f.path !== 'style.lineColor'), // box border (the fill is direction-tinted)
-                { path: 'text.color', label: 'Text color', kind: 'color', group: 'text' },
-                { path: 'text.size', label: 'Text size', kind: 'select', options: TEXT_SIZE_OPTIONS, group: 'text' },
+                { path: 'text.color', label: msg('drawing.field.textColor', 'Text color'), kind: 'color', group: 'text' },
+                { path: 'text.size', label: msg('drawing.field.textSize', 'Text size'), kind: 'select', options: TEXT_SIZE_OPTIONS, group: 'text' },
             ],
         };
     }

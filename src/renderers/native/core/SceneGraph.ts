@@ -4,6 +4,7 @@ import type { VolumeLayerData, VpvrLayerData } from '../../../core/model/volume-
 import type { PaneKind } from '../../../core/model/scene';
 import type { IndicatorModel, PaneAxisBand } from '../../../core/model/indicator';
 import type { PriceStyle } from '../../../core/options';
+import type { ResolvedFormatters } from '../../../core/format/types';
 import type { PriceScale, PaneBounds } from './CoordinateSystem';
 import { type CandlePaintOverride, type ChartStyle, type CrosshairOverride, defaultChartStyle } from './chartConfig';
 import { defaultTradeMarkersState, type TradeMarkersState } from '../../shared/trade-markers';
@@ -168,6 +169,9 @@ export class SceneGraph {
     logScale = false;
     /** Inverted price axis on the price pane (high at the bottom). Study panes carry their own. */
     invertScale = false;
+    /** The price pane's autoscale fits the bars alone: indicator plots, their price lines
+     *  and Pine drawings paint where they fall instead of widening the window. */
+    scalePriceOnly = false;
     /** Exchange tick size for the active symbol (e.g. 0.01), when known. Drives the
      *  price-axis decimals — the instrument's true precision instead of the zoom-derived
      *  formula. Undefined until symbol metadata loads (the formula is the fallback). */
@@ -179,6 +183,9 @@ export class SceneGraph {
     percentBaseline = 0;
     /** IANA time zone for the time axis + crosshair/data-window stamps (`'UTC'` default). */
     timezone = 'UTC';
+    /** The chart's formatters (`chart.i18n.format`) for axis labels, chips and readouts;
+     *  undefined = the built-in English formatting (a renderer driven without a chart). */
+    format: ResolvedFormatters | undefined = undefined;
     /** Draw the background gridlines (price + time). Master toggle (`gridlines`
      *  feature); per-axis visibility + colors live in `style.gridVert`/`gridHorz`. */
     showGrid = true;

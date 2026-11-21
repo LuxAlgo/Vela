@@ -1,8 +1,10 @@
 // Chart context menu — right-click on the chart area. Items depend on the zone
 // (price axis / time axis / chart body) and current renderer feature states; the menu
-// itself is the kit Menu anchored at the pointer.
+// itself is the kit ContextMenu, opened at the pointer.
 import type { Vela } from '../Vela';
-import { Menu, type MenuItemDescriptor } from '../ui/components/menu';
+import { textOf } from '../core/i18n/text';
+import type { MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
+import { ContextMenu } from '@luxalgo/vela-ui/context-menu';
 import { widgetActions, type ContextMenuPointer, type WidgetContext } from './contributions';
 import {
     bodyItems,
@@ -10,6 +12,7 @@ import {
     invertWrite,
     paneScaleAt,
     priceAxisItems,
+    priceOnlyState,
     scaleChoiceOf,
     scaleWrites,
     settingsSectionOf,
@@ -39,7 +42,7 @@ export interface ContextMenuCallbacks {
 }
 
 export class ChartContextMenu {
-    private readonly menu: Menu;
+    private readonly menu: ContextMenu;
     private readonly host: HTMLElement;
     private chart: Vela | null = null;
     private offCrosshair: (() => void) | null = null;
@@ -52,29 +55,26 @@ export class ChartContextMenu {
     private lastZone: Zone = 'body';
     /** The pane whose scale the open price-axis menu targets (null ⇒ the main scale). */
     private lastPane: PaneScaleInfo | null = null;
-    private readonly onContextMenu = (e: MouseEvent): void => {
+    /** The rows for this right-click, read from where it landed. */
+    private readonly itemsAt = (e: MouseEvent | PointerEvent): readonly MenuItemDescriptor[] | null => {
         e.preventDefault();
-        if (!this.chart) return;
+        if (!this.chart) return null;
         this.pointer = this.crosshair;
         this.lastZone = this.zoneOf(e);
         this.lastPane = this.lastZone === 'price-axis' ? this.paneAt(e) : null;
-        this.menu.setItems(this.itemsFor(this.lastZone));
-        this.menu.openAt(e.clientX, e.clientY);
+        return this.itemsFor(this.lastZone);
     };
 
     constructor(host: HTMLElement, private readonly cbs: ContextMenuCallbacks) {
         this.host = host;
-        this.menu = new Menu({
-            host,
-            items: [],
-            placement: 'bottom-start',
-            // Pointer-anchored action menu: checked state reads as a leading ✓, not a
-            // washed row (which would read as hover in a menu with no trigger button).
-            checkmarks: true,
+        this.menu = new ContextMenu({
+            target: host,
+            items: this.itemsAt,
+            // A long press on the chart is its touch crosshair.
+            longPress: false,
             iconBadges: true,
             onSelect: (id) => this.run(id),
         });
-        host.addEventListener('contextmenu', this.onContextMenu);
     }
 
     /** (Re)bind to a chart instance — called after every widget rebuild. */
@@ -90,7 +90,6 @@ export class ChartContextMenu {
     destroy(): void {
         this.offCrosshair?.();
         this.offCrosshair = null;
-        this.host.removeEventListener('contextmenu', this.onContextMenu);
         this.menu.destroy();
     }
 
@@ -123,38 +122,45 @@ export class ChartContextMenu {
         }) as WidgetContext;
     }
 
-    private contributed(zone: Zone): ContributedRow[] {
+    private contributed(zone: Zone, iconic: boolean): ContributedRow[] {
         return widgetActions(`context:${zone}`, this.context()).map((a) => ({
-            item: { id: `action:${a.id}`, label: a.label, icon: a.icon },
+            item: { id: `action:${a.id}`, label: textOf(this.chart?.i18n, a.label), ...(iconic && a.icon ? { icon: a.icon } : {}) },
             order: a.order,
         }));
     }
 
     private itemsFor(zone: Zone): MenuItemDescriptor[] {
-        return composeMenu(zone, this.builtinItems(zone), this.contributed(zone));
+        const builtins = this.builtinItems(zone);
+        // A contributed row takes its zone's look: one icon in an icon-free menu (the axis
+        // menus, all checkmarks) would push every label right of an empty icon column.
+        return composeMenu(zone, builtins, this.contributed(zone, builtins.some((i) => i.icon)));
     }
 
     private builtinItems(zone: Zone): MenuItemDescriptor[] {
+        const chart = this.chart;
         if (zone === 'price-axis') {
             const pane = this.lastPane;
             return priceAxisItems({
                 auto: this.chart?.renderer.get('autoScale') !== false,
+                priceOnly: priceOnlyState(pane, this.flag('scalePriceOnly')),
                 invert: pane ? pane.invert : this.flag('invertScale'),
                 choice: scaleChoiceOf(pane ?? { mode: String(this.chart?.renderer.get('scaleMode') ?? 'price'), log: this.flag('logScale') }),
                 axisLabels: this.flag('axisLabels'),
                 priceLabel: this.flag('priceLabel'),
                 countdown: this.flag('countdown'),
                 priceLine: this.flag('currentPriceLine'),
-            });
+            }, this.chart?.i18n);
         }
         if (zone === 'time-axis') {
-            return timeAxisItems(this.cbs.timezone?.() ?? String(this.chart?.renderer.get('timezone') ?? 'Etc/UTC'));
+            return timeAxisItems(this.cbs.timezone?.() ?? String(this.chart?.renderer.get('timezone') ?? 'Etc/UTC'), chart?.i18n);
         }
-        const chart = this.chart;
-        return bodyItems({
-            drawings: chart?.drawings.supported ? chart.drawings.all().length : 0,
-            indicators: chart?.indicators().length ?? 0,
-        });
+        return bodyItems(
+            {
+                drawings: chart?.drawings.supported ? chart.drawings.all().length : 0,
+                indicators: chart?.indicators().length ?? 0,
+            },
+            chart?.i18n,
+        );
     }
 
     private run(id: string): void {
@@ -177,6 +183,8 @@ export class ChartContextMenu {
             else chart.renderer.set('timezone', resolveTimezone(zone, undefined));
         } else if (id === 'auto') {
             chart.renderer.set('autoScale', chart.renderer.get('autoScale') === false);
+        } else if (id === 'price-only') {
+            chart.renderer.set('scalePriceOnly', !this.flag('scalePriceOnly'));
         } else if (id === 'invert') {
             const pane = this.lastPane;
             const [feature, value] = invertWrite(!(pane ? pane.invert : this.flag('invertScale')), pane);

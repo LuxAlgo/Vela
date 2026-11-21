@@ -328,6 +328,18 @@ describe('CachingDataFeed', () => {
         expect(feed.ranges.every((r) => r.limit != null)).toBe(true);
     });
 
+    it('a counted-month secondary series is sized in months: one right-sized fetch, no page walk', async () => {
+        const QUARTER = 90 * 86_400_000;
+        const feed = new FakeFeed(80, 1_100_000_000_000, QUARTER); // 20 years of quarterly bars
+        const cf = new CachingDataFeed(feed, new BarStore());
+        const first = 1_100_000_000_000;
+        const r = await cf.loadRange({ ...CFG, symbol: 'GDP', timeframe: '3M' }, { from: first, to: first + 79 * QUARTER });
+        expect(r.length).toBe(80);
+        // Read as 3 MINUTES, the 20-year span looked like millions of bars and paged in 10,000s.
+        expect(feed.ranges.length).toBe(1);
+        expect(feed.ranges[0]!.limit).toBeLessThan(200);
+    });
+
     it('secondary series survive a same-symbol re-run, dropped on chart-symbol change', async () => {
         const { feed, store, cf } = setup(600);
         const main: MarketConfig = { symbol: 'binance:BTCUSDT', timeframe: '60', bars: 500 };

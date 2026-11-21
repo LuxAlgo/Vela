@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/message';
 import type { SettingsField, SettingsSchema } from '../schema';
 import { BrushStroke } from './Freehand';
 
@@ -7,8 +8,8 @@ import { BrushStroke } from './Freehand';
  * stroke width. No dash/text: a marker is always a solid, wide, see-through swath.
  */
 const HIGHLIGHTER_FIELDS: SettingsField[] = [
-    { path: 'style.lineColor', label: 'Color', kind: 'color', group: 'line' },
-    { path: 'style.lineWidth', label: 'Width', kind: 'number', min: 4, max: 60, step: 1, group: 'line' },
+    { path: 'style.lineColor', label: msg('drawing.highlighter.lineColor', 'Color'), kind: 'color', group: 'line' },
+    { path: 'style.lineWidth', label: msg('drawing.highlighter.lineWidth', 'Width'), kind: 'number', min: 4, max: 60, step: 1, group: 'line' },
 ];
 
 /**

@@ -5,15 +5,15 @@
 // by a fake renderer; the real menu and crosshair are proven in the browser.
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { CrosshairEvent } from '../src/core/ports/IChartRenderer';
-import type { MenuItemDescriptor } from '../src/ui/components/menu';
+import type { MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
 import type { Vela } from '../src/Vela';
 import { registerWidgetAction, type ContextMenuPointer, type WidgetContext } from '../src/widget/contributions';
 import { ChartContextMenu } from '../src/widget/context-menu';
 
 const menus = vi.hoisted(() => [] as Array<{ items: readonly MenuItemDescriptor[]; select: (id: string) => void; opened: number }>);
 
-vi.mock('../src/ui/components/menu', () => ({
-    Menu: class {
+vi.mock('@luxalgo/vela-ui/dropdown-menu', () => ({
+    DropdownMenu: class {
         private readonly rec: (typeof menus)[number];
         constructor(opts: { onSelect?: (id: string) => void }) {
             this.rec = { items: [], select: (id) => opts.onSelect?.(id), opened: 0 };
@@ -184,5 +184,21 @@ describe('ChartContextMenu — the pointer on the action context', () => {
         expect(items[0]).toMatchObject({ label: 'Copy price', icon: 'clone', separatorBefore: false });
         expect(items[1]!.separatorBefore).toBe(true);
         expect(menus[0]!.opened).toBe(1);
+    });
+
+    it('shows a contributed row with its icon in the body menu and without it on the axis menus', () => {
+        const { host, fake } = setup();
+        disposers.push(
+            registerWidgetAction({ id: 'test.alert', target: 'context:price-axis', label: 'Add alert', icon: 'alert', order: -90, run: () => undefined }),
+        );
+        fake.move({ time: 1, price: 2, paneKind: 'price' });
+        host.fire('contextmenu', { clientX: 795, clientY: 200 });
+        const axisRow = menus[0]!.items.find((i) => i.id === 'action:test.alert');
+        expect(axisRow).toBeDefined();
+        expect(axisRow!.icon).toBeUndefined();
+        expect(menus[0]!.items.every((i) => !i.icon)).toBe(true);
+
+        host.fire('contextmenu', { clientX: 300, clientY: 200 });
+        expect(menus[0]!.items.find((i) => i.id === 'action:test.copy-price')).toMatchObject({ icon: 'clone' });
     });
 });

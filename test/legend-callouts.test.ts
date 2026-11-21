@@ -1,5 +1,5 @@
 // Legend callout contributions (src/widget/contributions.ts), the callout-bubble
-// controller's pure projection rules (src/ui/components/callout-bubble/controller.ts),
+// controller's pure projection rules (src/ui/components/callout-bubble.ts),
 // and the legend-row display rule (src/renderers/shared/InputsUI.ts).
 // DOM-free — node env; the bubble's rendering and the deployed panel are proven in the
 // browser (the view is a thin projection over these).
@@ -12,7 +12,7 @@ import {
     type LegendCalloutSpec,
     type LegendIndicatorInfo,
 } from '../src/widget/contributions';
-import { calloutPanelRows, closesPanel, type CalloutPanelItem } from '../src/ui/components/callout-bubble';
+import { calloutPanelRows, closesPanel, type CalloutPanelItem } from '@luxalgo/vela-ui/callout-bubble';
 import { legendCalloutsDisplay } from '../src/renderers/shared/InputsUI';
 
 describe('legend callout contributions', () => {
@@ -63,7 +63,7 @@ describe('legend callout contributions', () => {
 
         const chart = {
             indicators: () => [
-                { id: 'ind-1', title: 'EMA', source: 'plot(close)' },
+                { id: 'ind-1', title: 'EMA', source: 'plot(close)', language: 'pine' },
                 { id: 'native-1', title: 'Volume' }, // a native: no source
             ],
         } as never;
@@ -82,7 +82,7 @@ describe('legend callout contributions', () => {
         if (button.type !== 'button') throw new Error('expected a button item');
         button.run();
         button.run();
-        expect(seen[0]).toEqual({ id: 'ind-1', title: 'EMA', source: 'plot(close)' });
+        expect(seen[0]).toEqual({ id: 'ind-1', title: 'EMA', source: 'plot(close)', language: 'pine' });
         expect(ctxs).toEqual([{ built: 1 }, { built: 2 }]); // never a cached context
 
         unregisterLegendCallout('status');

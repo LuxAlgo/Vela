@@ -1,3 +1,4 @@
+import { msg } from '../../i18n/message';
 import type { SerializedDrawing } from '../Drawing';
 import type { SettingsSchema } from '../schema';
 import { blockState, type PriceActionBar } from '../priceAction';
@@ -14,14 +15,14 @@ export interface BlockSettings extends ZoneSettings {
 }
 
 const RANGE_OPTIONS = [
-    { value: 'body', label: 'Body' },
-    { value: 'wick', label: 'Full range' },
+    { value: 'body', label: msg('drawing.orderblock.option.body', 'Body') },
+    { value: 'wick', label: msg('drawing.orderblock.option.wick', 'Full range') },
 ];
 const EXTEND_OPTIONS = [
-    { value: 'tested', label: 'Until tested' },
-    { value: 'half', label: 'Until 50%' },
-    { value: 'broken', label: 'Until broken' },
-    { value: 'always', label: 'Always' },
+    { value: 'tested', label: msg('drawing.orderblock.option.tested', 'Until tested') },
+    { value: 'half', label: msg('drawing.orderblock.option.half', 'Until 50%') },
+    { value: 'broken', label: msg('drawing.orderblock.option.broken', 'Until broken') },
+    { value: 'always', label: msg('drawing.orderblock.option.always', 'Always') },
 ];
 
 function defaults(): BlockSettings {
@@ -58,14 +59,14 @@ export class OrderBlock extends PriceActionZone {
     schema(): SettingsSchema {
         return {
             fields: [
-                { path: 'block.range', label: 'Zone', kind: 'select', options: RANGE_OPTIONS, group: 'behavior' },
-                { path: 'block.extend', label: 'Extend right', kind: 'select', options: EXTEND_OPTIONS, group: 'behavior' },
-                { path: 'block.upColor', label: 'Bullish', kind: 'color', group: 'fill' },
-                { path: 'block.downColor', label: 'Bearish', kind: 'color', group: 'fill' },
-                { path: 'block.midline', label: 'Midline', kind: 'boolean', group: 'line' },
-                { path: 'block.border', label: 'Border', kind: 'boolean', group: 'line' },
-                { path: 'block.fade', label: 'Fade at end', kind: 'boolean', group: 'behavior', when: { path: 'block.extend', in: ['tested', 'half', 'broken'] } },
-                { path: 'block.breaker', label: 'Breaker', kind: 'boolean', group: 'behavior', when: { path: 'block.extend', in: ['broken'] } },
+                { path: 'block.range', label: msg('drawing.orderblock.blockRange', 'Zone'), kind: 'select', options: RANGE_OPTIONS, group: 'behavior' },
+                { path: 'block.extend', label: msg('drawing.orderblock.blockExtend', 'Extend right'), kind: 'select', options: EXTEND_OPTIONS, group: 'behavior' },
+                { path: 'block.upColor', label: msg('drawing.orderblock.blockUpColor', 'Bullish'), kind: 'color', group: 'fill' },
+                { path: 'block.downColor', label: msg('drawing.orderblock.blockDownColor', 'Bearish'), kind: 'color', group: 'fill' },
+                { path: 'block.midline', label: msg('drawing.orderblock.blockMidline', 'Midline'), kind: 'boolean', group: 'line' },
+                { path: 'block.border', label: msg('drawing.orderblock.blockBorder', 'Border'), kind: 'boolean', group: 'line' },
+                { path: 'block.fade', label: msg('drawing.orderblock.blockFade', 'Fade at end'), kind: 'boolean', group: 'behavior', when: { path: 'block.extend', in: ['tested', 'half', 'broken'] } },
+                { path: 'block.breaker', label: msg('drawing.orderblock.blockBreaker', 'Breaker'), kind: 'boolean', group: 'behavior', when: { path: 'block.extend', in: ['broken'] } },
             ],
         };
     }

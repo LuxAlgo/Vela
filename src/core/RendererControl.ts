@@ -1,7 +1,8 @@
-import type { AxisLongPressEvent, ClickEvent, CrosshairEvent, DataWindowReadout, IChartRenderer, LegendActionView, LegendCalloutView, RendererCapabilities } from './ports/IChartRenderer';
+import type { AxisLongPressEvent, ClickEvent, CrosshairEvent, DataWindowReadout, IChartRenderer, DrawingActionView, LegendActionView, LegendCalloutView, RendererCapabilities } from './ports/IChartRenderer';
 import type { Unsubscribe } from './util/types';
 import type { WallClock } from './util/wall-clock';
 import type { SymbolPickerFn } from './model/inputs';
+import type { MessageLike } from './i18n/types';
 
 /**
  * The public control surface for the active renderer — `chart.renderer`. A thin
@@ -55,6 +56,16 @@ export class RendererControl {
      */
     setLegendActions(provider: ((indicatorId: string) => LegendActionView[]) | null): void {
         this.renderer.setLegendActions?.(provider);
+    }
+
+    /**
+     * Wire the drawings' HOST-CONTRIBUTED actions (the shells route the plugin registry
+     * through this; see `registerDrawingAction`). Silent on a renderer without the seam —
+     * contributed drawing actions simply never show there, same graceful degradation as
+     * {@link setLegendActions}.
+     */
+    setDrawingActions(provider: ((drawingId: string) => DrawingActionView[]) | null): void {
+        this.renderer.setDrawingActions?.(provider);
     }
 
     /**
@@ -233,7 +244,7 @@ export class RendererControl {
 
     /** Contribute host settings tabs (callback rows) to the renderer's settings dialog —
      *  e.g. the widget's Status line toggles. Silent no-op without a dialog. */
-    setSettingsSections(sections: ReadonlyArray<{ title: string; rows: readonly unknown[]; id?: string }>): this {
+    setSettingsSections(sections: ReadonlyArray<{ title: MessageLike; rows: readonly unknown[]; id?: string }>): this {
         this.renderer.setSettingsSections?.(sections);
         return this;
     }

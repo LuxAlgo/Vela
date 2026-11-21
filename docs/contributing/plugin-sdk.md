@@ -59,6 +59,17 @@ Two more levers for full-replacement types:
 - `basePainting: 'none'` suppresses the base candle painting while the style is active —
   for types whose renderer layer fully replaces the price representation (an order-flow
   grid, bricks…). Default `'candles'` keeps candles under your layer.
+- `supports(facts)` says whether the type can draw a symbol, from the facts its data
+  source states about it (`SymbolFacts`: `ohlc: false` for one value per bar,
+  `volume: false` for no volume). Return `false` and the style menus grey the type out
+  for that symbol, and a chart set to it draws a line instead, keeping your type as its
+  chosen style: it comes back on the next symbol you support. It is only called once the
+  facts are known (every type applies while they are not); absent, the type applies to
+  every symbol. Keep it pure and cheap. A type built from volume:
+  `supports: (facts) => facts.volume !== false`. The built-in candles, bars and Heikin
+  Ashi follow the same rule with `facts.ohlc !== false`; `priceStyleApplies(id, facts)`
+  answers it for any style id, built-in or registered, and `shownPriceStyle(id, facts,
+  ids)` names the style a chart draws in its place (for a custom renderer).
 - `chart.data.providerInstance(name)` returns the registered provider **instance** — the
   seam for extended provider surfaces: a provider may implement interfaces beyond the
   `DataProvider` port; your data engine retrieves the instance and narrows it with its
@@ -112,6 +123,11 @@ registerRendererLayer({
     }),
 });
 ```
+
+**Text reads left to right in every page.** The plot never mirrors, so the layer canvas
+carries `dir="ltr"`: a 2D context you open on it lays text out left to right even when the
+host page is right to left, and a sign stays in front of its number. Leave the context's
+`direction` at its default (`'inherit'`) to keep that.
 
 **Ownership — layers backed by a native indicator.** When a mounted native indicator's
 type equals a layer's id, that indicator OWNS the layer, and the layer joins the chart's
@@ -188,9 +204,11 @@ background. An emitted output is index-aligned to `ctx.bars()` as it stands at t
 call, and the chart keeps it on those bars when older history lands in front of them (or the
 oldest bars are trimmed), so a plot never slides while it waits for its next compute. By
 default an instance starts on the first candles and `onBars()` fires for every part as it
-lands. Set **`waitsForHistory: true`** on the descriptor when the values depend on every
-earlier bar (a moving average's seed, an oscillator's smoothing): the instance then starts
-only once the history is complete — its legend row shows a loading state meanwhile, and
+lands. A native that declares `reactsToViewport: true` receives the current visible
+range through `onViewport()` immediately after `start()`, when a range is available.
+Later viewport changes continue to call the same method. Set **`waitsForHistory: true`**
+on the descriptor when the values depend on every earlier bar, such as a moving average's
+seed or an oscillator's smoothing. The instance then starts only once the history is complete — its legend row shows a loading state meanwhile, and
 `ready` / `indicator:added` wait for its first output — and a history extended later holds
 `onBars()` (live ticks included) until the extension completes, the previous output staying
 on its bars. The built-in classic studies opt in; volume and VPVR, which paint straight from
@@ -256,8 +274,17 @@ registerWidgetAction({
         // ctx.chart (the CURRENT inner chart) · ctx.symbol / timeframe / priceStyle
         // ctx.setSymbol / setTimeframe / setPriceStyle / openSymbolSearch(query?)
         // ctx.togglePanel(id, open?) — open/close a docked side panel (dock stays exclusive)
-        // ctx.dockStrip(el) — dock an element as a full-width strip between the charts and
-        //   the bottom bar (the charts shrink); returns the undock
+        // ctx.panels — the dock as data: list() (built-ins flagged), openId(),
+        //   isMaximized(id), onDidChange(cb) (see Side panels)
+        // ctx.topbar — the built-in topbar items: isVisible(id), setVisible(id, visible)
+        //   (see Hiding built-in topbar items)
+        // ctx.sidebar — the right-edge toolbar: enabled, setBadge(id, value), refresh(),
+        //   isVisible(id), setVisible(id, visible) (see The sidebar)
+        // ctx.dockStrip(el, { position? }) — dock an element as a full-width strip above
+        //   (default) or under the bottom bar (the charts shrink); returns the undock, which
+        //   also carries cover(on) (see Layout regions)
+        // ctx.dockEdge(el, 'right') — dock an element at the shell's outer right edge, full
+        //   height (a rail); returns the undock
         // ctx.replay (workspace) — bar replay across every cell on one clock; drive it
         //   rather than one cell's chart.replay so every chart replays together
         // ctx.addIndicator({ name, script, id?, language? }) — add a script indicator
@@ -266,7 +293,7 @@ registerWidgetAction({
         //   undo/redo re-add under the same id
         // ctx.addNativeIndicator(type) — same, for native (core-computed) indicators
         // ctx.stateChanged() — persistable third-party state changed (debounced save)
-        // ctx.host  — mount host for kit components (Dialog/Menu/Tooltip)
+        // ctx.host  — mount host for kit components (Dialog/DropdownMenu/Tooltip)
         // ctx.toast(message, kind?) — the widget's feedback pill
         // ctx.pointer (context:* only) — where the right-click landed: { price, time, paneKind, paneId }
     },
@@ -281,7 +308,11 @@ On the mobile chrome the split carries over: left-aligned actions get their own
 icon-only stop in the bottom bar (the built-in indicators slot), while right-aligned
 ones stay in the three-dots sheet. `mobile` overrides it per action: a left action with
 `mobile: 'menu'` becomes a three-dots row with the primary rows (right after Layout),
-and a right action with `mobile: 'bar'` gets a bottom-bar stop. `context:*` actions become
+and a right action with `mobile: 'bar'` gets a bottom-bar stop. The bottom bar asks `when`
+again whenever the shell switches between its desktop and mobile layouts, so a gate that
+reads the layout (`ctx.host.closest('[data-layout]')`) shows a phone-only stop as soon as
+the shell turns mobile. Every contributed button and stop carries its action's id as
+`data-action-id`. `context:*` actions become
 rows of the matching right-click menu zone (see [Right-click menu
 actions](#right-click-menu-actions)). Register at import time — a widget constructed later
 picks them up; after late registrations call `widget.refreshActions()`.
@@ -292,6 +323,33 @@ topbar](../user/workspace.md#composing-the-topbar)) can pin an action id at an e
 position (overriding both), or omit the `'actions'` flow slot entirely, in which case
 unpinned actions don't render on that side. Publish your action ids (a stable exported
 constant) so hosts can compose with them.
+
+### Hiding built-in topbar items
+
+A plugin that hosts one of the shell's own controls elsewhere (its own alerts surface, a
+rail of panel toggles) hides the built-in at runtime through `ctx.topbar`:
+
+```ts
+registerWidgetAttachment({
+    id: 'mytool.alerts',
+    mount: (ctx) => {
+        ctx.topbar.setVisible('alerts', false);   // the bell, its mobile menu row
+        return () => ctx.topbar.setVisible('alerts', true);
+    },
+});
+```
+
+The ids are the built-in composition ids: `'symbol'`, `'timeframes'`, `'style'`,
+`'layout'`, `'indicators'`, `'undo-redo'`, `'alerts'`, `'panels'`, `'screenshot'` and
+`'fullscreen'`.
+Runtime visibility narrows the host's `topbar` composition and follows its rule: hiding an
+item removes its other entry points with it — its row in the mobile three-dots menu, its
+bottom-bar stop, its keyboard chord (`mod+alt+S` for `'screenshot'`, `alt+Enter` for
+`'fullscreen'`). Hiding `'panels'`
+also removes the panel rows from the mobile menu, so a plugin that moves the panel toggles
+elsewhere on the desktop keeps them reachable on a phone by hiding `'panels'` only on the
+desktop layout. `ctx.topbar.isVisible(id)` reads the result. It never shows an item the
+composition left out, and it is not saved with the layout: apply it again when you mount.
 
 Two rules keep actions portable:
 
@@ -304,7 +362,7 @@ Two rules keep actions portable:
   market and active-cell switch. Read them at the point of use; copying one into a
   variable at mount freezes it (an attachment once named screenshot files after the
   mount-time symbol that way).
-- **Kit components get `ctx.host`.** Mounting a `Dialog`/`Menu`/`Tooltip` without an
+- **Kit components get `ctx.host`.** Mounting a `Dialog`/`DropdownMenu`/`Tooltip` without an
   explicit host portals it to `<body>`, outside the theme's CSS variables (invisible
   backgrounds). Pass `host: ctx.host`.
 
@@ -363,7 +421,9 @@ two removals | Settings…; price axis: Auto and Invert | the four scale modes |
 Levels | More settings…; time axis: Time zone | More settings…), and each run of
 consecutive contributed rows. An `order` that falls inside a built-in group
 splits it around your row. The built-in body rows carry icons; give yours an `icon` so it
-reads the same (an iconless row keeps its label aligned with the others).
+reads the same (an iconless row keeps its label aligned with the others). The axis menus
+carry none: a row added there shows without its `icon`, its label in line with the
+checkmarked rows.
 
 ## Widget attachments — `registerWidgetAttachment`
 
@@ -629,15 +689,19 @@ registerLegendAction({
     id: 'mytool.open-source',
     icon: 'code',                                  // vela/ui icon registry
     tooltip: 'Open the source',
-    when: (ind) => ind.source !== undefined,       // per-indicator gate
+    when: (ind) => ind.language === 'pine',        // per-indicator gate: the scripts this editor reads
     run: (ctx, ind) => myEditor.open(ind.source!), // ctx = the shell's WidgetContext
 });
 ```
 
-- `ind` is a {@link LegendIndicatorInfo}: `{ id, title, source? }` — `source` is the
-  script the indicator runs NOW (the same as `handle.source`, read at click time, so an
-  in-place `updateCode` shows through), and is `undefined` for native indicators, which
-  is the usual `when` gate.
+- `ind` is a `LegendIndicatorInfo`: `{ id, title, source?, language? }` — `source`
+  is the script the indicator runs NOW (the same as `handle.source`, read at click time,
+  so an in-place `updateCode` shows through); `language` is the language id of the
+  engine running it (the same as `handle.language`: the indicator's `language` option,
+  else the chart's `defaultLanguage`). Both are `undefined` for native indicators. Gate
+  on `source` for an action that suits any script, and on `language` for one that only a
+  single language supports: an editor for one language must not open a script that
+  another engine runs.
 - The descriptor resolves **per row, per click**: `when` re-evaluates as rows appear, and
   `run` receives a fresh context each time.
 - Register at import time; after a late registration call `refreshActions()` (both shells
@@ -682,12 +746,44 @@ registerLegendCallout({
   `refreshActions()` and the bubbles re-dress.
 - Panel content is **data, never DOM**: ordered `text` and `button` items (consecutive
   buttons share one row). A button's `run` receives a fresh `WidgetContext` plus the
-  row's {@link LegendIndicatorInfo}; buttons close the panel after `run` unless
+  row's `LegendIndicatorInfo`; buttons close the panel after `run` unless
   `close: false`.
 - The bubble itself is the kit's `CalloutBubble` (`@luxalgo/vela/ui`) — reusable in
   host chrome; the widget's own market-status badge is the same component.
 - The seam degrades gracefully: a custom renderer without `setLegendCallouts` simply
   never shows contributed callouts.
+
+## Drawing actions — `registerDrawingAction`
+
+A button for one **drawing**: an icon on the toolbar that floats by a selected drawing (just
+before its settings wheel) and a labelled button at the start of the drawing's settings dialog
+footer. The classic use: put an alert, a note or a share link on the drawing the user is
+looking at, where they look for it.
+
+```ts
+import { msg, registerDrawingAction } from '@luxalgo/vela/plugin';
+
+registerDrawingAction({
+    id: 'mytool.drawing-alert',
+    icon: 'bell',                                       // vela/ui icon registry
+    label: msg('mytool.drawing-alert', 'Add alert'),    // toolbar tooltip + dialog button text
+    when: (d) => d.type === 'hline' || d.type === 'trendline', // per-drawing gate
+    run: (ctx, d) => myAlerts.open({ symbol: ctx.symbol, anchors: d.anchors }),
+});
+```
+
+- `d` is the drawing's `SerializedDrawing` — the shape `chart.drawings.all()` returns: `id`,
+  `type`, `anchors`, `style`, `props`. `when` sees it as the toolbar opens; `run` reads it
+  again at click time, so a drag since then shows through.
+- `surfaces: ['toolbar']` or `['settings']` limits it to one of the two places (default: both).
+  `order` sorts the contributed group (ascending; default 0).
+- It acts on one drawing, so the toolbar of a **multi-selection** leaves it out.
+- `run` receives a fresh `WidgetContext` per click. In a workspace, the click's own press made
+  the drawing's chart the active one, so `ctx.chart` is the chart the drawing is on.
+- Register at import time; after a late registration call `refreshActions()`. An open toolbar
+  keeps its buttons; the next one shows the new set.
+- The seam degrades gracefully: a custom renderer without `setDrawingActions` simply never
+  shows contributed drawing actions.
 
 ## Side panels — `registerSidePanel`
 
@@ -714,6 +810,8 @@ registerSidePanel({
     maxWidth: 560,
     overlay: false,              // true floats the panel OVER the chart (with a pin to dock it)
     maximizable: false,          // true adds a Maximize/Restore button to the header
+    header: 'default',           // 'none': no header row — the panel draws its own
+    placement: 'chart',          // 'column': full height beside the topbar, charts and bottom bar
     mount: (ctx, body, header) => {
         const list = document.createElement('div');
         body.appendChild(list);                       // `body` is the panel's scrolling area
@@ -733,6 +831,17 @@ registerSidePanel({
   name); `header.setTitle` rewrites the title text (an empty string hides it, letting the
   slot own the row). The close button and the row itself stay the shell's, and the topbar
   toggle keeps the DECLARED `title` as its tooltip.
+- **Or draw your own header.** With `header: 'none'` the shell renders no header row: the
+  panel lays out its own at the top of `body` and wires its close control to
+  `header.close()` (and its maximize control, if any, to `header.setMaximized`). On the
+  mobile layout the panel covers the chart and the header's close is the way out, so a
+  headless panel must offer one.
+- **Read the dock through `ctx.panels`.** `list()` reports every docked panel in dock order,
+  the built-ins included (`builtIn: true`), with its title in the shell's language;
+  `openId()` names the open one (or null); `isMaximized(id)` says whether it covers the
+  charts; `onDidChange(cb)` fires after a panel opens, closes, maximizes or restores, and
+  after panels are added or removed, and returns the unsubscribe. `ctx.togglePanel` acts on
+  the same dock.
 
 - **Width is a per-panel choice.** Omit `resizable` for a fixed column; with it, the drag is
   clamped to `[minWidth, maxWidth]` (defaults 200/640) and the width the user settles on is
@@ -753,14 +862,143 @@ registerSidePanel({
   main work surface (an editor).
 - **The dock is exclusive.** Opening a panel closes the one showing — the chart keeps its
   width, and only one column is ever docked. `onOpen` is where a lazy panel renders.
-- **`onChart` is the rebind hook**, not a one-shot: the widget hands over a new chart instance
-  after a symbol/timeframe rebuild, and a workspace re-points the panel at the active cell.
+- **`onChart` is the rebind hook**, not a one-shot: it runs on mount, after a widget rebuild,
+  and when a workspace re-points the panel at another active cell. A symbol or timeframe
+  switch keeps the chart (it switches in place), so a panel that shows per-symbol content
+  subscribes to `chart.on('market:changed', …)` in `onChart` and drops that subscription in
+  the next `onChart` and in `destroy`.
 - Register at import time; after a late registration call `widget.refreshActions()`. Only
   what changed is rebuilt: a panel whose descriptor is still registered as it was stays
   mounted as it is — content, state and open column included — while a re-registered
   (replaced) descriptor is rebuilt, and an open one stays open.
 - A `mount` that throws is contained: the panel docks empty and the reason is logged, rather
   than taking the shell down.
+
+## Layout regions
+
+The shell lays out a **chart column** (the topbar, the chart row, the docked strips and the
+bottom bar), and plugins can add to it in three places without reaching into its markup:
+
+```ts
+// A full-height panel beside the whole chart column, not only beside the charts.
+registerSidePanel({ id: 'mytool.watch', title: 'Watchlist', icon: 'list', placement: 'column', mount });
+
+registerWidgetAttachment({
+    id: 'mytool.chrome',
+    mount: (ctx) => {
+        const offRail = ctx.dockEdge(myRail, 'right');                         // outer right edge, full height
+        const dock = ctx.dockStrip(myDock, { position: 'below-bottombar' });   // under the bottom bar
+        maximizeButton.onclick = () => dock.cover(!covered);                    // over the chart column
+        return () => { offRail(); dock(); };
+    },
+});
+```
+
+- **`placement: 'column'`** puts a side panel at the shell's right, full height: the topbar,
+  the charts, the strips and the bottom bar narrow to make room. It shares the dock with the
+  other panels (still one open at a time). On the mobile layout it covers the chart area
+  above the bottom bar, like any panel; maximized, it covers the chart column too.
+- **`ctx.dockEdge(el, 'right')`** docks an element outside everything else on the right,
+  full height — the place for a rail of toggles. Edge elements keep their own width and
+  stack in docking order.
+- **`ctx.dockStrip(el, { position: 'below-bottombar' })`** docks a strip under the bottom bar
+  instead of above it. The undock `dockStrip` returns also carries **`cover(on)`**:
+  `cover(true)` lays the strip over the whole chart column — topbar, charts, strips and
+  bottom bar — at that size whatever height the strip set itself, but not over a column
+  panel, an edge element or the mobile layout's bottom bar; `cover(false)` puts it back in
+  its spot.
+
+A shell that uses none of these keeps its plain column layout; the first one in use switches
+the shell to a grid with these regions for the rest of its life.
+
+### Full screen — `ctx.fullscreen`
+
+[Full screen](../user/workspace.md#full-screen) leaves only the charts. The shell hides what
+is its own: the topbar, the drawing toolbar, the bottom bar and the right edge (the sidebar,
+and anything docked with `ctx.dockEdge`), and it closes the open side panel. **A docked strip
+stays**, because only its owner knows whether it belongs with the charts (the controls of a
+replay under way) or around them (a panel of orders). A plugin that steps aside follows
+`ctx.fullscreen`:
+
+```ts
+registerWidgetAttachment({
+    id: 'mytool.orders',
+    mount: (ctx) => {
+        const dock = ctx.dockStrip(ordersPanel, { position: 'below-bottombar' });
+        const show = (): void => { ordersPanel.hidden = ctx.fullscreen.isOn(); };
+        const off = ctx.fullscreen.onDidChange(show);
+        show(); // the shell may already be in full screen when this mounts
+        return () => { off(); dock(); };
+    },
+});
+```
+
+- **`isOn()`** reads the state, **`onDidChange(cb)`** follows it whichever way it changed (the
+  key, the topbar button, Esc, code) and returns the unsubscribe.
+- **`set(on)`** enters and leaves, for a plugin that offers its own way in. Entering is
+  ignored on the mobile layout.
+- Hide, rather than undock or close: what you hid then comes back exactly as it was, and
+  nothing in the saved layout changes.
+
+## The sidebar
+
+A host can give the shell a toolbar along its right edge (`sidebar: true`, see
+[the workspace guide](../user/workspace.md#the-sidebar)). It holds the side-panel toggles,
+and a plugin adds its own entries as widget actions with `target: 'sidebar'`:
+
+```ts
+registerWidgetAction({
+    id: 'mytool.alerts.toggle',
+    target: 'sidebar',
+    label: msg('mytool.alerts', 'Price alerts'),  // the button's accessible name and tooltip
+    icon: 'bell',
+    order: 10,                                     // within the 'actions' flow slot
+    active: (ctx) => alertsOpen,                   // pressed look, read on every redraw
+    run: (ctx) => {
+        toggleAlerts();
+        ctx.sidebar.setBadge('mytool.alerts.toggle', unread());
+    },
+});
+```
+
+- A press redraws the sidebar. When the state behind `active` or `when` changes on its own,
+  call **`ctx.sidebar.refresh()`**.
+- **`ctx.sidebar.setBadge(id, value)`** puts a small count on an entry, a sidebar action or a
+  panel (`null`, `0` or `''` clear it; above 99 shows `99+`).
+- **`ctx.sidebar.setVisible(id, visible)`** hides an entry, a panel toggle or a sidebar
+  action, and gives it back; **`ctx.sidebar.isVisible(id)`** tells whether it shows. Like
+  `ctx.topbar.setVisible`, it never adds an entry the host's composition left out, a hidden
+  action leaves the mobile three-dots menu too, and it is not saved with the layout.
+- **Anchor your own UI to your button.** Sidebar buttons carry the same hooks as the topbar's
+  and the mobile bar's: `data-action-id` on an action's button, `data-panel-id` on a panel
+  toggle. A `run` that opens a popover or a menu anchors it to
+  `ctx.host.querySelector('[data-action-id="mytool.alerts.toggle"]')`.
+- **`ctx.sidebar.enabled`** tells whether the shell has a sidebar; with none, `setBadge`,
+  `refresh` and `setVisible` do nothing and `isVisible` is false, so a plugin can call them
+  unconditionally.
+- An action registered after the shell is built shows on the next `refreshActions()`, like
+  topbar actions.
+- On the mobile layout the sidebar is hidden and its actions are rows in the three-dots menu.
+- Which entries show, and where, is the host's call (its `sidebar` composition). A plugin that
+  wants its entry somewhere specific documents the id for hosts to place.
+
+### A plugin that needs the sidebar — `registerShellDefaults`
+
+The sidebar is a shell option, which a plugin cannot set on a host's behalf. It registers a
+**default** instead, which every shell built afterwards uses where its host gave no value:
+
+```ts
+import { registerShellDefaults } from '@luxalgo/vela/plugin';
+
+registerShellDefaults({ sidebar: true }); // or a composition: { top: [...], bottom: [...] }
+```
+
+- The host's own `sidebar` always wins, `false` included: a host can keep the sidebar off.
+- Shells built before the call are untouched. The disposer it returns removes exactly the
+  values it set; `unregisterShellDefaults(...keys)` drops them by key, and `shellDefaults()`
+  reads them.
+- It is the shell's counterpart of `registerRendererDefaults`, which gives every chart
+  built afterwards a default renderer feature.
 
 ## Scripting engines — `chart.registerEngine` / `registerDefaultEngine`
 
@@ -791,10 +1029,45 @@ The full contract — prepare/execute, the session levers, the data inversion, t
 backfill run policy, packaging and registration — is
 [Adding an Engine](./adding-an-engine.md).
 
+## Messages and formatting — `msg` / `registerLocale`
+
+A plugin's text and numbers follow the chart's locale through the same message system the
+core uses ([Localization](../user/localization.md)):
+
+```ts
+// In the plugin: ids are dotted and start with your own prefix; the English text is the source.
+import { msg, type LocalePack } from '@luxalgo/vela/plugin';
+
+const TITLE = msg('acme.flow.title', 'Order flow');
+const TRADES = msg('acme.flow.trades', '{count, plural, one {# trade} other {# trades}}');
+
+// Packs are plain objects the plugin exports, one per language.
+export const acmeDe: LocalePack = { locale: 'de', messages: { 'acme.flow.title': 'Orderfluss' } };
+```
+
+```ts
+// In the host: registering is a call, never an import side effect.
+import { registerLocale } from '@luxalgo/vela/plugin';
+import { acmeDe } from 'acme-vela-plugin';
+
+registerLocale(acmeDe);
+```
+
+- **Actions, panels and attachments** read the shell's translator as `ctx.i18n`:
+  `ctx.i18n.t(TITLE)`. It follows `setLocale`; re-render on the shell's `locale:changed`.
+- **Renderer layers** get the chart's translator as `args.i18n` in every `render(args)`:
+  `args.i18n.t(TRADES, { count })` for painted text and `args.i18n.format.compact(volume)`
+  for numbers, so a layer reads like the axes beside it.
+- **Typed ids:** augment the catalog so hosts can override your messages with type checking:
+  `declare module '@luxalgo/vela/plugin' { interface VelaMessageCatalog { 'acme.flow.title': string } }`.
+- **Identities stay English.** Translate what a user reads, never a value that is stored
+  or compared: option values saved in layouts, ids, and anything a script reads.
+
 ## Widget integration
 
 - A registered chart type appears in the **style dropdown** automatically
-  (`priceStyleIds()` = built-ins ∪ registry; labels from `label`).
+  (`priceStyleIds()` = built-ins ∪ registry; labels from `label`), greyed on a symbol its
+  `supports` rules out.
 - Keyboard bindings: `widget.keymap.register({ id, keys: 'mod+shift+k', label,
   category, scope?, run })` — they show up in the `?` shortcuts panel. `'mod'` is ⌘ on
   macOS, Ctrl elsewhere. Scopes: bindings fire when their scope is the top of the

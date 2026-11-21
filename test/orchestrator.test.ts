@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { Vela } from '../src/index';
+import { DARK_THEME, Vela } from '../src/index';
 import { ACCENT, BEARISH, BULLISH } from '../src/core/palette';
 import type {
     IChartRenderer,
@@ -22,7 +22,9 @@ import type {
     ContextSelect,
 } from '../src/core/ports/ScriptingEngine';
 import type { MarketDataFeed, BarRange } from '../src/core/ports/MarketDataFeed';
+import type { StrategyState } from '../src/core/model/strategy';
 import { MultiProviderFeed } from '../src/data/MultiProviderFeed';
+import { BarStore } from '../src/data/BarStore';
 import type { DataProvider, ProviderInfo, ProviderCapabilities, SymbolDescriptor } from '../src/core/ports/DataProvider';
 import type { OHLCV } from '../src/core/model/ohlcv';
 import { registerNativeIndicator, unregisterNativeIndicator } from '../src/core/native-indicators/NativeIndicator';
@@ -117,7 +119,7 @@ class FakeRenderer implements IChartRenderer {
     setVisibleRange(r: VisibleRange): void { this.visibleRangeCalls.push(r); }
     onViewportChange(cb: (r: VisibleRange) => void): Unsubscribe { this.viewportCb = cb; return () => { this.viewportCb = null; }; }
     /** Test helper: simulate a pan/zoom viewport change. */
-    fireViewport(range: VisibleRange): void { this.viewportCb?.(range); }
+    fireViewport(range: VisibleRange): void { this.visibleRange = range; this.viewportCb?.(range); }
     // Native-layer data: capture each push by type (presence of setNativeData also gates auto-add).
     volumePushes: unknown[] = [];
     vpvrPushes: unknown[] = [];
@@ -435,6 +437,21 @@ describe('EngineOrchestrator', () => {
         expect(seen).toHaveLength(2);
     });
 
+    it('starts the candles on the theme’s colors, unless upColor and downColor are given', () => {
+        const display: Array<{ upColor?: string; downColor?: string }> = [];
+        class Capturing extends FakeRenderer {
+            constructor(opts: { upColor?: string; downColor?: string }) {
+                super();
+                display.push(opts);
+            }
+        }
+        const theme = { ...DARK_THEME, upColor: '#00aaff', downColor: '#ff00aa' };
+        new Vela({} as unknown as HTMLElement, { live: false, theme, renderer: Capturing as never }, { engines: [], dataFeed: new MockDataFeed() });
+        new Vela({} as unknown as HTMLElement, { live: false, theme, upColor: '#111111', renderer: Capturing as never }, { engines: [], dataFeed: new MockDataFeed() });
+        expect(display[0]).toMatchObject({ upColor: '#00aaff', downColor: '#ff00aa' });
+        expect(display[1]).toMatchObject({ upColor: '#111111', downColor: '#ff00aa' });
+    });
+
     it('the in-chart legend ✕ removes the indicator (renderer teardown + stream stop + event)', async () => {
         const renderer = new FakeRenderer();
         const engine = new MockEngine();
@@ -579,6 +596,7 @@ describe('EngineOrchestrator', () => {
             // The handle tells which native type it is (scripts carry `source` instead).
             expect(h1.nativeType).toBe('test-native');
             expect(h1.source).toBeUndefined();
+            expect(h1.language).toBeUndefined(); // no engine runs a native
         } finally {
             unregisterNativeIndicator('test-native');
         }
@@ -589,14 +607,18 @@ describe('EngineOrchestrator', () => {
         try {
             const renderer = new FakeRenderer();
             const initial = { from: 1_700_000_036_000, to: 1_700_000_144_000 };
-            renderer.visibleRange = initial;
             const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [], dataFeed: new MockDataFeed() });
-            chart.addNativeIndicator('test-native');
             await chart.ready();
+            renderer.fireViewport({ from: initial.from - 36_000, to: initial.to });
+            renderer.visibleRange = initial; // horizontal resize can update the range without another event
+            chart.addNativeIndicator('test-native');
             await flush();
 
             expect(lastNative.events).toEqual(['start', 'viewport']);
             expect(lastNative.viewports).toEqual([initial]);
+
+            await new Promise((r) => setTimeout(r, 220));
+            expect(lastNative.viewports).toEqual([initial]); // the queued pre-resize range is stale
 
             const later = { from: 1_700_000_072_000, to: 1_700_000_180_000 };
             renderer.fireViewport(later);
@@ -619,7 +641,10 @@ describe('EngineOrchestrator', () => {
             await flush();
 
             const pending = { from: 1_700_000_036_000, to: 1_700_000_144_000 };
-            renderer.fireViewport(pending);
+            chart.on('viewport:changed', ({ from }) => {
+                if (from < pending.from) renderer.fireViewport(pending);
+            });
+            renderer.fireViewport({ from: pending.from - 36_000, to: pending.to });
             chart.addNativeIndicator('test-native');
             await flush();
             expect(lastNative.events).toEqual(['start', 'viewport']);
@@ -637,6 +662,52 @@ describe('EngineOrchestrator', () => {
             expect(lastNative.events).toEqual(['start', 'viewport', 'viewport']);
             expect(lastNative.viewports).toEqual([pending, later]);
         } finally {
+            unregisterNativeIndicator('test-native');
+        }
+    });
+
+    it('does not deliver an initial viewport after an added listener removes the native', async () => {
+        registerNativeIndicator(testNativeDescriptor);
+        const renderer = new FakeRenderer();
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [], dataFeed: new MockDataFeed() });
+        try {
+            await chart.ready();
+            renderer.visibleRange = { from: 1_700_000_036_000, to: 1_700_000_144_000 };
+            const handle = chart.addNativeIndicator('test-native');
+            chart.on('indicator:added', ({ id }) => { if (id === handle.id) handle.remove(); });
+            await flush();
+            expect(lastNative.events).toEqual(['start']);
+            expect(chart.indicators()).toHaveLength(0);
+        } finally {
+            chart.destroy();
+            unregisterNativeIndicator('test-native');
+        }
+    });
+
+    it('starts a replacement native when the first output enters replay', async () => {
+        const instances: TestNativeIndicator[] = [];
+        registerNativeIndicator({
+            ...testNativeDescriptor,
+            create: () => {
+                const instance = new TestNativeIndicator();
+                instances.push(instance);
+                return instance;
+            },
+        });
+        const renderer = new FakeRenderer();
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [], dataFeed: new MockDataFeed() });
+        try {
+            await chart.ready();
+            const from = renderer.bars[10]!.time;
+            renderer.visibleRange = { from: renderer.bars[0]!.time, to: from };
+            chart.on('indicator:added', () => { void chart.replay.start({ from }); });
+            chart.addNativeIndicator('test-native');
+            await flush();
+
+            expect(chart.replay.state.active).toBe(true);
+            expect(instances.map((instance) => instance.events)).toEqual([['start'], ['start', 'viewport']]);
+        } finally {
+            chart.destroy();
             unregisterNativeIndicator('test-native');
         }
     });
@@ -662,6 +733,9 @@ describe('EngineOrchestrator', () => {
         try {
             const noRangeRenderer = new FakeRenderer();
             const noRangeChart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer: noRangeRenderer, engines: [], dataFeed: new MockDataFeed() });
+            await noRangeChart.ready();
+            noRangeRenderer.fireViewport({ from: 100, to: 200 });
+            noRangeRenderer.visibleRange = null; // resize leaves only whitespace before the event runs
             noRangeChart.addNativeIndicator('test-native-no-range');
 
             const staticRenderer = new FakeRenderer();
@@ -674,12 +748,46 @@ describe('EngineOrchestrator', () => {
 
             expect(withoutRange?.events).toEqual(['start']);
             expect(withoutRange?.viewports).toEqual([]);
+            await new Promise((r) => setTimeout(r, 220));
+            expect(withoutRange?.events).toEqual(['start']);
             expect(notViewportAware?.events).toEqual(['start']);
+            noRangeChart.destroy();
+            staticChart.destroy();
             expect(notViewportAware?.viewports).toEqual([]);
         } finally {
             unregisterNativeIndicator('test-native-no-range');
             unregisterNativeIndicator('test-native-static');
         }
+    });
+
+    it('a script handle names its engine language: the chart default, else the language option, kept by updateCode', async () => {
+        const renderer = new FakeRenderer();
+        const other = new MockEngine();
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [new MockEngine()], dataFeed: new MockDataFeed() });
+        chart.registerEngine('other', other);
+
+        const byDefault = chart.addIndicator('//@version=5\nindicator("A", overlay=true)\nplot(close)');
+        const explicit = chart.addIndicator('//@version=5\nindicator("B", overlay=true)\nplot(close)', { language: 'other' });
+        // Synchronous: a host gate reads it before the script is even prepared.
+        expect(byDefault.language).toBe('pine');
+        expect(explicit.language).toBe('other');
+
+        await chart.ready();
+        await flush();
+        expect(other.runCount[explicit.id]).toBeGreaterThan(0); // the named engine is the one that runs it
+        expect(other.runCount[byDefault.id]).toBeUndefined();
+
+        const result = await explicit.updateCode('//@version=5\nindicator("B2", overlay=true)\nplot(close)');
+        expect(result.ok).toBe(true);
+        expect(explicit.source).toContain('B2');
+        expect(explicit.language).toBe('other');
+    });
+
+    it("a script without a language option takes the chart's defaultLanguage", () => {
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false, defaultLanguage: 'other' }, { renderer: new FakeRenderer(), engines: [new MockEngine()], dataFeed: new MockDataFeed() });
+        chart.registerEngine('other', new MockEngine());
+        expect(chart.addIndicator('//@version=5\nindicator("A", overlay=true)\nplot(close)').language).toBe('other');
+        chart.destroy();
     });
 
     it('addNativeIndicator: a multiInstance type creates a fresh instance per add, each mounted and removable on its own', async () => {
@@ -2140,6 +2248,96 @@ describe('EngineOrchestrator — built-in volume native indicators', () => {
     });
 });
 
+describe('EngineOrchestrator — the volume auto-add follows the symbol facts', () => {
+    /**
+     * One provider: `MACRO` is stated to carry no volume, `BTCUSDT` states nothing about it.
+     * By default the bars wait a macrotask, so the facts are known when the first candles
+     * paint; `holdFacts` keeps the facts in flight until released, so the candles win.
+     */
+    function factsFeed(opts: { holdFacts?: boolean } = {}): { feed: MultiProviderFeed; releaseFacts: () => void; factCalls: () => number } {
+        let release: () => void = () => {};
+        const gate = opts.holdFacts ? new Promise<void>((r) => (release = r)) : Promise.resolve();
+        let factCalls = 0;
+        const provider: DataProvider = {
+            getBars: async () => {
+                if (!opts.holdFacts) await new Promise((r) => setTimeout(r, 0));
+                return makeBars(50);
+            },
+            listSymbols: () => Promise.resolve([{ ticker: 'MACRO' }, { ticker: 'BTCUSDT' }]),
+            getSymbolInfo: async (ticker) => {
+                factCalls += 1;
+                await gate;
+                return ticker === 'MACRO' ? { ticker, volume: false, timeframes: { finest: '1M', default: '1M' } } : { ticker };
+            },
+        };
+        const feed = new MultiProviderFeed(new BarStore());
+        void feed.registerProvider('lux', provider);
+        return { feed, releaseFacts: () => release(), factCalls: () => factCalls };
+    }
+
+    async function chartOn(symbol: string, feed: MultiProviderFeed): Promise<{ chart: Vela; renderer: FakeRenderer }> {
+        const renderer = new FakeRenderer();
+        const chart = new Vela({} as unknown as HTMLElement, { symbol, live: false }, { renderer, engines: [], dataFeed: feed });
+        await chart.ready();
+        await flush();
+        return { chart, renderer };
+    }
+
+    const hasVolume = (chart: Vela): boolean => chart.presentNativeIndicators().includes('volume');
+
+    it('adds no volume indicator for a symbol whose source has no volume; adding one by hand still works', async () => {
+        const { feed } = factsFeed();
+        const { chart, renderer } = await chartOn('LUX:MACRO', feed);
+        expect(renderer.setBarsCalls.some((c) => c.n > 0)).toBe(true);
+        expect(hasVolume(chart)).toBe(false);
+        expect(renderer.volumePushes).toHaveLength(0);
+        expect(chart.pendingNativeIndicators()).toEqual([]);
+
+        chart.addNativeIndicator('volume');
+        await flush();
+        expect(hasVolume(chart)).toBe(true);
+        chart.destroy();
+    });
+
+    it('still adds it for a symbol whose facts say nothing about volume', async () => {
+        const { feed } = factsFeed();
+        const { chart } = await chartOn('LUX:BTCUSDT', feed);
+        expect(hasVolume(chart)).toBe(true);
+        chart.destroy();
+    });
+
+    it('facts that land after the first candles decide the add without holding the paint', async () => {
+        for (const [symbol, expected] of [['LUX:BTCUSDT', true], ['LUX:MACRO', false]] as const) {
+            const { feed, releaseFacts, factCalls } = factsFeed({ holdFacts: true });
+            const { chart, renderer } = await chartOn(symbol, feed);
+            // The candles are painted while the facts are still in flight; the add is owed.
+            expect(renderer.setBarsCalls.some((c) => c.n > 0)).toBe(true);
+            expect(hasVolume(chart)).toBe(false);
+            expect(chart.pendingNativeIndicators()).toEqual(['volume']);
+
+            releaseFacts();
+            await flush();
+            expect(hasVolume(chart)).toBe(expected);
+            expect(chart.pendingNativeIndicators()).toEqual([]);
+            expect(factCalls()).toBe(1); // the add rode the load's own request
+            chart.destroy();
+        }
+    });
+
+    it('a switch to another symbol while the facts are in flight drops the add', async () => {
+        const { feed, releaseFacts } = factsFeed({ holdFacts: true });
+        const { chart } = await chartOn('LUX:BTCUSDT', feed);
+        expect(chart.pendingNativeIndicators()).toEqual(['volume']);
+
+        void chart.setMarket({ symbol: 'LUX:MACRO' });
+        expect(chart.pendingNativeIndicators()).toEqual([]); // the owed add belonged to the first market
+        releaseFacts();
+        await flush();
+        expect(hasVolume(chart)).toBe(false);
+        chart.destroy();
+    });
+});
+
 describe('EngineOrchestrator — chart-type SDK (registerChartType)', () => {
     afterEach(() => unregisterChartType('doubled'));
 
@@ -2299,7 +2497,9 @@ describe('Vela.runIndicator — execute-and-inject with structured failure', () 
     });
 });
 
-const STRATEGY_STATE = {
+// The optional risk and benchmark figures ride along: every path below hands the host the
+// engine's state as it is.
+const STRATEGY_STATE: StrategyState = {
     position: 2,
     avgPrice: 100,
     equity: 10_500,
@@ -2313,6 +2513,12 @@ const STRATEGY_STATE = {
     maxDrawdown: 80,
     maxRunup: 300,
     initialCapital: 10_000,
+    cagr: 12.5,
+    sharpe: 0.84,
+    sortino: 1.21,
+    buyHoldPnl: 320,
+    buyHoldPct: 3.2,
+    outperformance: 180,
 };
 
 describe('handle.context — positive proof the capability is wired end to end', () => {
