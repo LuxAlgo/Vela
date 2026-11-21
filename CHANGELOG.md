@@ -2,6 +2,15 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Charts on the same market share one live price feed.** Several charts in a workspace
+  showing the same symbol and timeframe each opened their own live connection, so they
+  used more connections than needed and could briefly show different latest prices. They
+  now share one feed and always show the same price.
+
 ## [0.10.14]
 
 ### Added

@@ -359,6 +359,70 @@ describe('CachingDataFeed', () => {
     });
 });
 
+describe('CachingDataFeed live updates', () => {
+    /** An inner feed that counts upstream subscriptions and lets the test push bars. */
+    function liveFeed(): { feed: MarketDataFeed; upstreams: { cfg: MarketConfig; push: (b: OHLCV) => void; stopped: boolean }[] } {
+        const upstreams: { cfg: MarketConfig; push: (b: OHLCV) => void; stopped: boolean }[] = [];
+        const feed: MarketDataFeed = {
+            load: () => Promise.resolve([]),
+            subscribe: (cfg, onBar) => {
+                const up = { cfg, push: onBar, stopped: false };
+                upstreams.push(up);
+                return () => {
+                    up.stopped = true;
+                };
+            },
+        };
+        return { feed, upstreams };
+    }
+    const bar = (close: number): OHLCV => ({ time: 1_700_000_000_000, open: close, high: close, low: close, close, volume: 1 });
+
+    it('charts showing the same series share one live upstream, and each gets every bar', () => {
+        const { feed, upstreams } = liveFeed();
+        const cf = new CachingDataFeed(feed, new BarStore());
+        const a: OHLCV[] = [];
+        const b: OHLCV[] = [];
+        cf.subscribe(CFG, (x) => a.push(x));
+        cf.subscribe(CFG, (x) => b.push(x));
+
+        expect(upstreams).toHaveLength(1);
+        upstreams[0]!.push(bar(101));
+        expect(a.map((x) => x.close)).toEqual([101]);
+        expect(b.map((x) => x.close)).toEqual([101]);
+        expect(a[0]).not.toBe(b[0]); // separate copies
+    });
+
+    it('the upstream keeps running for the remaining charts and stops with the last one', () => {
+        const { feed, upstreams } = liveFeed();
+        const cf = new CachingDataFeed(feed, new BarStore());
+        const a: OHLCV[] = [];
+        const offA = cf.subscribe(CFG, (x) => a.push(x));
+        const b: OHLCV[] = [];
+        const offB = cf.subscribe(CFG, (x) => b.push(x));
+
+        offA();
+        offA(); // a second call is a no-op
+        expect(upstreams[0]!.stopped).toBe(false);
+        upstreams[0]!.push(bar(102));
+        expect(a).toHaveLength(0);
+        expect(b).toHaveLength(1);
+
+        offB();
+        expect(upstreams[0]!.stopped).toBe(true);
+        cf.subscribe(CFG, () => {}); // a later chart opens a fresh upstream
+        expect(upstreams).toHaveLength(2);
+    });
+
+    it('different timeframes or symbols get their own upstreams', () => {
+        const { feed, upstreams } = liveFeed();
+        const cf = new CachingDataFeed(feed, new BarStore());
+        cf.subscribe(CFG, () => {});
+        cf.subscribe({ ...CFG, timeframe: '15' }, () => {});
+        cf.subscribe({ ...CFG, symbol: 'binance:ETHUSDT' }, () => {});
+        expect(upstreams).toHaveLength(3);
+    });
+});
+
 describe('BarStore', () => {
     it('merges by time (incoming wins) and stays sorted', () => {
         const store = new BarStore();

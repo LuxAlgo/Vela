@@ -36,6 +36,9 @@ const SINGLE_FETCH_BARS = PAGE_BARS + 1;
  * `data` — it transparently falls back to a full `load`.
  */
 export class CachingDataFeed implements MarketDataFeed {
+    /** Live upstreams by series key, with the listeners riding each (see {@link subscribe}). */
+    private readonly live = new Map<string, { listeners: Set<(bar: OHLCV) => void>; stop: Unsubscribe }>();
+
     constructor(
         private readonly inner: MarketDataFeed,
         private readonly store: BarStore = sharedBarStore,
@@ -225,8 +228,37 @@ export class CachingDataFeed implements MarketDataFeed {
         return { bars, coveredDownTo: walkedOut ? range.from : bars[0]?.time };
     }
 
+    /**
+     * Live updates, one upstream per series: charts showing the same series ride one provider
+     * stream (or poll) and each gets every bar as its own copy. The upstream stops with its
+     * last listener.
+     */
     subscribe(cfg: MarketConfig, onBar: (bar: OHLCV) => void): Unsubscribe {
-        return this.inner.subscribe(cfg, onBar);
+        if (cfg.data && cfg.data.length > 0) return this.inner.subscribe(cfg, onBar);
+        const key = cacheKey(cfg.symbol ?? 'TEST', cfg.timeframe ?? '60', cfg.session);
+        let live = this.live.get(key);
+        if (!live) {
+            const listeners = new Set<(bar: OHLCV) => void>();
+            const created: { listeners: Set<(bar: OHLCV) => void>; stop: Unsubscribe } = { listeners, stop: () => {} };
+            this.live.set(key, created);
+            created.stop = this.inner.subscribe(cfg, (bar) => {
+                for (const listener of [...listeners]) listener({ ...bar });
+            });
+            live = created;
+        }
+        const entry = live;
+        const listener = (bar: OHLCV): void => onBar(bar);
+        entry.listeners.add(listener);
+        let stopped = false;
+        return () => {
+            if (stopped) return;
+            stopped = true;
+            entry.listeners.delete(listener);
+            if (entry.listeners.size === 0 && this.live.get(key) === entry) {
+                this.live.delete(key);
+                entry.stop();
+            }
+        };
     }
 
     symbolInfo(cfg: MarketConfig): SymbolInfo | undefined {
