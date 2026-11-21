@@ -309,7 +309,9 @@ export class BinanceProvider implements DataProvider {
 
     private async listSpot(): Promise<SymbolDescriptor[]> {
         const base = await this.spotBase();
-        const data = (await this.json(`${base}/exchangeInfo`)) as { symbols?: BinanceSymbol[] };
+        // Trading symbols only, without their permission sets: the same rows the filter below
+        // keeps, in a download about six times smaller (both parameters are Binance's own).
+        const data = (await this.json(`${base}/exchangeInfo?symbolStatus=TRADING&showPermissionSets=false`)) as { symbols?: BinanceSymbol[] };
         return (data.symbols ?? [])
             .filter((s) => s.status === 'TRADING')
             .map((s) => ({ ticker: s.symbol, description: `${s.baseAsset} / ${s.quoteAsset}`, type: 'crypto' }));

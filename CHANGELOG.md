@@ -2,6 +2,14 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Changed
+
+- **Binance charts start faster.** The Binance provider now asks only for actively traded
+  pairs when it builds its symbol list. The download is about six times smaller and holds
+  the same symbols, so a Binance chart shows its first candles sooner.
+
 ## [0.10.14]
 
 ### Added
