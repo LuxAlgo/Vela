@@ -2,6 +2,16 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **A chart no longer reports the start of its history too early.** When a data source
+  that streams its answer returned slightly fewer candles than the chart asked for, Vela
+  reported that the market's history began there, even when older candles existed. It
+  now asks for the older candles, as a deep load does, and reports the start of history
+  only when there are none.
+
 ## [0.10.14]
 
 ### Added
