@@ -461,8 +461,9 @@ export class ChromeRenderer {
             placed.push({ l, r });
             ctx.fillText(tick.label, tick.x, y);
         };
-        for (const tick of ticks) if (tick.major) put(tick);
-        for (const tick of ticks) if (!tick.major) put(tick);
+        for (const tick of ticks) if (!tick.fromGrid && tick.major) put(tick);
+        for (const tick of ticks) if (!tick.fromGrid && !tick.major) put(tick);
+        for (const tick of ticks) if (tick.fromGrid) put(tick);
         ctx.textAlign = 'start';
     }
 }

@@ -206,8 +206,17 @@ export interface TimeTick {
     time: number;
     label: string;
     major: boolean;
+    /** A gap date added by the grid. Give the axis's own ticks first choice of space. */
+    fromGrid?: boolean;
 }
 
+interface TimeTickCandidate {
+    time: number;
+    unit: TimeTickUnit;
+    major: boolean;
+}
+
+const DEFAULT_TIME_TICK_TARGET = 8;
 const SEC = 1000;
 const MIN = 60 * SEC;
 const HOUR = 60 * MIN;
@@ -246,10 +255,42 @@ function pickStep(targetMs: number): number {
 }
 
 /** Shared time-tick selection for vertical gridlines and axis labels. */
-export function viewportTimeTicks(coords: CoordinateSystem, timeZone: string, target = 8, fmt = ENGLISH_FORMAT): TimeTick[] {
+export function viewportTimeTicks(
+    coords: CoordinateSystem,
+    timeZone: string,
+    target = DEFAULT_TIME_TICK_TARGET,
+    fmt = ENGLISH_FORMAT,
+): TimeTick[] {
     const { from, to } = coords.visibleTimeRange();
     const offset = tzOffsetMs((from + to) / 2, displayZone(timeZone, coords.barInterval));
-    return timeTicks(from, to, target, offset, fmt, coords.logicalToTime(0), (time) => coords.isInCompressedGap(time));
+    const firstBar = coords.logicalToTime(0);
+    const inGap = (time: number) => coords.isInCompressedGap(time);
+    const ticks = timeTickCandidates(from, to, target, offset, firstBar, inGap);
+    const gridTicks = target === DEFAULT_TIME_TICK_TARGET
+        ? ticks
+        : timeTickCandidates(from, to, DEFAULT_TIME_TICK_TARGET, offset, firstBar, inGap);
+
+    // Both surfaces use the grid's last date in each gap. The logical slot identifies
+    // the adjacent bars independently of how their interval rounds to pixels.
+    const datesByGap = new Map<number, TimeTickCandidate>();
+    for (const tick of gridTicks) {
+        if (inGap(tick.time)) datesByGap.set(Math.floor(coords.timeToLogical(tick.time)), tick);
+    }
+
+    const selected = ticks.filter((tick) => !inGap(tick.time)).map((tick) => formatTimeTick(tick, offset, fmt));
+    for (const date of datesByGap.values()) {
+        // Keep the axis step's format when it has this timestamp. A grid-only date can
+        // label the gap when it fits alongside existing axis labels.
+        const axisDate = ticks.find((tick) => tick.time === date.time);
+        const tick = formatTimeTick(axisDate ?? date, offset, fmt);
+        if (!axisDate) tick.fromGrid = true;
+        selected.push(tick);
+    }
+    return selected.sort((a, b) => a.time - b.time);
+}
+
+function formatTimeTick({ time, unit, major }: TimeTickCandidate, offsetMs: number, fmt: ResolvedFormatters): TimeTick {
+    return { time, label: fmt.timeTick(time, { unit, major, offsetMs, surface: 'timeAxis' }), major };
 }
 
 /**
@@ -269,6 +310,18 @@ export function timeTicks(
     notBeforeMs = -Infinity,
     isInCompressedGap?: (time: number) => boolean,
 ): TimeTick[] {
+    return timeTickCandidates(fromMs, toMs, target, offsetMs, notBeforeMs, isInCompressedGap)
+        .map((tick) => formatTimeTick(tick, offsetMs, fmt));
+}
+
+function timeTickCandidates(
+    fromMs: number,
+    toMs: number,
+    target: number,
+    offsetMs: number,
+    notBeforeMs: number,
+    isInCompressedGap?: (time: number) => boolean,
+): TimeTickCandidate[] {
     const span = toMs - fromMs;
     if (!(span > 0)) return [];
     const step = pickStep(span / Math.max(1, target));
@@ -276,10 +329,10 @@ export function timeTicks(
     // shift on each tick's `time` for pixel placement on the real (UTC) axis.
     const zFrom = Math.max(fromMs, notBeforeMs) + offsetMs;
     const zTo = toMs + offsetMs;
-    if (step >= MONTH) return calendarTicks(zFrom, zTo, step >= YEAR ? 12 * yearStep(span, target) : step >= 3 * MONTH ? 3 : 1, offsetMs, fmt);
+    if (step >= MONTH) return calendarTicks(zFrom, zTo, step >= YEAR ? 12 * yearStep(span, target) : step >= 3 * MONTH ? 3 : 1, offsetMs);
     const first = Math.ceil(zFrom / step) * step;
     const clockUnit: TimeTickUnit = step < MIN ? 'second' : step < HOUR ? 'minute' : 'hour';
-    const out: TimeTick[] = [];
+    const out: TimeTickCandidate[] = [];
     for (let zt = first; zt <= zTo; zt += step) {
         const t = zt - offsetMs;
         const d = new Date(zt);
@@ -297,7 +350,7 @@ export function timeTicks(
             unit = 'year';
             major = true;
         }
-        out.push({ time: t, label: fmt.timeTick(t, { unit, major, offsetMs, surface: 'timeAxis' }), major });
+        out.push({ time: t, unit, major });
     }
     return out;
 }
@@ -307,16 +360,15 @@ export function timeTicks(
  * zoned space). Fixed 30/365-day steps drift off the calendar by a day per leap year,
  * which puts each year label weeks before the January it names.
  */
-function calendarTicks(zFrom: number, zTo: number, months: number, offsetMs: number, fmt: ResolvedFormatters): TimeTick[] {
+function calendarTicks(zFrom: number, zTo: number, months: number, offsetMs: number): TimeTickCandidate[] {
     const d0 = new Date(zFrom);
     let idx = d0.getUTCFullYear() * 12 + d0.getUTCMonth();
     if (monthStart(idx) < zFrom) idx += 1;
     idx = Math.ceil(idx / months) * months;
     const unit: TimeTickUnit = months >= 12 ? 'year' : 'month';
-    const out: TimeTick[] = [];
+    const out: TimeTickCandidate[] = [];
     for (let zt = monthStart(idx); zt <= zTo; idx += months, zt = monthStart(idx)) {
-        const time = zt - offsetMs;
-        out.push({ time, label: fmt.timeTick(time, { unit, major: true, offsetMs, surface: 'timeAxis' }), major: true });
+        out.push({ time: zt - offsetMs, unit, major: true });
     }
     return out;
 }

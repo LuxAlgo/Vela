@@ -6,9 +6,10 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
-- **Clock ticks stay out of compressed trading breaks.** The time axis and grid skip
-  clock ticks inside a break, where several lines could appear between two adjacent
-  candles. Candle spacing and calendar landmarks are preserved.
+- **Time ticks stay readable across compressed trading breaks.** The time axis and
+  grid skip clock ticks inside a break. When a weekend or holiday puts several dates
+  between two adjacent candles, the grid and time label share the date closest to
+  the next candle. Candle spacing is preserved.
 
 ## [0.10.14]
 

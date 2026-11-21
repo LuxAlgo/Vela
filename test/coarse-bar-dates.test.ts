@@ -3,7 +3,7 @@
 // instant. Every surface that shows a coarse bar's date must read it in UTC whatever the
 // display zone, while intraday bars keep reading in the display zone.
 import { describe, it, expect } from 'vitest';
-import { formatTimeStamp, timeTicks } from '../src/renderers/native/chrome/ticks';
+import { formatTimeStamp, timeTicks, viewportTimeTicks } from '../src/renderers/native/chrome/ticks';
 import { displayZone, tzOffsetMs } from '../src/renderers/native/chrome/tz';
 import { EXCHANGE_TIMEZONE, resolveTimezone } from '../src/core/timezones';
 import { ChromeRenderer } from '../src/renderers/native/chrome/ChromeRenderer';
@@ -216,18 +216,77 @@ describe('time axis and grid across a compressed intraday gap', () => {
         expect(texts.some(({ x }) => x === coords.timeToX(midnight))).toBe(true);
     });
 
-    it('keeps calendar boundaries while dropping clock ticks in a weekend break', () => {
+    it('shares the date nearest the next bar across a compressed weekend', () => {
+        const fridayClose = Date.UTC(2026, 10, 13, 7); // 15:00 Friday in the display zone
+        const mondayOpen = Date.UTC(2026, 10, 16, 1, 35);
+        const interval = HOUR / 12;
+        const bars = [
+            ...Array.from({ length: 48 }, (_, i) => fridayClose + (i - 47) * interval),
+            ...Array.from({ length: 48 }, (_, i) => mondayOpen + i * interval),
+        ];
+        const zone = 'Asia/Shanghai';
+        const { coords, texts } = axisLabels(bars, 960, 13.5, zone);
+        const lines = gridLines(bars, 960, 13.5, zone);
+        const left = coords.timeToX(fridayClose);
+        const right = coords.timeToX(mondayOpen);
+        const labelX = coords.timeToX(Date.UTC(2026, 10, 15, 16));
+        expect(right - left).toBe(13.5);
+        expect(texts.filter(({ x }) => x > left && x < right).map(({ text }) => text)).toEqual(['Nov 16']);
+        expect(lines.filter((x) => x > left && x <= right + 0.5)).toEqual([Math.round(labelX) + 0.5]);
+    });
+
+    it('shares the same date in a narrow chart across a longer holiday', () => {
+        const lastBar = Date.UTC(2026, 8, 30, 7);
+        const nextBar = Date.UTC(2026, 9, 12, 1, 35);
+        const interval = HOUR / 12;
+        const bars = [
+            ...Array.from({ length: 16 }, (_, i) => lastBar + (i - 15) * interval),
+            ...Array.from({ length: 10 }, (_, i) => nextBar + i * interval),
+        ];
+        const zone = 'Asia/Shanghai';
+        const { coords, texts } = axisLabels(bars, 300, 13.5, zone);
+        const lines = gridLines(bars, 300, 13.5, zone);
+        const left = coords.timeToX(lastBar);
+        const right = coords.timeToX(nextBar);
+        const labelX = coords.timeToX(Date.UTC(2026, 9, 11, 16));
+        expect(texts.filter(({ x }) => x > left && x < right).map(({ text }) => text)).toEqual(['Oct 12']);
+        expect(lines.filter((x) => x > left && x <= right + 0.5)).toEqual([Math.round(labelX) + 0.5]);
+    });
+
+    it('preserves the date tick on a bar that opens at midnight', () => {
         const friday = Date.UTC(2026, 10, 20, 12);
-        const monday = Date.UTC(2026, 10, 23, 9);
+        const monday = Date.UTC(2026, 10, 23);
         const bars = [friday, monday].flatMap((first) => Array.from({ length: 6 }, (_, i) => first + i * HOUR));
-        const { coords, texts } = axisLabels(bars, 720, 60, 'UTC');
-        const lines = gridLines(bars, 720, 60, 'UTC');
-        const gridX = (time: number) => Math.round(coords.timeToX(time)) + 0.5;
-        const saturdayMidnight = Date.UTC(2026, 10, 21);
-        const saturdayNoon = saturdayMidnight + 12 * HOUR;
-        expect(texts.map(({ text }) => text)).toContain('Nov 21');
-        expect(lines).toContain(gridX(saturdayMidnight));
-        expect(lines).not.toContain(gridX(saturdayNoon));
+        const coords = coordsFor(bars, 720, 60);
+        expect(viewportTimeTicks(coords, 'UTC')).toContainEqual({ time: monday, label: 'Nov 23', major: true });
+    });
+
+    it('keeps the axis priority of a month tick on the reopening candle', () => {
+        const friday = Date.UTC(2025, 10, 28, 7);
+        const monday = Date.UTC(2025, 11, 1);
+        const bars = [friday, monday].flatMap((first) => Array.from({ length: 12 }, (_, i) => first + i * HOUR));
+        const { coords, texts } = axisLabels(bars, 300, 13.5, 'UTC');
+        expect(texts).toContainEqual({ text: 'Dec', x: coords.timeToX(monday) });
+    });
+
+    it('gives an existing quarter label priority over a date borrowed from the grid', () => {
+        const may = Date.UTC(2018, 4, 21);
+        const octoberOpen = Date.UTC(2018, 9, 1);
+        const bars = [may, octoberOpen].flatMap((first) => Array.from({ length: 12 }, (_, i) => first + i * WEEK));
+        const { coords, texts } = axisLabels(bars, 300, 13.5, 'UTC');
+        const september = Date.UTC(2018, 8, 1);
+        const lines = gridLines(bars, 300, 13.5, 'UTC');
+        expect(lines).toContain(Math.round(coords.timeToX(september)) + 0.5);
+        expect(texts).toContainEqual({ text: 'Oct', x: coords.timeToX(octoberOpen) });
+        expect(texts.map(({ text }) => text)).not.toContain('Sep');
+    });
+
+    it('keeps the existing tick density in a narrow view of continuous bars', () => {
+        const coords = coordsFor(HOURLY, 300, 10);
+        const { from, to } = coords.visibleTimeRange();
+        for (const target of [4, 8]) {
+            expect(viewportTimeTicks(coords, 'UTC', target)).toEqual(timeTicks(from, to, target, 0, undefined, HOURLY[0]));
+        }
     });
 });
 
