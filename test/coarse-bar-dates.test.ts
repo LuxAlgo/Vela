@@ -3,7 +3,7 @@
 // instant. Every surface that shows a coarse bar's date must read it in UTC whatever the
 // display zone, while intraday bars keep reading in the display zone.
 import { describe, it, expect } from 'vitest';
-import { formatTimeStamp, timeTicks } from '../src/renderers/native/chrome/ticks';
+import { formatTimeStamp, timeTicks, viewportTimeTicks } from '../src/renderers/native/chrome/ticks';
 import { displayZone, tzOffsetMs } from '../src/renderers/native/chrome/tz';
 import { EXCHANGE_TIMEZONE, resolveTimezone } from '../src/core/timezones';
 import { ChromeRenderer } from '../src/renderers/native/chrome/ChromeRenderer';
@@ -85,11 +85,11 @@ const DAILY = [19, 20, 21, 22, 23, 26, 27].map((d) => Date.UTC(2026, 9, d));
 /** 48 hourly bars from Thu 22 Oct 2026 00:00 UTC. */
 const HOURLY = Array.from({ length: 48 }, (_, i) => Date.UTC(2026, 9, 22) + i * HOUR);
 
-function coordsFor(times: number[], width: number, barSpacing: number): CoordinateSystem {
+function coordsFor(times: number[], width: number, barSpacing: number, rightOffset = 0): CoordinateSystem {
     const coords = new CoordinateSystem();
     coords.setSize(width, 300, 1);
     coords.setBars(times);
-    coords.setViewport({ barSpacing, rightOffset: 0 });
+    coords.setViewport({ barSpacing, rightOffset });
     return coords;
 }
 
@@ -119,8 +119,8 @@ function recorder() {
     return { ctx, texts, moves };
 }
 
-function axisLabels(times: number[], width: number, barSpacing: number, zone: string): { coords: CoordinateSystem; texts: Array<{ text: string; x: number }> } {
-    const coords = coordsFor(times, width, barSpacing);
+function axisLabels(times: number[], width: number, barSpacing: number, zone: string, rightOffset = 0): { coords: CoordinateSystem; texts: Array<{ text: string; x: number }> } {
+    const coords = coordsFor(times, width, barSpacing, rightOffset);
     const scene = new SceneGraph();
     scene.timezone = zone;
     const rec = recorder();
@@ -128,8 +128,8 @@ function axisLabels(times: number[], width: number, barSpacing: number, zone: st
     return { coords, texts: rec.texts };
 }
 
-function gridLines(times: number[], width: number, barSpacing: number, zone: string): number[] {
-    const coords = coordsFor(times, width, barSpacing);
+function gridLines(times: number[], width: number, barSpacing: number, zone: string, rightOffset = 0): number[] {
+    const coords = coordsFor(times, width, barSpacing, rightOffset);
     const scene = new SceneGraph();
     scene.timezone = zone;
     const rec = recorder();
@@ -163,6 +163,211 @@ describe('time axis and grid on a daily chart', () => {
         expect(utc.texts.find((t) => t.text === 'Oct 23')?.x).toBeCloseTo(utc.coords.timeToX(Date.UTC(2026, 9, 23, 0)), 6);
         expect(ny.texts.find((t) => t.text === 'Oct 23')?.x).toBeCloseTo(ny.coords.timeToX(Date.UTC(2026, 9, 23, 4)), 6);
         expect(gridLines(HOURLY, 480, 10, 'America/New_York')).not.toEqual(gridLines(HOURLY, 480, 10, 'UTC'));
+    });
+});
+
+describe('time axis and grid across a compressed intraday gap', () => {
+    it('skips the clock ticks inside a break while keeping the bar positions and neighboring ticks', () => {
+        const minute = HOUR / 60;
+        const lastMorning = Date.UTC(2026, 10, 20, 3, 30); // 11:30 in the display zone
+        const firstAfternoon = Date.UTC(2026, 10, 20, 5, 1);
+        const bars = [
+            ...Array.from({ length: 120 }, (_, i) => lastMorning - (119 - i) * minute),
+            ...Array.from({ length: 120 }, (_, i) => firstAfternoon + i * minute),
+        ];
+        const zone = 'Asia/Shanghai';
+        const { coords, texts } = axisLabels(bars, 960, 4, zone);
+        const lines = gridLines(bars, 960, 4, zone);
+        expect(coords.timeToX(firstAfternoon) - coords.timeToX(lastMorning)).toBe(4);
+
+        const labels = texts.map(({ text }) => text);
+        const gridX = (hour: number) => Math.round(coords.timeToX(Date.UTC(2026, 10, 20, hour - 8))) + 0.5;
+        for (const [hour, label] of [[11, '11:00'], [14, '14:00']] as const) {
+            expect(labels).toContain(label);
+            expect(lines).toContain(gridX(hour));
+        }
+        for (const [hour, label] of [[12, '12:00'], [13, '13:00']] as const) {
+            expect(labels).not.toContain(label);
+            expect(lines).not.toContain(gridX(hour));
+        }
+    });
+
+    it('skips a break shorter than one bar while keeping ticks inside ordinary bars', () => {
+        const day = Date.UTC(2026, 10, 20);
+        const bars = [9, 10, 11, 12.5, 13.5, 14.5].map((hour) => day + hour * HOUR);
+        const { coords, texts } = axisLabels(bars, 720, 120, 'UTC');
+        const lines = gridLines(bars, 720, 120, 'UTC');
+        const gridX = (hour: number) => Math.round(coords.timeToX(day + hour * HOUR)) + 0.5;
+        expect(texts.map(({ text }) => text)).not.toContain('12:00');
+        expect(lines).not.toContain(gridX(12));
+        expect(texts.map(({ text }) => text)).toContain('13:00');
+        expect(lines).toContain(gridX(13));
+    });
+
+    it('keeps exactly midnight as the calendar boundary on a seconds chart', () => {
+        const midnight = Date.UTC(2026, 10, 21);
+        const bars = [-40, -35, -30, -25, -20, 45, 50, 55, 60, 65].map((seconds) => midnight + 1000 * seconds);
+        const { coords, texts } = axisLabels(bars, 800, 80, 'UTC');
+        const lines = gridLines(bars, 800, 80, 'UTC');
+        const gridX = (seconds: number) => Math.round(coords.timeToX(midnight + 1000 * seconds)) + 0.5;
+        expect(lines).toContain(gridX(0));
+        expect(lines).not.toContain(gridX(15));
+        expect(lines).not.toContain(gridX(30));
+        expect(texts.some(({ x }) => x === coords.timeToX(midnight))).toBe(true);
+    });
+
+    it('shares the date nearest the next bar across a compressed weekend', () => {
+        const fridayClose = Date.UTC(2026, 10, 13, 7); // 15:00 Friday in the display zone
+        const mondayOpen = Date.UTC(2026, 10, 16, 1, 35);
+        const interval = HOUR / 12;
+        const bars = [
+            ...Array.from({ length: 48 }, (_, i) => fridayClose + (i - 47) * interval),
+            ...Array.from({ length: 48 }, (_, i) => mondayOpen + i * interval),
+        ];
+        const zone = 'Asia/Shanghai';
+        const { coords, texts } = axisLabels(bars, 960, 13.5, zone);
+        const lines = gridLines(bars, 960, 13.5, zone);
+        const left = coords.timeToX(fridayClose);
+        const right = coords.timeToX(mondayOpen);
+        const labelX = coords.timeToX(Date.UTC(2026, 10, 15, 16));
+        expect(right - left).toBe(13.5);
+        expect(texts.filter(({ x }) => x > left && x < right).map(({ text }) => text)).toEqual(['Nov 16']);
+        expect(lines.filter((x) => x > left && x <= right + 0.5)).toEqual([Math.round(labelX) + 0.5]);
+    });
+
+    it('shares the same date in a narrow chart across a longer holiday', () => {
+        const lastBar = Date.UTC(2026, 9, 2, 7);
+        const nextBar = Date.UTC(2026, 9, 12, 1, 35);
+        const interval = HOUR / 12;
+        const bars = [
+            ...Array.from({ length: 16 }, (_, i) => lastBar + (i - 15) * interval),
+            ...Array.from({ length: 10 }, (_, i) => nextBar + i * interval),
+        ];
+        const zone = 'Asia/Shanghai';
+        const { coords, texts } = axisLabels(bars, 300, 13.5, zone);
+        const lines = gridLines(bars, 300, 13.5, zone);
+        const left = coords.timeToX(lastBar);
+        const right = coords.timeToX(nextBar);
+        const labelX = coords.timeToX(Date.UTC(2026, 9, 11, 16));
+        expect(texts.filter(({ x }) => x > left && x < right).map(({ text }) => text)).toEqual(['Oct 12']);
+        expect(lines.filter((x) => x > left && x <= right + 0.5)).toEqual([Math.round(labelX) + 0.5]);
+    });
+
+    it.each([
+        { zone: 'UTC', offset: 0, barSpacing: 90 },
+        { zone: 'Asia/Shanghai', offset: 8 * HOUR, barSpacing: 91 },
+    ])('shows the midnight reopening date in $zone', ({ zone, offset, barSpacing }) => {
+        const fridayClose = Date.UTC(2026, 10, 13, 18) - offset;
+        const mondayOpen = Date.UTC(2026, 10, 16) - offset;
+        const bars = [
+            ...Array.from({ length: 6 }, (_, i) => fridayClose + (i - 5) * HOUR),
+            ...Array.from({ length: 5 }, (_, i) => mondayOpen + i * HOUR),
+        ];
+        const { coords, texts } = axisLabels(bars, 720, barSpacing, zone);
+        const lines = gridLines(bars, 720, barSpacing, zone);
+        const left = coords.timeToX(fridayClose);
+        const right = coords.timeToX(mondayOpen);
+        const reopening = texts.find(({ text }) => text === 'Nov 16');
+        expect(reopening).toBeDefined();
+        expect(Math.round(reopening!.x)).toBe(Math.round(right));
+        expect(lines.filter((x) => x > left && x <= Math.round(right) + 0.5)).toEqual([Math.round(right) + 0.5]);
+    });
+
+    it('adds the reopening date when only the grid ladder selects it', () => {
+        const lastBar = Date.UTC(2026, 10, 10, 18);
+        const reopening = Date.UTC(2026, 10, 16);
+        const bars = [lastBar - HOUR, lastBar, reopening, reopening + HOUR, reopening + 2 * HOUR];
+        const { coords, texts } = axisLabels(bars, 300, 70, 'UTC');
+        const lines = gridLines(bars, 300, 70, 'UTC');
+        const left = coords.timeToX(lastBar);
+        const right = coords.timeToX(reopening);
+        expect(texts).toEqual([{ text: 'Nov 16', x: right }]);
+        expect(lines.filter((x) => x > left && x <= right + 0.5)).toEqual([Math.round(right) + 0.5]);
+    });
+
+    it('uses a date the axis can show when the reopening is near the edge', () => {
+        const lastBar = Date.UTC(2026, 10, 10, 18);
+        const reopening = Date.UTC(2026, 10, 16);
+        const bars = [lastBar - 3 * HOUR, lastBar - 2 * HOUR, lastBar - HOUR, lastBar, reopening];
+        const { coords, texts } = axisLabels(bars, 300, 100, 'UTC', 0.15);
+        const lines = gridLines(bars, 300, 100, 'UTC', 0.15);
+        const left = coords.timeToX(lastBar);
+        const right = coords.timeToX(reopening);
+        const beforeReopening = coords.timeToX(Date.UTC(2026, 10, 15));
+        const reopeningStroke = Math.round(right) + 0.5;
+        expect(texts).toContainEqual({ text: 'Nov 15', x: beforeReopening });
+        expect(lines.filter((x) => x > left && x <= reopeningStroke)).toEqual([
+            Math.round(beforeReopening) + 0.5,
+            reopeningStroke,
+        ]);
+    });
+
+    it('keeps a month boundary inside a multi-day intraday break', () => {
+        const septemberClose = Date.UTC(2026, 8, 30, 18);
+        const octoberOpen = Date.UTC(2026, 9, 4, 7);
+        const bars = [
+            ...Array.from({ length: 6 }, (_, i) => septemberClose + (i - 5) * HOUR),
+            ...Array.from({ length: 6 }, (_, i) => octoberOpen + i * HOUR),
+        ];
+        const { coords, texts } = axisLabels(bars, 900, 80, 'UTC');
+        const lines = gridLines(bars, 900, 80, 'UTC');
+        const firstOfMonth = coords.timeToX(Date.UTC(2026, 9, 1));
+        const left = coords.timeToX(septemberClose);
+        const right = coords.timeToX(octoberOpen);
+        expect(texts.filter(({ x }) => x > left && x < right)).toEqual([{ text: 'Oct 1', x: firstOfMonth }]);
+        expect(lines.filter((x) => x > left && x <= right + 0.5)).toEqual([Math.round(firstOfMonth) + 0.5]);
+    });
+
+    it('keeps the axis priority of a month tick on the reopening candle', () => {
+        const friday = Date.UTC(2025, 10, 28, 7);
+        const monday = Date.UTC(2025, 11, 1);
+        const bars = [friday, monday].flatMap((first) => Array.from({ length: 12 }, (_, i) => first + i * HOUR));
+        const { coords, texts } = axisLabels(bars, 300, 13.5, 'UTC');
+        expect(texts).toContainEqual({ text: 'Dec', x: coords.timeToX(monday) });
+    });
+
+    it('gives an existing quarter label priority over a date borrowed from the grid', () => {
+        const may = Date.UTC(2018, 4, 21);
+        const octoberOpen = Date.UTC(2018, 9, 1);
+        const bars = [may, octoberOpen].flatMap((first) => Array.from({ length: 12 }, (_, i) => first + i * WEEK));
+        const { coords, texts } = axisLabels(bars, 300, 13.5, 'UTC');
+        const september = Date.UTC(2018, 8, 1);
+        const lines = gridLines(bars, 300, 13.5, 'UTC');
+        expect(lines).toContain(Math.round(coords.timeToX(september)) + 0.5);
+        expect(texts).toContainEqual({ text: 'Oct', x: coords.timeToX(octoberOpen) });
+        expect(texts.map(({ text }) => text)).not.toContain('Sep');
+    });
+
+    it('preserves the quarter marker inside a gap on a weekly chart', () => {
+        const june = Date.UTC(2021, 5, 28);
+        const november = Date.UTC(2021, 10, 8);
+        const bars = [june, november].flatMap((first) => Array.from({ length: 13 }, (_, i) => first + i * WEEK));
+        const { coords, texts } = axisLabels(bars, 300, 12, 'UTC');
+        const lines = gridLines(bars, 300, 12, 'UTC');
+        const october = coords.timeToX(Date.UTC(2021, 9, 1));
+        expect(texts).toContainEqual({ text: 'Oct', x: october });
+        expect(lines).toContain(Math.round(october) + 0.5);
+    });
+
+    it('preserves an axis-only date in a daily holiday gap', () => {
+        const thanksgiving = Date.UTC(2024, 10, 28);
+        const bars = Array.from({ length: 17 }, (_, i) => Date.UTC(2024, 10, 18 + i)).filter((time) => {
+            const weekday = new Date(time).getUTCDay();
+            return weekday !== 0 && weekday !== 6 && time !== thanksgiving;
+        });
+        const { coords, texts } = axisLabels(bars, 300, 32, 'UTC', 0.5);
+        const lines = gridLines(bars, 300, 32, 'UTC', 0.5);
+        const x = coords.timeToX(thanksgiving);
+        expect(texts).toContainEqual({ text: 'Nov 28', x });
+        expect(lines).not.toContain(Math.round(x) + 0.5);
+    });
+
+    it('keeps the existing tick density in a narrow view of continuous bars', () => {
+        const coords = coordsFor(HOURLY, 300, 10);
+        const { from, to } = coords.visibleTimeRange();
+        for (const target of [4, 8]) {
+            expect(viewportTimeTicks(coords, 'UTC', target)).toEqual(timeTicks(from, to, target, 0, undefined, HOURLY[0]));
+        }
     });
 });
 
