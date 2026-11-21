@@ -242,7 +242,17 @@ export class CachingDataFeed implements MarketDataFeed {
             const created: { listeners: Set<(bar: OHLCV) => void>; stop: Unsubscribe } = { listeners, stop: () => {} };
             this.live.set(key, created);
             created.stop = this.inner.subscribe(cfg, (bar) => {
-                for (const listener of [...listeners]) listener({ ...bar });
+                for (const listener of [...listeners]) {
+                    // One chart's failing handler must not cost the others this bar; the
+                    // error still surfaces, as it did when each chart had its own upstream.
+                    try {
+                        listener({ ...bar });
+                    } catch (err) {
+                        setTimeout(() => {
+                            throw err;
+                        });
+                    }
+                }
             });
             live = created;
         }

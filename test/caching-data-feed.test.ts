@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { CachingDataFeed } from '../src/data/CachingDataFeed';
 import { BarStore, seriesKey } from '../src/data/BarStore';
 import type { MarketDataFeed, BarRange } from '../src/core/ports/MarketDataFeed';
@@ -411,6 +411,22 @@ describe('CachingDataFeed live updates', () => {
         expect(upstreams[0]!.stopped).toBe(true);
         cf.subscribe(CFG, () => {}); // a later chart opens a fresh upstream
         expect(upstreams).toHaveLength(2);
+    });
+
+    it('a chart whose handler throws does not cost the other charts the bar', () => {
+        vi.useFakeTimers();
+        const { feed, upstreams } = liveFeed();
+        const cf = new CachingDataFeed(feed, new BarStore());
+        const got: OHLCV[] = [];
+        cf.subscribe(CFG, () => {
+            throw new Error('chart A failed');
+        });
+        cf.subscribe(CFG, (x) => got.push(x));
+
+        upstreams[0]!.push(bar(103));
+        expect(got.map((x) => x.close)).toEqual([103]);
+        expect(() => vi.runAllTimers()).toThrow('chart A failed'); // still reported
+        vi.useRealTimers();
     });
 
     it('different timeframes or symbols get their own upstreams', () => {
