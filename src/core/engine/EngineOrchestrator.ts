@@ -687,7 +687,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
             timeframe: m.timeframe,
             bars: m.bars,
             session: m.session,
-            offline: m.data !== undefined,
+            offline: Boolean(m.data?.length),
         };
     }
 

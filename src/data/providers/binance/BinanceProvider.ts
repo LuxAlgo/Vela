@@ -132,6 +132,7 @@ export class BinanceProvider implements DataProvider {
             displayName: 'Binance',
             requiresApiKey: false,
             supportedTimeframes: SUPPORTED_TIMEFRAMES,
+            timeframes: { finest: '1' },
             capabilities: { enumerate: true, stream: true, symbolInfo: true },
         };
     }

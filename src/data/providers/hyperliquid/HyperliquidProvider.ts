@@ -162,6 +162,7 @@ export class HyperliquidProvider implements DataProvider {
             displayName: 'Hyperliquid',
             requiresApiKey: false,
             supportedTimeframes: SUPPORTED_TIMEFRAMES,
+            timeframes: { finest: '1' },
             capabilities: { enumerate: true, stream: true, symbolInfo: true },
         };
     }

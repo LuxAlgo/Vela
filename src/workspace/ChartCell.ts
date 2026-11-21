@@ -12,14 +12,15 @@ import type { OHLCV } from '../core/model/ohlcv';
 import type { VisibleRangePreset } from '../core/visible-range';
 import type { VisibleRange } from '../core/ports/IChartRenderer';
 import type { DrawingsOption } from '../core/drawings';
-import type { MarketDataFeed } from '../core/ports/MarketDataFeed';
+import type { MarketDataFeed, SymbolInfo } from '../core/ports/MarketDataFeed';
+import { MultiProviderFeed } from '../data/MultiProviderFeed';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import type { IndicatorHandle } from '../core/IndicatorHandle';
 import type { VelaEventMap } from '../core/events/types';
 import { Statusline, statuslineInkOf, type StatuslinePart } from '../widget/statusline';
 import { MarketStatusTracker } from '../widget/market-status';
 import { SessionShadingTracker, parseSessionSpec } from '../widget/session-shading';
-import { chartTimeframeOf, timeframeLabel, timeframeMs } from '../widget/timeframe';
+import { chartTimeframeOf, resolveTimeframeChoice, timeframeLabel, timeframeMs } from '../widget/timeframe';
 import { Watermark } from '../widget/watermark';
 import { CellControls } from '../widget/cell-controls';
 import { ChartContextMenu } from '../widget/context-menu';
@@ -211,6 +212,8 @@ export interface CellDeps {
     dropCell(id: string, targetId: string): void;
     /** The cell's market changed in place (chrome/retention refresh upstream). */
     onMarketChanged(id: string): void;
+    /** Timeframe capabilities resolved for this cell's market. */
+    onTimeframesChanged?(id: string): void;
     /** The cell's price style changed in place (topbar icon/menu refresh upstream). */
     onPriceStyleChanged(id: string): void;
     /** What the cell can draw changed with its symbol's facts — the drawn style, the greyed
@@ -293,6 +296,7 @@ export class ChartCell {
     private sessionAvailableFlag = false;
     /** The symbol of the most recent metadata probe — an older one landing late is dropped. */
     private metadataProbeSymbol: string | null = null;
+    private timeframeMetadata?: { symbol: string; provider: string | undefined; timeframes: SymbolInfo['timeframes'] };
     /** Latched: the symbol's extended tape wraps midnight (an overnight roll market) —
      *  one extended-hours shading phase instead of the pre/post split. */
     private sessionOvernightFlag = false;
@@ -512,9 +516,12 @@ export class ChartCell {
             // The committed pass below re-runs idempotently and remains the backstop.
             this.refreshSymbolMetadata(symbol);
         });
-        this.inner.on('load:end', () => {
+        this.inner.on('load:end', ({ symbol }) => {
             this.watermark?.setLoading(false);
             this.refreshSessionShading(); // the first painted bars now define the exact range
+            // A parked chart can finish its first load after a provider registers.
+            if (this.timeframeMetadata?.provider !== this.timeframeSource(symbol)?.provider) this.refreshSymbolMetadata(symbol);
+            this.deps.onTimeframesChanged?.(this.id);
         });
         this.inner.on('viewport:changed', (range) => this.sessionShading.updateRange(range));
         this.applyTimezone();
@@ -733,7 +740,9 @@ export class ChartCell {
         const chart = this.inner;
         if (!chart || !symbol) return;
         this.metadataProbeSymbol = symbol; // last ask wins — a slow probe must not overwrite a newer verdict
-        void chart.data.symbolInfo(symbol).then((si) => {
+        const source = this.timeframeSource(symbol);
+        const marketSymbol = source ? `${source.provider}:${source.ticker}` : symbol;
+        void chart.data.symbolInfo(marketSymbol).then((si) => {
             if (this.inner !== chart || this.metadataProbeSymbol !== symbol) return;
             if (si === undefined && retry) {
                 // Nothing resolved the symbol yet: the EARLY pass can precede the provider
@@ -749,6 +758,13 @@ export class ChartCell {
             // `chart.setMarket` directly projects it only at `market:changed`, and the
             // overlays below (shading, settings) read the cell state. That pass follows.
             if (this.state.symbol !== symbol) return;
+            const timeframes = source ? si?.timeframes : undefined;
+            if (this.timeframeMetadata?.symbol !== symbol ||
+                this.timeframeMetadata.provider !== source?.provider ||
+                this.timeframeMetadata.timeframes !== timeframes) {
+                this.timeframeMetadata = { symbol, provider: source?.provider, timeframes };
+                this.deps.onTimeframesChanged?.(this.id);
+            }
             const available = typeof si?.session === 'string' && si.session !== '' && si.session !== '24x7';
             const overnight = parseSessionSpec(si)?.overnight === true;
             const zone = typeof si?.timezone === 'string' && si.timezone !== '' ? si.timezone : undefined;
@@ -1068,6 +1084,24 @@ export class ChartCell {
      *  source refuses it (what the topbar shows). */
     get timeframe(): string {
         return this.fallback?.timeframe ?? this.state.timeframe ?? '60';
+    }
+
+    private timeframeSource(symbol: string) {
+        const feed = this.deps.feed;
+        if (this.inner?.market.offline || !(feed instanceof MultiProviderFeed)) return null;
+        return feed.resolveUnambiguousSymbol(symbol);
+    }
+
+    /** @internal Resolve a timeframe choice against the capabilities known for this cell. */
+    resolveTimeframeChoice(value: string, fallback = value): string | null {
+        const symbol = this.symbol;
+        const source = this.timeframeSource(symbol);
+        if (!source) return fallback;
+        const metadata = this.timeframeMetadata;
+        const symbolTimeframes = metadata?.symbol === symbol && metadata.provider === source.provider ? metadata.timeframes : undefined;
+        if (symbolTimeframes) return resolveTimeframeChoice(value, symbolTimeframes, undefined, fallback);
+        const info = this.inner?.data.providerInstance(source.provider)?.info?.();
+        return resolveTimeframeChoice(value, info?.timeframes, info?.supportedTimeframes, fallback);
     }
 
     /** The timeframe the user asked for — what the cell persists and the timeframe link

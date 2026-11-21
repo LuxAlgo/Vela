@@ -2455,6 +2455,7 @@ export interface VelaCoreMessageCatalog {
     'widget.timeframe.short.seconds': string;
     'widget.timeframe.short.weeks': string;
     'widget.timeframe.short.years': string;
+    'widget.timeframe.unavailable': string;
     'widget.timeframe.weeks': string;
     'widget.timeframe.years': string;
     'widget.timeframeDrawer.dateRange': string;

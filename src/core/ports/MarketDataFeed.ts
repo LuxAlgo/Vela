@@ -34,7 +34,7 @@ export interface SymbolInfo {
      * The timeframes the source serves for this symbol. Timeframe strings use the uppercase
      * canonical form: `'1D'` (or `'D'`), `'W'`, `'1M'` (or `'M'`), `'3M'`, `'12M'`, or bare
      * minutes such as `'60'`. Never lowercase: `'1m'` is one minute, not one month. Absent ⇒
-     * the provider's `info().supportedTimeframes`, if any.
+     * the provider's `timeframes` or `supportedTimeframes` declaration, if any.
      */
     timeframes?: {
         /** The finest timeframe served. Every coarser one is served too, unless `list` is present. */

@@ -13,7 +13,7 @@ import { chartType } from '../chart-types/registry';
 import { topbarActionOverride, widgetActions, type SidePanelButton, type WidgetContext } from './contributions';
 import { resolveTopbarComposition, topbarHas, TOPBAR_BUILTIN_IDS, type ResolvedTopbarComposition, type TopbarComposition } from './topbar-composition';
 import { BUILTIN_PRICE_STYLES, priceStyleIds } from '../renderers/native/core/chartConfig';
-import { favoriteTimeframeChips, timeframeLabel } from './timeframe';
+import { favoriteTimeframeChips, timeframeLabel, TIMEFRAME_UNAVAILABLE } from './timeframe';
 import { parseSymbol } from '../data/ProviderRegistry';
 import { css } from '@luxalgo/vela-ui/css';
 import { t } from '@luxalgo/vela-ui/t';
@@ -179,6 +179,7 @@ export interface TopbarOptions {
     onSymbolClick?: () => void;
     timeframe: string;
     timeframes: readonly string[];
+    resolveTimeframe?: (tf: string) => string | null;
     /** Favorite timeframes — duration-sorted quick-switch chips, stars in the
      *  dropdown rows. Push later changes with {@link Topbar.setTimeframeFavorites}. */
     timeframeFavorites?: readonly string[];
@@ -551,8 +552,10 @@ export class Topbar {
         const doc = this.el.ownerDocument;
         this.tfChipsHost.replaceChildren();
         const stars = this.opts.onTimeframeFavorite !== undefined;
-        const chips = stars ? favoriteTimeframeChips(this.tfFavs) : [];
-        const currentIsFav = chips.includes(this.timeframe);
+        const chips = stars ? favoriteTimeframeChips(this.tfFavs).filter((tf) => this.resolveTimeframe(tf) !== null) : [];
+        const current = this.resolveTimeframe(this.timeframe);
+        const isCurrent = (tf: string) => tf === this.timeframe || (current !== null && this.resolveTimeframe(tf) === current);
+        const currentIsFav = chips.some(isCurrent);
         // Unstarred current sits next to the caret so the favorite row never jumps.
         const shown = currentIsFav || chips.length === 0 ? chips : [...chips, this.timeframe];
         for (const tf of shown) {
@@ -560,7 +563,7 @@ export class Topbar {
             b.className = 'vela-widget-tf';
             const label = timeframeLabel(tf, this.i18n);
             b.textContent = label;
-            if (tf === this.timeframe) {
+            if (isCurrent(tf)) {
                 b.dataset.current = '1';
                 b.setAttribute('aria-current', 'true');
             } else {
@@ -794,15 +797,23 @@ export class Topbar {
         }
     }
 
+    private resolveTimeframe(tf: string): string | null {
+        return this.opts.resolveTimeframe ? this.opts.resolveTimeframe(tf) : tf;
+    }
+
     private tfItems(): MenuItemDescriptor[] {
-        // Stars only when the host handles the toggle — a starless dropdown otherwise.
         const stars = this.opts.onTimeframeFavorite !== undefined;
-        return this.opts.timeframes.map((tf) => ({
-            id: tf,
-            label: timeframeLabel(tf, this.i18n),
-            checked: tf === this.timeframe,
-            ...(stars ? { favorite: this.tfFavs.includes(tf) } : {}),
-        }));
+        const current = this.resolveTimeframe(this.timeframe);
+        return this.opts.timeframes.map((tf) => {
+            const choice = this.resolveTimeframe(tf);
+            return {
+                id: tf,
+                label: timeframeLabel(tf, this.i18n),
+                checked: tf === this.timeframe || (choice !== null && choice === current),
+                ...(stars ? { favorite: this.tfFavs.includes(tf) } : {}),
+                ...(choice === null ? { disabled: true, title: this.t(TIMEFRAME_UNAVAILABLE) } : {}),
+            };
+        });
     }
 
     private styleItems(): MenuItemDescriptor[] {
