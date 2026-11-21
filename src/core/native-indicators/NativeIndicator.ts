@@ -84,7 +84,7 @@ export interface NativeIndicator {
     /** The bars changed — a live tick, older history landing, or the candles re-derived
      *  by a price style — recompute + emit. */
     onBars(): void;
-    /** The viewport changed (scroll/zoom) — for range-aware natives (see `reactsToViewport`). */
+    /** The current viewport at startup and after scroll or zoom, for range-aware natives. */
     onViewport(range: VisibleRange): void;
     /** Settings changed — recompute + emit. */
     setInputs(inputs: Record<string, InputValue>): void;
@@ -119,7 +119,7 @@ export interface NativeIndicatorDescriptor {
     readonly shortTitle?: MessageLike;
     readonly paneHint: 'price' | 'new';
     readonly overlay: boolean;
-    /** Whether instances react to viewport changes (drives the orchestrator's viewport poke). */
+    /** Whether instances receive the current viewport at startup when available, and later viewport changes. */
     readonly reactsToViewport?: boolean;
     /**
      * Compute only over the chart's COMPLETE history, the way script indicators do. While

@@ -59,6 +59,8 @@ class RecordingRenderer implements IChartRenderer {
     /** Every model as mounted, in order (remounts included). */
     mounts: IndicatorModel[] = [];
     status = new Map<string, IndicatorStatus>();
+    private visibleRange: VisibleRange | null = null;
+    private viewportCb: ((range: VisibleRange) => void) | null = null;
     applyFeature(): void {}
     readFeature(): unknown { return undefined; }
     mount(_c: HTMLElement, _t: VelaTheme): void {}
@@ -96,9 +98,10 @@ class RecordingRenderer implements IChartRenderer {
     onRemoveIndicator(_cb: (id: string) => void): Unsubscribe { return () => {}; }
     onCrosshairMove(_cb: (e: CrosshairEvent) => void): Unsubscribe { return () => {}; }
     onClick(_cb: (e: ClickEvent) => void): Unsubscribe { return () => {}; }
-    getVisibleRange(): VisibleRange | null { return null; }
-    setVisibleRange(_r: VisibleRange): void {}
-    onViewportChange(_cb: (r: VisibleRange) => void): Unsubscribe { return () => {}; }
+    getVisibleRange(): VisibleRange | null { return this.visibleRange; }
+    setVisibleRange(range: VisibleRange): void { this.visibleRange = range; }
+    onViewportChange(cb: (r: VisibleRange) => void): Unsubscribe { this.viewportCb = cb; return () => (this.viewportCb = null); }
+    fireViewport(range: VisibleRange): void { this.visibleRange = range; this.viewportCb?.(range); }
     private priceStyleCb: ((style: PriceStyle) => void) | null = null;
     onPriceStyleChange(cb: (style: PriceStyle) => void): Unsubscribe { this.priceStyleCb = cb; return () => (this.priceStyleCb = null); }
     /** Simulate the user picking a price style. */
@@ -337,6 +340,58 @@ describe('native indicators over a progressive history load', () => {
             expect(paintedAt(model, renderer.bars, 149)).toBe(renderer.bars[149]!.close);
         } finally {
             unregisterNativeIndicator('test-close-line');
+        }
+    });
+
+    it('delivers the latest viewport once after a history-held viewport-aware native starts', async () => {
+        const events: Array<{ type: 'start' } | { type: 'viewport'; range: VisibleRange }> = [];
+        const descriptor: NativeIndicatorDescriptor = {
+            type: 'test-held-viewport',
+            title: 'Held viewport',
+            paneHint: 'price',
+            overlay: true,
+            waitsForHistory: true,
+            reactsToViewport: true,
+            inputsSchema: () => [],
+            defaultInputs: () => ({}),
+            create: () => ({
+                start: () => events.push({ type: 'start' }),
+                onBars: () => {},
+                onViewport: (range) => events.push({ type: 'viewport', range }),
+                setInputs: () => {},
+                suspend: () => {},
+                resume: () => {},
+                stop: () => {},
+            }),
+        };
+        registerNativeIndicator(descriptor);
+        try {
+            const feed = new HealingFeed(400);
+            const renderer = new RecordingRenderer();
+            renderer.setVisibleRange({ from: T0 + 340 * HOUR, to: T0 + 399 * HOUR });
+            const chart = new Vela({} as unknown as HTMLElement, { bars: 400, live: false }, { renderer, engines: [], dataFeed: feed });
+            await Promise.resolve();
+            feed.snapshot(40);
+            await chart.ready();
+            chart.addNativeIndicator('test-held-viewport');
+            await flush();
+            expect(events).toEqual([]);
+
+            renderer.fireViewport({ from: T0 + 350 * HOUR, to: T0 + 390 * HOUR });
+            await new Promise((resolve) => setTimeout(resolve, 180));
+            expect(events).toEqual([]);
+
+            const latest = { from: T0 + 360 * HOUR, to: T0 + 399 * HOUR };
+            renderer.fireViewport(latest);
+            feed.finish();
+            await chart.historyComplete();
+            await flush();
+            expect(events).toEqual([{ type: 'start' }, { type: 'viewport', range: latest }]);
+
+            await new Promise((resolve) => setTimeout(resolve, 180));
+            expect(events).toEqual([{ type: 'start' }, { type: 'viewport', range: latest }]);
+        } finally {
+            unregisterNativeIndicator('test-held-viewport');
         }
     });
 });

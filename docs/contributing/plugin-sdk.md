@@ -204,9 +204,11 @@ background. An emitted output is index-aligned to `ctx.bars()` as it stands at t
 call, and the chart keeps it on those bars when older history lands in front of them (or the
 oldest bars are trimmed), so a plot never slides while it waits for its next compute. By
 default an instance starts on the first candles and `onBars()` fires for every part as it
-lands. Set **`waitsForHistory: true`** on the descriptor when the values depend on every
-earlier bar (a moving average's seed, an oscillator's smoothing): the instance then starts
-only once the history is complete — its legend row shows a loading state meanwhile, and
+lands. A native that declares `reactsToViewport: true` receives the current visible
+range through `onViewport()` immediately after `start()`, when a range is available.
+Later viewport changes continue to call the same method. Set **`waitsForHistory: true`**
+on the descriptor when the values depend on every earlier bar, such as a moving average's
+seed or an oscillator's smoothing. The instance then starts only once the history is complete — its legend row shows a loading state meanwhile, and
 `ready` / `indicator:added` wait for its first output — and a history extended later holds
 `onBars()` (live ticks included) until the extension completes, the previous output staying
 on its bars. The built-in classic studies opt in; volume and VPVR, which paint straight from

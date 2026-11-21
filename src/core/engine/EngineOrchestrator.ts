@@ -24,6 +24,7 @@ import {
     type NativeIndicatorContext,
     type NativeIndicatorInfo,
     type NativeIndicatorOutput,
+    type NativeIndicator,
 } from '../native-indicators/NativeIndicator';
 import { LiveSession } from './LiveSession';
 import { IndicatorHandleImpl, type IndicatorController } from './IndicatorHandleImpl';
@@ -163,6 +164,8 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
     private unresolvedUnsub: Unsubscribe | null = null;
     /** Latest chart visible range (left/right bar times), fed to viewport-dependent scripts. */
     private visibleRange: VisibleBarRange | null = null;
+    private viewportRevision = 0;
+    private readonly nativeViewportRevisions = new WeakMap<NativeIndicator, number>();
     private viewportUnsub: Unsubscribe | null = null;
     private viewportTimer: ReturnType<typeof setTimeout> | null = null;
     // ── live gap-heal state (missed bars while a tab was backgrounded/frozen) ──
@@ -344,6 +347,15 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         return r ? { left: r.from, right: r.to } : undefined;
     }
 
+    private notifyNativeViewport(record: IndicatorRecord, range: VisibleRange, revision: number): void {
+        const native = record.native!;
+        if (!native.started) return;
+        const instance = native.instance;
+        if (this.nativeViewportRevisions.get(instance) === revision) return;
+        instance.onViewport(range);
+        this.nativeViewportRevisions.set(instance, revision);
+    }
+
     /** Resolve the engine for a language, defaulting when unspecified. */
     private engineFor(language?: string): ScriptingEngine {
         const lang = language ?? this.defaultLanguage;
@@ -393,6 +405,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
 
     private onViewportChange(range: VisibleRange): void {
         this.visibleRange = { left: range.from, right: range.to };
+        this.viewportRevision += 1;
         this.events.emit('viewport:changed', { from: range.from, to: range.to });
         if (this.viewportTimer != null) clearTimeout(this.viewportTimer);
         this.viewportTimer = setTimeout(() => {
@@ -400,13 +413,16 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
             if (this.switchingMarket) return; // old sessions must not re-run mid-switch
             const window = this.visibleRange;
             if (!window) return;
+            const revision = this.viewportRevision;
             for (const record of this.registry.all()) {
                 if (!record.renderHandle || record.hidden) continue;
                 // range-aware indicators re-run / refetch with the new window
                 if (record.session && record.prepared?.reactsToViewport) {
                     record.pendingCause = 'viewport';
                     record.session.setVisibleRange(window);
-                } else if (record.native?.descriptor.reactsToViewport) record.native.instance.onViewport({ from: window.left, to: window.right });
+                } else if (record.native?.descriptor.reactsToViewport) {
+                    this.notifyNativeViewport(record, { from: window.left, to: window.right }, revision);
+                }
             }
             // An active chart-type data engine streams in newly-visible data as the user scrolls.
             if (this.activeEngineStyle) this.typeEngines.get(this.activeEngineStyle)?.onViewport?.({ from: window.left, to: window.right });
@@ -2577,8 +2593,18 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
                     if (alive && record.renderHandle && !record.hidden) this.renderer.setIndicatorStatus?.(record.renderHandle, status);
                 },
             };
+            const generation = this.generation;
             native.instance.start(ctx, record.inputValues);
+            // The first emit can call host listeners that remove or replace the instance.
+            if (!alive) return;
             native.started = true;
+            if (!record.hidden && this.generation === generation && native.descriptor.reactsToViewport) {
+                // A resize or reframe can move the renderer without publishing a viewport event.
+                // This snapshot supersedes any event already queued at this revision.
+                const range = this.renderer.getVisibleRange();
+                if (range) this.notifyNativeViewport(record, range, this.viewportRevision);
+                else this.nativeViewportRevisions.set(native.instance, this.viewportRevision);
+            }
         } catch (err) {
             this.fail(id, handle, err);
         }

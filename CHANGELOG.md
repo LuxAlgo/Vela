@@ -2,6 +2,13 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Viewport-aware native indicators draw when added.** They receive the chart's
+  current visible range when they start, including after a timeframe change.
+
 ## [0.10.14]
 
 ### Added

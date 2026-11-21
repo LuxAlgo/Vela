@@ -113,12 +113,13 @@ class FakeRenderer implements IChartRenderer {
     fireRemove(id: string): void { this.removeCb?.(id); }
     onCrosshairMove(_cb: (e: CrosshairEvent) => void): Unsubscribe { return () => {}; }
     onClick(_cb: (e: ClickEvent) => void): Unsubscribe { return () => {}; }
-    getVisibleRange(): VisibleRange | null { return null; }
+    visibleRange: VisibleRange | null = null;
+    getVisibleRange(): VisibleRange | null { return this.visibleRange; }
     visibleRangeCalls: VisibleRange[] = [];
     setVisibleRange(r: VisibleRange): void { this.visibleRangeCalls.push(r); }
     onViewportChange(cb: (r: VisibleRange) => void): Unsubscribe { this.viewportCb = cb; return () => { this.viewportCb = null; }; }
     /** Test helper: simulate a pan/zoom viewport change. */
-    fireViewport(range: VisibleRange): void { this.viewportCb?.(range); }
+    fireViewport(range: VisibleRange): void { this.visibleRange = range; this.viewportCb?.(range); }
     // Native-layer data: capture each push by type (presence of setNativeData also gates auto-add).
     volumePushes: unknown[] = [];
     vpvrPushes: unknown[] = [];
@@ -349,11 +350,13 @@ class MockEngine implements ScriptingEngine {
 /** A test native indicator: records its lifecycle hook calls + emits one line series from the bars. */
 class TestNativeIndicator implements NativeIndicator {
     calls = { start: 0, onBars: 0, onViewport: 0, setInputs: 0, suspend: 0, resume: 0, stop: 0 };
+    events: Array<'start' | 'viewport'> = [];
+    viewports: VisibleRange[] = [];
     private ctx: NativeIndicatorContext | null = null;
     private suspended = false;
-    start(ctx: NativeIndicatorContext): void { this.calls.start += 1; this.ctx = ctx; this.emit(); }
+    start(ctx: NativeIndicatorContext): void { this.calls.start += 1; this.ctx = ctx; this.emit(); this.events.push('start'); }
     onBars(): void { this.calls.onBars += 1; this.emit(); }
-    onViewport(): void { this.calls.onViewport += 1; this.emit(); }
+    onViewport(range: VisibleRange): void { this.calls.onViewport += 1; this.events.push('viewport'); this.viewports.push(range); this.emit(); }
     setInputs(): void { this.calls.setInputs += 1; if (!this.suspended) this.emit(); }
     suspend(): void { this.calls.suspend += 1; this.suspended = true; }
     resume(): void { this.calls.resume += 1; this.suspended = false; this.emit(); }
@@ -596,6 +599,164 @@ describe('EngineOrchestrator', () => {
             expect(h1.language).toBeUndefined(); // no engine runs a native
         } finally {
             unregisterNativeIndicator('test-native');
+        }
+    });
+
+    it('gives a viewport-aware native the current range after start, then delivers later viewport changes once', async () => {
+        registerNativeIndicator(testNativeDescriptor);
+        try {
+            const renderer = new FakeRenderer();
+            const initial = { from: 1_700_000_036_000, to: 1_700_000_144_000 };
+            const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [], dataFeed: new MockDataFeed() });
+            await chart.ready();
+            renderer.fireViewport({ from: initial.from - 36_000, to: initial.to });
+            renderer.visibleRange = initial; // horizontal resize can update the range without another event
+            chart.addNativeIndicator('test-native');
+            await flush();
+
+            expect(lastNative.events).toEqual(['start', 'viewport']);
+            expect(lastNative.viewports).toEqual([initial]);
+
+            await new Promise((r) => setTimeout(r, 220));
+            expect(lastNative.viewports).toEqual([initial]); // the queued pre-resize range is stale
+
+            const later = { from: 1_700_000_072_000, to: 1_700_000_180_000 };
+            renderer.fireViewport(later);
+            await new Promise((r) => setTimeout(r, 220));
+            await flush();
+
+            expect(lastNative.events).toEqual(['start', 'viewport', 'viewport']);
+            expect(lastNative.viewports).toEqual([initial, later]);
+        } finally {
+            unregisterNativeIndicator('test-native');
+        }
+    });
+
+    it('does not repeat a pending viewport event after delivering that range on native start', async () => {
+        registerNativeIndicator(testNativeDescriptor);
+        try {
+            const renderer = new FakeRenderer();
+            const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [], dataFeed: new MockDataFeed() });
+            await chart.ready();
+            await flush();
+
+            const pending = { from: 1_700_000_036_000, to: 1_700_000_144_000 };
+            chart.on('viewport:changed', ({ from }) => {
+                if (from < pending.from) renderer.fireViewport(pending);
+            });
+            renderer.fireViewport({ from: pending.from - 36_000, to: pending.to });
+            chart.addNativeIndicator('test-native');
+            await flush();
+            expect(lastNative.events).toEqual(['start', 'viewport']);
+            expect(lastNative.viewports).toEqual([pending]);
+
+            await new Promise((r) => setTimeout(r, 220));
+            await flush();
+            expect(lastNative.events).toEqual(['start', 'viewport']);
+            expect(lastNative.viewports).toEqual([pending]);
+
+            const later = { from: 1_700_000_072_000, to: 1_700_000_180_000 };
+            renderer.fireViewport(later);
+            await new Promise((r) => setTimeout(r, 220));
+            await flush();
+            expect(lastNative.events).toEqual(['start', 'viewport', 'viewport']);
+            expect(lastNative.viewports).toEqual([pending, later]);
+        } finally {
+            unregisterNativeIndicator('test-native');
+        }
+    });
+
+    it('does not deliver an initial viewport after an added listener removes the native', async () => {
+        registerNativeIndicator(testNativeDescriptor);
+        const renderer = new FakeRenderer();
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [], dataFeed: new MockDataFeed() });
+        try {
+            await chart.ready();
+            renderer.visibleRange = { from: 1_700_000_036_000, to: 1_700_000_144_000 };
+            const handle = chart.addNativeIndicator('test-native');
+            chart.on('indicator:added', ({ id }) => { if (id === handle.id) handle.remove(); });
+            await flush();
+            expect(lastNative.events).toEqual(['start']);
+            expect(chart.indicators()).toHaveLength(0);
+        } finally {
+            chart.destroy();
+            unregisterNativeIndicator('test-native');
+        }
+    });
+
+    it('starts a replacement native when the first output enters replay', async () => {
+        const instances: TestNativeIndicator[] = [];
+        registerNativeIndicator({
+            ...testNativeDescriptor,
+            create: () => {
+                const instance = new TestNativeIndicator();
+                instances.push(instance);
+                return instance;
+            },
+        });
+        const renderer = new FakeRenderer();
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [], dataFeed: new MockDataFeed() });
+        try {
+            await chart.ready();
+            const from = renderer.bars[10]!.time;
+            renderer.visibleRange = { from: renderer.bars[0]!.time, to: from };
+            chart.on('indicator:added', () => { void chart.replay.start({ from }); });
+            chart.addNativeIndicator('test-native');
+            await flush();
+
+            expect(chart.replay.state.active).toBe(true);
+            expect(instances.map((instance) => instance.events)).toEqual([['start'], ['start', 'viewport']]);
+        } finally {
+            chart.destroy();
+            unregisterNativeIndicator('test-native');
+        }
+    });
+
+    it('does not invent an initial native viewport or notify a native that is not viewport-aware', async () => {
+        let withoutRange: TestNativeIndicator | undefined;
+        let notViewportAware: TestNativeIndicator | undefined;
+        const staticDescriptor: NativeIndicatorDescriptor = {
+            type: 'test-native-static',
+            title: 'Static Native',
+            paneHint: 'price',
+            overlay: true,
+            inputsSchema: () => [],
+            defaultInputs: () => ({}),
+            create: () => (notViewportAware = new TestNativeIndicator()),
+        };
+        registerNativeIndicator({
+            ...testNativeDescriptor,
+            type: 'test-native-no-range',
+            create: () => (withoutRange = new TestNativeIndicator()),
+        });
+        registerNativeIndicator(staticDescriptor);
+        try {
+            const noRangeRenderer = new FakeRenderer();
+            const noRangeChart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer: noRangeRenderer, engines: [], dataFeed: new MockDataFeed() });
+            await noRangeChart.ready();
+            noRangeRenderer.fireViewport({ from: 100, to: 200 });
+            noRangeRenderer.visibleRange = null; // resize leaves only whitespace before the event runs
+            noRangeChart.addNativeIndicator('test-native-no-range');
+
+            const staticRenderer = new FakeRenderer();
+            staticRenderer.visibleRange = { from: 100, to: 200 };
+            const staticChart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer: staticRenderer, engines: [], dataFeed: new MockDataFeed() });
+            staticChart.addNativeIndicator('test-native-static');
+
+            await Promise.all([noRangeChart.ready(), staticChart.ready()]);
+            await flush();
+
+            expect(withoutRange?.events).toEqual(['start']);
+            expect(withoutRange?.viewports).toEqual([]);
+            await new Promise((r) => setTimeout(r, 220));
+            expect(withoutRange?.events).toEqual(['start']);
+            expect(notViewportAware?.events).toEqual(['start']);
+            noRangeChart.destroy();
+            staticChart.destroy();
+            expect(notViewportAware?.viewports).toEqual([]);
+        } finally {
+            unregisterNativeIndicator('test-native-no-range');
+            unregisterNativeIndicator('test-native-static');
         }
     });
 
