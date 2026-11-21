@@ -57,6 +57,11 @@ export class MultiProviderFeed implements MarketDataFeed {
         return this.registry.resolve(raw, { default: this.primaryProvider });
     }
 
+    /** @internal Resolve capability metadata without using a different cell's default venue. */
+    resolveUnambiguousSymbol(raw: string): Resolved | null {
+        return this.registry.resolveUnambiguous(raw);
+    }
+
     /**
      * The DISPLAY prefix for `raw` — the descriptor's LISTING prefix when the data
      * declares one (`NASDAQ` for AAPL), else the resolved provider name. Null while

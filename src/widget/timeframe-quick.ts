@@ -6,7 +6,7 @@ import { textOf } from '../core/i18n/text';
 import type { MessageLike, Translator } from '../core/i18n/types';
 import { Dialog } from '@luxalgo/vela-ui/dialog';
 import { injectChromeStyles } from '../ui/chromeStyles';
-import { parseTimeframe } from './timeframe';
+import { parseTimeframe, TIMEFRAME_UNAVAILABLE } from './timeframe';
 import { css } from '@luxalgo/vela-ui/css';
 import { t } from '@luxalgo/vela-ui/t';
 
@@ -42,6 +42,7 @@ const TEXT = {
 };
 
 export interface TimeframeQuickOptions {
+    resolveTimeframe?: (input: string, canonical: string) => string | null;
     onApply: (canonical: string) => void;
     onOpenChange?: (open: boolean) => void;
     host?: HTMLElement;
@@ -59,7 +60,7 @@ export class TimeframeQuick {
         return textOf(this.i18n, text);
     }
 
-    constructor(opts: TimeframeQuickOptions) {
+    constructor(private readonly opts: TimeframeQuickOptions) {
         this.i18n = opts.i18n ?? null;
         const doc = (opts.host ?? document.body).ownerDocument;
         injectChromeStyles(STYLE_ID, CSS, doc);
@@ -68,6 +69,7 @@ export class TimeframeQuick {
         this.input.setAttribute('spellcheck', 'false');
         this.hint = doc.createElement('div');
         this.hint.className = 'vela-tq-hint';
+        this.hint.setAttribute('aria-live', 'polite');
         this.dialog = new Dialog({
             title: this.t(TEXT.title),
             ...(this.i18n ? { i18n: this.i18n } : {}),
@@ -86,10 +88,13 @@ export class TimeframeQuick {
         this.input.addEventListener('keydown', (e) => {
             if (e.key !== 'Enter') return;
             const parsed = parseTimeframe(this.input.value);
-            if (parsed.valid && parsed.canonical !== undefined) {
-                this.close();
-                opts.onApply(parsed.canonical);
+            const choice = parsed.canonical === undefined ? null : this.resolveTimeframe(parsed.canonical);
+            if (choice === null) {
+                this.renderHint();
+                return;
             }
+            this.close();
+            opts.onApply(choice);
         });
     }
 
@@ -97,6 +102,7 @@ export class TimeframeQuick {
     relabel(): void {
         this.dialog.titleEl.textContent = this.t(TEXT.title);
         this.dialog.setI18n(this.i18n);
+        this.refresh();
     }
 
     open(seed = ''): void {
@@ -134,18 +140,26 @@ export class TimeframeQuick {
         this.dialog.destroy();
     }
 
+    refresh(): void {
+        if (this.isOpen) this.renderHint();
+    }
+
+    private resolveTimeframe(canonical: string): string | null {
+        return this.opts.resolveTimeframe ? this.opts.resolveTimeframe(this.input.value.trim(), canonical) : canonical;
+    }
+
     private renderHint(): void {
         const raw = this.input.value.trim();
         const parsed = parseTimeframe(raw, this.i18n);
         if (!raw) {
             this.hint.textContent = this.t(TEXT.example);
             delete this.hint.dataset.invalid;
-        } else if (parsed.valid) {
+        } else if (parsed.canonical === undefined || this.resolveTimeframe(parsed.canonical) === null) {
+            this.hint.textContent = this.t(parsed.valid ? TIMEFRAME_UNAVAILABLE : TEXT.invalid);
+            this.hint.dataset.invalid = '1';
+        } else {
             this.hint.textContent = parsed.label ?? '';
             delete this.hint.dataset.invalid;
-        } else {
-            this.hint.textContent = this.t(TEXT.invalid);
-            this.hint.dataset.invalid = '1';
         }
     }
 }

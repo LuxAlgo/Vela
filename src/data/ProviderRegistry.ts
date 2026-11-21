@@ -204,6 +204,24 @@ export class ProviderRegistry {
         return null;
     }
 
+    /** Resolve a market for shared UI when attribution to one provider is known. */
+    resolveUnambiguous(raw: string): Resolved | null {
+        const { provider, ticker } = this.parse(raw);
+        if (provider && this.entries.has(provider)) return this.resolve(raw);
+        if (this.entries.size > 1) {
+            if (!this.allSettled()) return null;
+            const normalized = normTicker(ticker);
+            let found = false;
+            for (const entry of this.entries.values()) {
+                const matches = provider ? entry.prefixIndex?.has(`${provider}:${normalized}`) : entry.index?.has(normalized);
+                if (!matches) continue;
+                if (found) return null;
+                found = true;
+            }
+        }
+        return this.resolve(raw, { lenient: true });
+    }
+
     /** What a resolved descriptor LOADS: itself — unless it is a GROUP row (listed, never
      *  served), which loads its default member (single `default`, else first listed). A
      *  memberless group keeps its own ticker and fails downstream like any unknown symbol. */

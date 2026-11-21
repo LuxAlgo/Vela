@@ -10,6 +10,9 @@
 import { msg } from '../core/i18n/message';
 import { localizeNumberText, textOf } from '../core/i18n/text';
 import type { MessageDescriptor, Translator } from '../core/i18n/types';
+import type { SymbolInfo } from '../core/ports/MarketDataFeed';
+
+export const TIMEFRAME_UNAVAILABLE = msg('widget.timeframe.unavailable', 'This market does not offer that timeframe.');
 
 type UnitKey = 'S' | 'MIN' | 'H' | 'D' | 'W' | 'M' | 'Y';
 
@@ -132,6 +135,51 @@ export function chartTimeframeOf(value: string | undefined): string | null {
     if (!parsed.valid) return null;
     if (parsed.count === 1 && (parsed.unit === 'D' || parsed.unit === 'W' || parsed.unit === 'M')) return parsed.unit;
     return parsed.canonical ?? null;
+}
+
+/** Read market timeframe strings. Unlike quick-entry text, lowercase m here means minutes. */
+function parseMarketTimeframe(value: string): ParsedTimeframe {
+    return parseTimeframe(value.trim().replace(/^(\d+)\s*m$/, '$1'));
+}
+
+/** Calendar periods retain their unit even when their approximate durations are equal. */
+function timeframeKey(value: string): string | undefined {
+    const parsed = parseMarketTimeframe(value);
+    const unit = parsed.unit;
+    return unit === 'D' || unit === 'W' || unit === 'M' || unit === 'Y'
+        ? `${parsed.count}${unit}`
+        : parsed.canonical;
+}
+
+function findAdvertisedTimeframe(value: string, list: readonly string[] | undefined): string | undefined {
+    if (!list) return undefined;
+    if (list.includes(value)) return value;
+    const canonical = timeframeKey(value);
+    return canonical === undefined ? undefined : list.find((entry) => timeframeKey(entry) === canonical);
+}
+
+/** Resolve a choice to its advertised spelling, or null if the active market cannot serve it. */
+export function resolveTimeframeChoice(
+    value: string,
+    symbolTimeframes: SymbolInfo['timeframes'],
+    providerTimeframes: readonly string[] | undefined,
+    fallback = value,
+): string | null {
+    const list = symbolTimeframes ? symbolTimeframes.list : providerTimeframes;
+    if (list) return findAdvertisedTimeframe(value, list) ?? null;
+    if (!symbolTimeframes) return fallback;
+
+    const finest = parseMarketTimeframe(symbolTimeframes.finest).ms;
+    const { ms, unit } = parseMarketTimeframe(value);
+    if (finest === undefined) return fallback;
+    if (ms === undefined || ms < finest) return null;
+    const advertised = findAdvertisedTimeframe(value, providerTimeframes);
+    if (advertised !== undefined) return advertised;
+    // A source with minute bars can aggregate a seconds spelling only into whole minutes.
+    if (unit === 'S' && finest >= UNIT_MS.MIN) {
+        return ms % UNIT_MS.MIN === 0 ? String(ms / UNIT_MS.MIN) : null;
+    }
+    return fallback;
 }
 
 /** Duration in ms of an existing timeframe value (`1`, `60`, `4h`, `D`, `W`, …), NaN if unknown. */

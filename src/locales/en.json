@@ -2451,6 +2451,7 @@
     "widget.timeframe.short.seconds": "{n}s",
     "widget.timeframe.short.weeks": "{n}W",
     "widget.timeframe.short.years": "{n}Y",
+    "widget.timeframe.unavailable": "This market does not offer that timeframe.",
     "widget.timeframe.weeks": "{count, plural, one {{n} week} other {{n} weeks}}",
     "widget.timeframe.years": "{count, plural, one {{n} year} other {{n} years}}",
     "widget.timeframeDrawer.dateRange": "Date Range",

@@ -664,7 +664,9 @@ export class VelaWorkspace {
         // on the same registry, symbol index, and closed-bar cache.
         for (const [name, make] of Object.entries(opts.providers ?? {})) void this.feed.registerProvider(name, make());
         void this.feed.ready().then(() => {
-            if (!this.destroyed) this.refreshRetention(); // re-key on canonical tickers once indexes settle
+            if (this.destroyed) return;
+            this.refreshRetention(); // re-key on canonical tickers once indexes settle
+            if (this.activeId) this.projectTimeframeControls(this.active);
         });
 
         // ── shared dialogs/pickers (they act on the ACTIVE cell at call time) ──
@@ -709,6 +711,7 @@ export class VelaWorkspace {
         this.tfQuick = new TimeframeQuick({
             host: this.root,
             i18n: this.localeState,
+            resolveTimeframe: (tf, canonical) => this.resolveTimeframeChoice(tf, canonical),
             onApply: (tf) => this.setActiveTimeframe(tf),
             onOpenChange: (open) => this.trackDialog(open),
         });
@@ -729,6 +732,7 @@ export class VelaWorkspace {
             onAlertsClick: (anchor) => this.openAlertsMenu(anchor),
             timeframe: '60',
             timeframes: opts.timeframes ?? DEFAULT_TIMEFRAMES,
+            resolveTimeframe: (tf) => this.resolveTimeframeChoice(tf),
             timeframeFavorites: this.tfFavs,
             priceStyle: 'candles',
             onTimeframe: (tf) => this.setActiveTimeframe(tf),
@@ -1818,13 +1822,12 @@ export class VelaWorkspace {
         const cell = this.activeId ? this.cellsById.get(this.activeId) : undefined;
         if (!cell) return;
         this.topbar.setSymbol(cell.symbol);
-        this.topbar.setTimeframe(cell.timeframe);
+        this.projectTimeframeControls(cell);
         this.topbar.setPriceStyle(cell.priceStyle, cell.unavailablePriceStyles());
         this.topbar.setIndicatorCount(cell.indicatorCount);
         this.topbar.renderActions(); // contributed `when()` gates may depend on the active cell
         this.mobileBar?.renderActions();
         this.mobileBar?.setSymbol(cell.symbol);
-        this.mobileBar?.setTimeframe(cell.timeframe);
         this.syncMobileMaximize(); // the new active cell may hold a maximized pane
         this.drawingPill?.onChart(cell.chart); // the pill mirrors the ACTIVE cell's tool state
         const pushHistory = (): void => this.topbar.setHistoryState(cell.history.canUndo, cell.history.canRedo);
@@ -2133,6 +2136,7 @@ export class VelaWorkspace {
                 previewDropTarget: (target) => this.setDropTarget(target),
                 dropCell: (id, target) => this.swapCells(id, target),
                 onMarketChanged: (id) => this.onCellMarketChanged(id),
+                onTimeframesChanged: (id) => { if (id === this.activeId) this.projectTimeframeControls(this.active); },
                 onPriceStyleChanged: (id) => this.onCellPriceStyleChanged(id),
                 onPriceStyleShown: (id) => this.projectCellPriceStyle(id),
                 onIndicatorsChanged: (id) => this.onCellIndicatorsChanged(id),
@@ -2935,9 +2939,8 @@ export class VelaWorkspace {
         const cell = this.cellsById.get(id);
         if (!cell) return;
         this.topbar.setSymbol(cell.symbol);
-        this.topbar.setTimeframe(cell.timeframe);
+        this.projectTimeframeControls(cell);
         this.mobileBar?.setSymbol(cell.symbol);
-        this.mobileBar?.setTimeframe(cell.timeframe);
         this.objectTree.setSymbol(cell.symbol);
         this.bottombar?.setSession({ session: cell.session, enabled: cell.sessionAvailable });
         this.projectTimezone(); // the new symbol's market zone, once its metadata lands
@@ -2974,10 +2977,24 @@ export class VelaWorkspace {
         this.indicatorPicker?.sync();
     }
 
-    /** Timeframe changes routed from the topbar menu / quick entry (chip state follows). */
+    private projectTimeframeControls(cell: ChartCell): void {
+        this.topbar.setTimeframe(cell.timeframe);
+        this.mobileBar?.setTimeframe(cell.timeframe);
+        this.tfDrawer?.refresh();
+        this.tfQuick.refresh();
+    }
+
+    private resolveTimeframeChoice(tf: string, fallback = tf): string | null {
+        const cell = this.activeId ? this.cellsById.get(this.activeId) : undefined;
+        return cell ? cell.resolveTimeframeChoice(tf, fallback) : fallback;
+    }
+
+    /** All timeframe controls act on the current cell, including a choice from a menu already open. */
     private setActiveTimeframe(tf: string): void {
+        const choice = this.resolveTimeframeChoice(tf);
+        if (choice === null) return;
         this.bottombar?.setActiveRange(null);
-        this.active.setTimeframe(tf);
+        this.active.setTimeframe(choice);
     }
 
     /** Star/unstar a timeframe — a WORKSPACE preference (one chip row, whatever the
@@ -3069,6 +3086,7 @@ export class VelaWorkspace {
         this.tfDrawer ??= new TimeframeDrawer({
             host: this.root,
             timeframes: this.opts.timeframes ?? DEFAULT_TIMEFRAMES,
+            resolveTimeframe: (tf) => this.resolveTimeframeChoice(tf),
             ranges: RANGE_PRESETS,
             currentTimeframe: () => this.active.timeframe,
             activeRange: () => this.active.activeRangeId,

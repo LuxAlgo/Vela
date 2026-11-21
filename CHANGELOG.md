@@ -2,6 +2,14 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Changed
+
+- **Timeframe controls follow the active market.** Presets the source cannot serve are
+  dimmed in the menu and the mobile drawer. Unavailable favorites return when you switch
+  back to a market that offers them. Quick entry explains when a timeframe is unavailable.
+
 ## [0.10.14]
 
 ### Added
