@@ -2,6 +2,15 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Changed
+
+- **Coinbase charts switch symbols faster.** The Coinbase provider reads a symbol's
+  details from the product list it already downloaded instead of asking Coinbase again.
+  Coinbase limits how fast requests can be sent, so the candles no longer wait behind
+  that extra request and a switch takes about half as long.
+
 ## [0.10.14]
 
 ### Added
