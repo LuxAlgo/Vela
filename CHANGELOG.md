@@ -2,6 +2,15 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Changed
+
+- **Hyperliquid charts start with far fewer requests.** The Hyperliquid provider builds
+  its symbol list from one request for every exchange's markets, instead of one request
+  per exchange after first asking which exchanges exist. A chart now opens with 4
+  requests instead of 14, and its first candles arrive sooner.
+
 ## [0.10.14]
 
 ### Added
