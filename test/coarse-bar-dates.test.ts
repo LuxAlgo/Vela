@@ -285,6 +285,28 @@ describe('time axis and grid across a compressed intraday gap', () => {
         expect(lines.filter((x) => x > left && x <= right + 0.5)).toEqual([Math.round(right) + 0.5]);
     });
 
+    it.each([
+        { zone: 'UTC', offset: 0, openHour: 0 },
+        { zone: 'Asia/Shanghai', offset: 8 * HOUR, openHour: 9 },
+    ])('uses the reopening date skipped by the two-day ladder in $zone at hour $openHour', ({ zone, offset, openHour }) => {
+        const lastBar = Date.UTC(2026, 10, 6, 18) - offset;
+        const reopeningDate = Date.UTC(2026, 10, 16) - offset;
+        const reopening = reopeningDate + openHour * HOUR;
+        const bars = [
+            ...Array.from({ length: 5 }, (_, i) => lastBar + (i - 4) * HOUR),
+            ...Array.from({ length: 5 }, (_, i) => reopening + i * HOUR),
+        ];
+        const { coords, texts } = axisLabels(bars, 720, 80, zone);
+        const { from, to } = coords.visibleTimeRange();
+        expect(timeTicks(from, to, 8, offset).map((tick) => tick.time)).not.toContain(reopeningDate);
+        const lines = gridLines(bars, 720, 80, zone);
+        const left = coords.timeToX(lastBar);
+        const right = coords.timeToX(reopening);
+        const labelX = coords.timeToX(reopeningDate);
+        expect(texts.filter(({ x }) => x > left && x <= right)).toEqual([{ text: 'Nov 16', x: labelX }]);
+        expect(lines.filter((x) => x > left && x <= Math.round(right) + 0.5)).toEqual([Math.round(labelX) + 0.5]);
+    });
+
     it('uses a date the axis can show when the reopening is near the edge', () => {
         const lastBar = Date.UTC(2026, 10, 10, 18);
         const reopening = Date.UTC(2026, 10, 16);

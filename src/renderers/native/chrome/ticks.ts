@@ -266,8 +266,11 @@ export function viewportTimeTicks(
     target = DEFAULT_TIME_TICK_TARGET,
     fmt = ENGLISH_FORMAT,
 ): TimeTick[] {
-    const { from, to } = coords.visibleTimeRange();
-    const offset = tzOffsetMs((from + to) / 2, displayZone(timeZone, coords.barInterval));
+    const range = coords.visibleTimeRange();
+    const { from, to } = range;
+    // The zone formatter reads whole seconds. Sample at the same precision to keep midnight exact.
+    const midpoint = Math.floor((from + to) / (2 * SEC)) * SEC;
+    const offset = tzOffsetMs(midpoint, displayZone(timeZone, coords.barInterval));
     const firstBar = coords.logicalToTime(0);
     const inGap = (time: number) => coords.isInCompressedGap(time);
     const ticks = timeTickCandidates(from, to, target, offset, firstBar, inGap);
@@ -278,7 +281,7 @@ export function viewportTimeTicks(
         ? ticks
         : timeTickCandidates(from, to, DEFAULT_TIME_TICK_TARGET, offset, firstBar, inGap);
     const ordinaryDate = (tick: TimeTickCandidate) => tick.unit === 'day' && new Date(tick.time + offset).getUTCDate() !== 1;
-    const replacements = coalescedGapDates(coords, gridTicks, ordinaryDate);
+    const replacements = coalescedGapDates(coords, gridTicks, ordinaryDate, offset, range);
     if (replacements.size === 0) return ticks.map(format);
 
     // The grid and axis share the replacement in affected gaps. Each keeps its own
@@ -299,16 +302,14 @@ function coalescedGapDates(
     coords: CoordinateSystem,
     gridTicks: readonly TimeTickCandidate[],
     ordinaryDate: (tick: TimeTickCandidate) => boolean,
+    offsetMs: number,
+    range: { from: number; to: number },
 ): Map<number, TimeTickCandidate> {
     const datesByGap = new Map<number, TimeTickCandidate[]>();
-    const datesOnBars = new Map<number, TimeTickCandidate>();
     for (const tick of gridTicks) {
         if (tick.unit !== 'day' && tick.unit !== 'month' && tick.unit !== 'year') continue;
+        if (!coords.isInCompressedGap(tick.time)) continue;
         const slot = Math.floor(coords.timeToLogical(tick.time));
-        if (!coords.isInCompressedGap(tick.time)) {
-            datesOnBars.set(slot, tick);
-            continue;
-        }
         const dates = datesByGap.get(slot);
         if (dates) dates.push(tick);
         else datesByGap.set(slot, [tick]);
@@ -318,11 +319,20 @@ function coalescedGapDates(
     for (const [slot, dates] of datesByGap) {
         const ordinary = dates.filter(ordinaryDate);
         if (ordinary.length < 2) continue;
-        // Prefer the reopening date, then calendar landmarks, then the latest
-        // ordinary date. Near an edge, use the first date the axis can display.
-        const reopening = datesOnBars.get(slot + 1);
+        // Prefer a date on the reopening bar, then calendar landmarks, then ordinary
+        // dates. Near an edge, use the first date the axis can display.
         const landmarks = dates.filter((tick) => !ordinaryDate(tick)).reverse();
-        const ranked = [...(reopening ? [reopening] : []), ...landmarks, ...ordinary.reverse()];
+        const ranked = [...landmarks, ...ordinary.reverse()];
+        const nextBar = coords.logicalToTime(slot + 1);
+        const reopeningDate = Math.floor((nextBar + offsetMs) / DAY) * DAY - offsetMs;
+        if (reopeningDate >= range.from && reopeningDate <= range.to &&
+            (reopeningDate === nextBar || (coords.isInCompressedGap(reopeningDate) && Math.floor(coords.timeToLogical(reopeningDate)) === slot)) &&
+            !ranked.some((tick) => tick.time === reopeningDate)) {
+            const monthStart = new Date(reopeningDate + offsetMs).getUTCDate() === 1;
+            const reopening = gridTicks.find((tick) => tick.time === reopeningDate) ??
+                { time: reopeningDate, unit: monthStart ? 'month' : 'day', major: monthStart };
+            ranked.splice(reopeningDate === nextBar ? 0 : landmarks.length, 0, reopening);
+        }
         const visible = ranked.find((tick) => isTimeLabelWithinAxis(coords.timeToX(tick.time), coords.width));
         replacements.set(slot, visible ?? ranked[0]!);
     }
@@ -348,9 +358,8 @@ export function timeTicks(
     offsetMs = 0,
     fmt: ResolvedFormatters = ENGLISH_FORMAT,
     notBeforeMs = -Infinity,
-    isInCompressedGap?: (time: number) => boolean,
 ): TimeTick[] {
-    return timeTickCandidates(fromMs, toMs, target, offsetMs, notBeforeMs, isInCompressedGap)
+    return timeTickCandidates(fromMs, toMs, target, offsetMs, notBeforeMs)
         .map((tick) => formatTimeTick(tick, offsetMs, fmt));
 }
 
