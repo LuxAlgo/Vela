@@ -684,6 +684,31 @@ describe('EngineOrchestrator', () => {
         }
     });
 
+    it('delivers the initial viewport once when an added listener changes only history depth', async () => {
+        registerNativeIndicator(testNativeDescriptor);
+        const renderer = new FakeRenderer();
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [], dataFeed: new MockDataFeed() });
+        try {
+            await chart.ready();
+            expect(renderer.bars).toHaveLength(50);
+            const initial = { from: renderer.bars[0]!.time, to: renderer.bars[10]!.time };
+            renderer.visibleRange = initial;
+            let depthChange: ReturnType<Vela['setMarket']> | undefined;
+            const handle = chart.addNativeIndicator('test-native');
+            chart.on('indicator:added', ({ id }) => {
+                if (id === handle.id) depthChange = chart.setMarket({ bars: 50 });
+            });
+            await flush();
+            expect(depthChange).toBeDefined();
+            await depthChange;
+            expect(lastNative.events).toEqual(['start', 'viewport']);
+            expect(lastNative.viewports).toEqual([initial]);
+        } finally {
+            chart.destroy();
+            unregisterNativeIndicator('test-native');
+        }
+    });
+
     it('starts a replacement native when the first output enters replay', async () => {
         const instances: TestNativeIndicator[] = [];
         registerNativeIndicator({

@@ -219,6 +219,8 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
     /** Invalidates detached async work (backfill loops, in-flight loads, gap heals):
      *  bumped by init(), setMarket() and destroy(). */
     private generation = 0;
+    /** Invalidates the starting native's viewport when the current series is replaced. */
+    private seriesGeneration = 0;
     /** Aborts the in-flight PROGRESSIVE load's source polling on supersession — an
      *  abandoned stream left polling to its own budget starves the browser's per-host
      *  connection pool, and the NEXT symbol's very first fetch with it (measured). */
@@ -440,8 +442,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
 
     /** Bump the generation — superseding every detached continuation — and release
      *  superseded setMarket awaiters so their promises resolve instead of hanging. */
-    private bumpGeneration(): number {
+    private bumpGeneration(preserveSeries = false): number {
         const gen = ++this.generation;
+        if (!preserveSeries) this.seriesGeneration = gen;
         this.progressiveAbort?.abort(); // the superseded load's source stops polling promptly
         this.progressiveAbort = null;
         for (const w of this.supersedeWaiters.splice(0)) w();
@@ -823,7 +826,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         // How many bars the user is LOOKING at — the pixel zoom, in series-neutral form.
         const carriedCount = carried ? this.rawBars.filter((b) => b.time >= carried.left && b.time <= carried.right).length : 0;
 
-        const gen = this.bumpGeneration();
+        const gen = this.bumpGeneration(depthOnly);
         this.switchingMarket = true;
         try {
             // Quiesce the OLD market's inbound flow before touching the config.
@@ -2593,12 +2596,12 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
                     if (alive && record.renderHandle && !record.hidden) this.renderer.setIndicatorStatus?.(record.renderHandle, status);
                 },
             };
-            const generation = this.generation;
+            const seriesGeneration = this.seriesGeneration;
             native.instance.start(ctx, record.inputValues);
             // The first emit can call host listeners that remove or replace the instance.
             if (!alive) return;
             native.started = true;
-            if (!record.hidden && this.generation === generation && native.descriptor.reactsToViewport) {
+            if (!record.hidden && this.seriesGeneration === seriesGeneration && native.descriptor.reactsToViewport) {
                 // A resize or reframe can move the renderer without publishing a viewport event.
                 // This snapshot supersedes any event already queued at this revision.
                 const range = this.renderer.getVisibleRange();
