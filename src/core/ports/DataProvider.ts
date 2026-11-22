@@ -67,13 +67,9 @@ export interface ProviderInfo {
     /**
      * Timeframes the provider serves, in the uppercase canonical form of
      * `SymbolInfo.timeframes` (`'1D'`/`'D'`, `'W'`, `'1M'`/`'M'`, bare minutes such as
-     * `'60'`; never lowercase). Used for timeframe choices when neither the symbol nor the
-     * provider supplies a more specific `timeframes` declaration.
+     * `'60'`; never lowercase). Informational; a symbol's own `timeframes` overrides it.
      */
     supportedTimeframes?: readonly string[];
-    /** Provider-wide timeframe limits. Use `finest` without `list` when the feed
-     *  can serve any coarser interval, including by aggregation. A symbol may override it. */
-    timeframes?: SymbolInfo['timeframes'];
     capabilities: ProviderCapabilities;
 }
 

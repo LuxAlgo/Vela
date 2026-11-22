@@ -137,49 +137,62 @@ export function chartTimeframeOf(value: string | undefined): string | null {
     return parsed.canonical ?? null;
 }
 
-/** Read market timeframe strings. Unlike quick-entry text, lowercase m here means minutes. */
-function parseMarketTimeframe(value: string): ParsedTimeframe {
-    return parseTimeframe(value.trim().replace(/^(\d+)\s*m$/, '$1'));
-}
+/** Workspace choices can carry the raw unit separately from quick entry's default value. */
+export type TimeframeChoiceResolver = (value: string, fallback?: string) => string | null;
 
 /** Calendar periods retain their unit even when their approximate durations are equal. */
-function timeframeKey(value: string): string | undefined {
-    const parsed = parseMarketTimeframe(value);
-    const unit = parsed.unit;
+function calendarTimeframe({ count, unit }: ParsedTimeframe): string | undefined {
     return unit === 'D' || unit === 'W' || unit === 'M' || unit === 'Y'
-        ? `${parsed.count}${unit}`
-        : parsed.canonical;
+        ? (count === 1 ? unit : `${count}${unit}`)
+        : undefined;
 }
 
-function findAdvertisedTimeframe(value: string, list: readonly string[] | undefined): string | undefined {
-    if (!list) return undefined;
-    if (list.includes(value)) return value;
-    const canonical = timeframeKey(value);
-    return canonical === undefined ? undefined : list.find((entry) => timeframeKey(entry) === canonical);
+function timeframeKey(parsed: ParsedTimeframe): string | undefined {
+    return calendarTimeframe(parsed) ?? parsed.canonical;
+}
+
+/** Source declarations use the documented uppercase units and bare minutes. */
+function declaredTimeframe(value: string): ParsedTimeframe {
+    return /[a-z]/.test(value) ? { valid: false } : parseTimeframe(value);
 }
 
 /** Resolve a choice to its advertised spelling, or null if the active market cannot serve it. */
 export function resolveTimeframeChoice(
     value: string,
-    symbolTimeframes: SymbolInfo['timeframes'],
-    providerTimeframes: readonly string[] | undefined,
+    timeframes: SymbolInfo['timeframes'],
     fallback = value,
 ): string | null {
-    const list = symbolTimeframes ? symbolTimeframes.list : providerTimeframes;
-    if (list) return findAdvertisedTimeframe(value, list) ?? null;
-    if (!symbolTimeframes) return fallback;
-
-    const finest = parseMarketTimeframe(symbolTimeframes.finest).ms;
-    const { ms, unit } = parseMarketTimeframe(value);
-    if (finest === undefined) return fallback;
-    if (ms === undefined || ms < finest) return null;
-    const advertised = findAdvertisedTimeframe(value, providerTimeframes);
-    if (advertised !== undefined) return advertised;
-    // A source with minute bars can aggregate a seconds spelling only into whole minutes.
-    if (unit === 'S' && finest >= UNIT_MS.MIN) {
-        return ms % UNIT_MS.MIN === 0 ? String(ms / UNIT_MS.MIN) : null;
+    if (!timeframes) return fallback;
+    const requested = parseTimeframe(value);
+    if (timeframes.list) {
+        const key = timeframeKey(requested);
+        if (key === undefined) return null;
+        const matches = timeframes.list.filter((entry) => timeframeKey(declaredTimeframe(entry)) === key);
+        return matches.includes(value) ? value : matches[0] ?? null;
     }
-    return fallback;
+
+    const finest = declaredTimeframe(timeframes.finest).ms;
+    if (finest === undefined) return fallback;
+    if (requested.ms === undefined || requested.ms < finest) return null;
+    return calendarTimeframe(requested) ?? fallback;
+}
+
+/** Prefer the exact row and highlight at most one alias of the shown timeframe. */
+export function currentTimeframeChoice(
+    options: readonly string[],
+    timeframe: string,
+    resolve: TimeframeChoiceResolver,
+): string | undefined {
+    if (options.includes(timeframe)) return timeframe;
+    const current = resolve(timeframe);
+    return current === null ? undefined : options.find((option) => resolve(option) === current);
+}
+
+/** Explicit calendar choices retain the unit used to select and deliver them. */
+export function workspaceTimeframeLabel(value: string, i18n?: Translator | null): string {
+    const parsed = parseTimeframe(value, i18n);
+    if (parsed.unit === 'D' || parsed.unit === 'W' || parsed.unit === 'M' || parsed.unit === 'Y') return parsed.short!;
+    return timeframeLabel(value, i18n);
 }
 
 /** Duration in ms of an existing timeframe value (`1`, `60`, `4h`, `D`, `W`, …), NaN if unknown. */

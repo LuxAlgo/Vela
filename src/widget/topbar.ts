@@ -13,7 +13,7 @@ import { chartType } from '../chart-types/registry';
 import { topbarActionOverride, widgetActions, type SidePanelButton, type WidgetContext } from './contributions';
 import { resolveTopbarComposition, topbarHas, TOPBAR_BUILTIN_IDS, type ResolvedTopbarComposition, type TopbarComposition } from './topbar-composition';
 import { BUILTIN_PRICE_STYLES, priceStyleIds } from '../renderers/native/core/chartConfig';
-import { favoriteTimeframeChips, timeframeLabel, TIMEFRAME_UNAVAILABLE } from './timeframe';
+import { currentTimeframeChoice, favoriteTimeframeChips, timeframeLabel, TIMEFRAME_UNAVAILABLE, workspaceTimeframeLabel, type TimeframeChoiceResolver } from './timeframe';
 import { parseSymbol } from '../data/ProviderRegistry';
 import { css } from '@luxalgo/vela-ui/css';
 import { t } from '@luxalgo/vela-ui/t';
@@ -179,7 +179,6 @@ export interface TopbarOptions {
     onSymbolClick?: () => void;
     timeframe: string;
     timeframes: readonly string[];
-    resolveTimeframe?: (tf: string) => string | null;
     /** Favorite timeframes — duration-sorted quick-switch chips, stars in the
      *  dropdown rows. Push later changes with {@link Topbar.setTimeframeFavorites}. */
     timeframeFavorites?: readonly string[];
@@ -245,7 +244,7 @@ const TEXT = {
     currentStyle: msg('widget.topbar.currentStyle', 'Chart style — {style}'),
 };
 
-export class Topbar {
+class TopbarControl {
     readonly el: HTMLElement;
     private readonly symbolEl: HTMLElement;
     /** Duration-sorted favorite chips (plus an unstarred current, when needed). */
@@ -314,7 +313,7 @@ export class Topbar {
         return textOf(this.i18n, m, values);
     }
 
-    constructor(host: HTMLElement, opts: TopbarOptions) {
+    constructor(host: HTMLElement, opts: TopbarOptions, private readonly resolveTimeframe?: TimeframeChoiceResolver) {
         this.opts = opts;
         this.host = host;
         this.timeframe = opts.timeframe;
@@ -514,7 +513,7 @@ export class Topbar {
             host,
             i18n: opts.i18n ?? null,
             items: this.tfItems(),
-            onSelect: (id) => opts.onTimeframe(id),
+            onSelect: (id) => this.applyTimeframe(id),
             onFavorite: (id, on) => opts.onTimeframeFavorite?.(id, on),
             // Timeframe labels are two-or-three characters ("1m", "4h", "1D") — the
             // stylesheet's default min-width would leave the list mostly empty.
@@ -552,31 +551,30 @@ export class Topbar {
         const doc = this.el.ownerDocument;
         this.tfChipsHost.replaceChildren();
         const stars = this.opts.onTimeframeFavorite !== undefined;
-        const chips = stars ? favoriteTimeframeChips(this.tfFavs).filter((tf) => this.resolveTimeframe(tf) !== null) : [];
-        const current = this.resolveTimeframe(this.timeframe);
-        const isCurrent = (tf: string) => tf === this.timeframe || (current !== null && this.resolveTimeframe(tf) === current);
-        const currentIsFav = chips.some(isCurrent);
+        const chips = stars ? favoriteTimeframeChips(this.tfFavs).filter((tf) => this.timeframeValue(tf) !== null) : [];
+        const current = this.checkedTimeframe(chips);
         // Unstarred current sits next to the caret so the favorite row never jumps.
-        const shown = currentIsFav || chips.length === 0 ? chips : [...chips, this.timeframe];
+        const shown = current !== undefined || chips.length === 0 ? chips : [...chips, this.timeframe];
         for (const tf of shown) {
             const b = doc.createElement('button');
             b.className = 'vela-widget-tf';
-            const label = timeframeLabel(tf, this.i18n);
+            const label = this.timeframeDisplay(tf);
             b.textContent = label;
-            if (isCurrent(tf)) {
+            if (tf === (current ?? this.timeframe)) {
                 b.dataset.current = '1';
                 b.setAttribute('aria-current', 'true');
             } else {
                 b.setAttribute('aria-label', this.t(TEXT.switchTimeframe, { timeframe: label }));
-                b.addEventListener('click', () => this.opts.onTimeframe(tf));
+                b.addEventListener('click', () => this.applyTimeframe(tf));
             }
             this.tfChipsHost.appendChild(b);
         }
         this.tfCaret.replaceChildren();
         if (chips.length === 0) {
             this.tfCaret.dataset.solo = '1';
-            this.tfCaret.append(doc.createTextNode(timeframeLabel(this.timeframe, this.i18n)), iconEl('chevron-down', doc));
-            this.tfCaret.setAttribute('aria-label', this.t(TEXT.currentTimeframe, { timeframe: timeframeLabel(this.timeframe, this.i18n) }));
+            const label = this.timeframeDisplay(this.timeframe);
+            this.tfCaret.append(doc.createTextNode(label), iconEl('chevron-down', doc));
+            this.tfCaret.setAttribute('aria-label', this.t(TEXT.currentTimeframe, { timeframe: label }));
         } else {
             delete this.tfCaret.dataset.solo;
             this.tfCaret.appendChild(iconEl('chevron-down', doc));
@@ -797,21 +795,35 @@ export class Topbar {
         }
     }
 
-    private resolveTimeframe(tf: string): string | null {
-        return this.opts.resolveTimeframe ? this.opts.resolveTimeframe(tf) : tf;
+    private timeframeValue(tf: string): string | null {
+        return this.resolveTimeframe ? this.resolveTimeframe(tf) : tf;
+    }
+
+    private applyTimeframe(tf: string): void {
+        const value = this.timeframeValue(tf);
+        if (value !== null) this.opts.onTimeframe(value);
+    }
+
+    private timeframeDisplay(tf: string): string {
+        return this.resolveTimeframe ? workspaceTimeframeLabel(tf, this.i18n) : timeframeLabel(tf, this.i18n);
+    }
+
+    private checkedTimeframe(options: readonly string[]): string | undefined {
+        return this.resolveTimeframe
+            ? currentTimeframeChoice(options, this.timeframe, this.resolveTimeframe)
+            : options.find((tf) => tf === this.timeframe);
     }
 
     private tfItems(): MenuItemDescriptor[] {
         const stars = this.opts.onTimeframeFavorite !== undefined;
-        const current = this.resolveTimeframe(this.timeframe);
+        const current = this.checkedTimeframe(this.opts.timeframes);
         return this.opts.timeframes.map((tf) => {
-            const choice = this.resolveTimeframe(tf);
             return {
                 id: tf,
-                label: timeframeLabel(tf, this.i18n),
-                checked: tf === this.timeframe || (choice !== null && choice === current),
+                label: this.timeframeDisplay(tf),
+                checked: tf === current,
                 ...(stars ? { favorite: this.tfFavs.includes(tf) } : {}),
-                ...(choice === null ? { disabled: true, title: this.t(TIMEFRAME_UNAVAILABLE) } : {}),
+                ...(this.timeframeValue(tf) === null ? { disabled: true, title: this.t(TIMEFRAME_UNAVAILABLE) } : {}),
             };
         });
     }
@@ -830,4 +842,15 @@ export class Topbar {
             ...(this.unavailableStyles.has(id) ? { disabled: true, title: this.t(PRICE_STYLE_UNAVAILABLE) } : {}),
         }));
     }
+}
+
+export class Topbar extends TopbarControl {
+    constructor(host: HTMLElement, opts: TopbarOptions) {
+        super(host, opts);
+    }
+}
+
+/** @internal Connect workspace timeframe choices without changing standalone options. */
+export function createWorkspaceTopbar(host: HTMLElement, opts: TopbarOptions, resolve: TimeframeChoiceResolver): TopbarControl {
+    return new TopbarControl(host, opts, resolve);
 }

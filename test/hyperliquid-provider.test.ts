@@ -110,6 +110,26 @@ describe('HyperliquidProvider.getBars (stubbed fetch)', () => {
         expect(calls.find((c) => c.type === 'candleSnapshot').req.coin).toBe('PURR/USDC');
     });
 
+    it('aggregates 120S from native one-minute candles', async () => {
+        const rows = [0, 1, 2, 3].map((m) => candle(m, 1, '100', '110', '90', String(101 + m)));
+        const calls = stubInfo((b) => (b.type === 'candleSnapshot' ? rows : []));
+
+        const bars = await new HyperliquidProvider().getBars('BTC', '120S', { limit: 2 });
+        expect(calls.find((c) => c.type === 'candleSnapshot')?.req.interval).toBe('1m');
+        expect(bars.map(({ time, close, volume }) => ({ time, close, volume }))).toEqual([
+            { time: 0, close: 102, volume: 2 }, { time: 2 * MIN, close: 104, volume: 2 },
+        ]);
+    });
+
+    it.each(['30S', '90S'])('refuses %s before resolving a HIP-3 coin', async (timeframe) => {
+        const calls = stubInfo(() => []);
+
+        await expect(new HyperliquidProvider().getBars('xyz:TSLA', timeframe, { limit: 2 })).rejects.toMatchObject({
+            name: 'DataUnavailableError', reason: 'timeframe', symbol: 'xyz:TSLA', timeframe, finest: '1', default: '1',
+        });
+        expect(calls).toEqual([]);
+    });
+
     it('uses range.from directly (the cache tail refresh) instead of a count window', async () => {
         const calls = stubInfo((b) => (b.type === 'candleSnapshot' ? [candle(100, 60)] : []));
         await new HyperliquidProvider().getBars('BTC', '1h', { from: 5_000_000 });

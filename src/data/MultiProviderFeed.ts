@@ -42,11 +42,18 @@ export class MultiProviderFeed implements MarketDataFeed {
     // ── Registry surface (driven by chart.data / DataControl) ──────────────
 
     registerProvider(name: string, provider: DataProvider): Promise<void> {
+        this.invalidateSymbolInfo(name);
         return this.registry.register(name, provider);
     }
 
     unregisterProvider(name: string): void {
+        this.invalidateSymbolInfo(name);
         this.registry.unregister(name);
+    }
+
+    /** @internal Watch registrations, index settlement and removals. */
+    onRegistryChange(cb: () => void): Unsubscribe {
+        return this.registry.onChange(cb);
     }
 
     providers(): ProviderInfo[] {
@@ -119,6 +126,13 @@ export class MultiProviderFeed implements MarketDataFeed {
         return this.fetchSymbolInfo(resolved);
     }
 
+    private invalidateSymbolInfo(name: string): void {
+        const prefix = symKey({ provider: name.trim().toLowerCase(), ticker: '' });
+        for (const cache of [this.symInfoCache, this.symInfoInflight]) {
+            for (const key of cache.keys()) if (key.startsWith(prefix)) cache.delete(key);
+        }
+    }
+
     /**
      * One round trip per symbol, shared. A market switch probes this metadata from five
      * places at once (the bar load's prefetch, the renderer's tick size, the market-status
@@ -137,15 +151,16 @@ export class MultiProviderFeed implements MarketDataFeed {
         if (hit && Date.now() - hit.at < SYMBOL_INFO_TTL_MS) return Promise.resolve(hit.info);
         const inflight = this.symInfoInflight.get(key);
         if (inflight) return inflight;
-        const getSymbolInfo = this.registry.get(resolved.provider)?.getSymbolInfo;
-        if (!getSymbolInfo) return Promise.resolve(undefined);
-        const p = Promise.resolve(getSymbolInfo.call(this.registry.get(resolved.provider), resolved.ticker))
+        const provider = this.registry.get(resolved.provider);
+        if (!provider?.getSymbolInfo) return Promise.resolve(undefined);
+        const p = Promise.resolve(provider.getSymbolInfo(resolved.ticker))
             .then((info) => {
+                if (this.symInfoInflight.get(key) !== p) return undefined;
                 if (info) this.symInfoCache.set(key, { info, at: Date.now() });
                 return info;
             })
             .finally(() => {
-                this.symInfoInflight.delete(key);
+                if (this.symInfoInflight.get(key) === p) this.symInfoInflight.delete(key);
             });
         this.symInfoInflight.set(key, p);
         return p;

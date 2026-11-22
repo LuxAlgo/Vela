@@ -572,13 +572,13 @@ they work from the very first keystroke, before any click.
 
 ## The chrome
 
-The active market determines which timeframes you can select. The workspace uses the
-symbol's `timeframes` list or its `finest` timeframe, then the provider's `timeframes`
-or `supportedTimeframes` declaration. The desktop menu and mobile drawer dim unavailable
-presets. Favorite chips hide while unavailable and return on a market that supports them.
-Quick entry shows a message for an unavailable timeframe. All presets and valid quick
-entries remain available when capabilities are unknown, such as for offline data or
-a bare ticker shared by multiple providers.
+The active symbol's `timeframes` list or its `finest` timeframe determines which periods
+you can select. The desktop menu and mobile drawer dim unavailable presets. Favorite chips
+hide while unavailable and return on a market that supports them. Quick entry shows a message
+for an unavailable timeframe. Provider-wide `supportedTimeframes` is informational. All presets
+and valid quick entries remain available when capabilities are unknown, such as for offline data
+or a bare ticker shared by multiple providers. A source can still refuse a load and suggest a
+[fallback timeframe](#a-timeframe-the-source-never-serves).
 
 - **Topbar** — symbol button (opens the search), timeframe dropdown (hover a row to
   star a favorite: starred timeframes sit as duration-sorted chips, the current one

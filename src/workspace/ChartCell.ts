@@ -13,6 +13,7 @@ import type { VisibleRangePreset } from '../core/visible-range';
 import type { VisibleRange } from '../core/ports/IChartRenderer';
 import type { DrawingsOption } from '../core/drawings';
 import type { MarketDataFeed, SymbolInfo } from '../core/ports/MarketDataFeed';
+import type { DataProvider } from '../core/ports/DataProvider';
 import { MultiProviderFeed } from '../data/MultiProviderFeed';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import type { IndicatorHandle } from '../core/IndicatorHandle';
@@ -296,7 +297,8 @@ export class ChartCell {
     private sessionAvailableFlag = false;
     /** The symbol of the most recent metadata probe — an older one landing late is dropped. */
     private metadataProbeSymbol: string | null = null;
-    private timeframeMetadata?: { symbol: string; provider: string | undefined; timeframes: SymbolInfo['timeframes'] };
+    private timeframeProbe: { market: string; provider: DataProvider } | null = null;
+    private marketTimeframes: SymbolInfo['timeframes'];
     /** Latched: the symbol's extended tape wraps midnight (an overnight roll market) —
      *  one extended-hours shading phase instead of the pre/post split. */
     private sessionOvernightFlag = false;
@@ -516,12 +518,10 @@ export class ChartCell {
             // The committed pass below re-runs idempotently and remains the backstop.
             this.refreshSymbolMetadata(symbol);
         });
-        this.inner.on('load:end', ({ symbol }) => {
+        this.inner.on('load:end', () => {
             this.watermark?.setLoading(false);
             this.refreshSessionShading(); // the first painted bars now define the exact range
-            // A parked chart can finish its first load after a provider registers.
-            if (this.timeframeMetadata?.provider !== this.timeframeSource(symbol)?.provider) this.refreshSymbolMetadata(symbol);
-            this.deps.onTimeframesChanged?.(this.id);
+            this.refreshTimeframeMetadata();
         });
         this.inner.on('viewport:changed', (range) => this.sessionShading.updateRange(range));
         this.applyTimezone();
@@ -559,6 +559,7 @@ export class ChartCell {
                 this.statusline?.setMeta(this.timeframe, this.inner.data.displayPrefix(this.state.symbol) ?? this.state.provider ?? '');
             }
             this.refreshSymbolMetadata();
+            this.refreshTimeframeMetadata();
             if (this.inner && this.state.symbol) this.marketStatus?.track(this.inner.data, this.state.symbol);
         });
         this.syncStatuslineColors();
@@ -675,6 +676,7 @@ export class ChartCell {
         this.state.provider = parseSymbol(symbol).provider ?? undefined;
         if (!this.fallback) this.state.timeframe = timeframe;
         this.state.session = normalizeSession(this.inner?.market.session);
+        this.refreshTimeframeMetadata();
         this.watermark?.update(symbol, timeframe);
         this.statusline?.setSymbol(symbol);
         this.statusline?.setMeta(timeframe, this.inner?.data.displayPrefix(symbol) ?? this.state.provider ?? '');
@@ -740,9 +742,7 @@ export class ChartCell {
         const chart = this.inner;
         if (!chart || !symbol) return;
         this.metadataProbeSymbol = symbol; // last ask wins — a slow probe must not overwrite a newer verdict
-        const source = this.timeframeSource(symbol);
-        const marketSymbol = source ? `${source.provider}:${source.ticker}` : symbol;
-        void chart.data.symbolInfo(marketSymbol).then((si) => {
+        void chart.data.symbolInfo(symbol).then((si) => {
             if (this.inner !== chart || this.metadataProbeSymbol !== symbol) return;
             if (si === undefined && retry) {
                 // Nothing resolved the symbol yet: the EARLY pass can precede the provider
@@ -758,13 +758,6 @@ export class ChartCell {
             // `chart.setMarket` directly projects it only at `market:changed`, and the
             // overlays below (shading, settings) read the cell state. That pass follows.
             if (this.state.symbol !== symbol) return;
-            const timeframes = source ? si?.timeframes : undefined;
-            if (this.timeframeMetadata?.symbol !== symbol ||
-                this.timeframeMetadata.provider !== source?.provider ||
-                this.timeframeMetadata.timeframes !== timeframes) {
-                this.timeframeMetadata = { symbol, provider: source?.provider, timeframes };
-                this.deps.onTimeframesChanged?.(this.id);
-            }
             const available = typeof si?.session === 'string' && si.session !== '' && si.session !== '24x7';
             const overnight = parseSessionSpec(si)?.overnight === true;
             const zone = typeof si?.timezone === 'string' && si.timezone !== '' ? si.timezone : undefined;
@@ -1086,22 +1079,48 @@ export class ChartCell {
         return this.fallback?.timeframe ?? this.state.timeframe ?? '60';
     }
 
-    private timeframeSource(symbol: string) {
+    private timeframeSource() {
         const feed = this.deps.feed;
-        if (this.inner?.market.offline || !(feed instanceof MultiProviderFeed)) return null;
-        return feed.resolveUnambiguousSymbol(symbol);
+        if (!this.inner || this.inner.market.offline || !this.symbol || !(feed instanceof MultiProviderFeed)) return null;
+        const source = feed.resolveUnambiguousSymbol(this.symbol);
+        if (!source) return null;
+        const provider = feed.providerInstance(source.provider);
+        if (!provider) return null;
+        return { market: `${source.provider}:${source.ticker}`, provider };
+    }
+
+    /** @internal Refresh capabilities when the registry or this cell's market changes. */
+    refreshTimeframeMetadata(force = false): void {
+        const chart = this.inner;
+        const probe = this.timeframeSource();
+        const sameSource = probe?.market === this.timeframeProbe?.market && probe?.provider === this.timeframeProbe?.provider;
+        if (sameSource && (!force || !probe)) return;
+
+        this.timeframeProbe = probe;
+        if (!sameSource && this.marketTimeframes !== undefined) {
+            this.marketTimeframes = undefined;
+            this.deps.onTimeframesChanged?.(this.id);
+        }
+        if (!chart || !probe) return;
+        void chart.data.symbolInfo(probe.market).then((info) => {
+            if (this.inner !== chart || probe !== this.timeframeProbe) return;
+            const current = this.timeframeSource();
+            if (probe.market !== current?.market || probe.provider !== current.provider) return;
+            if (info === undefined) this.timeframeProbe = null; // the next load can retry a metadata miss
+            if (this.marketTimeframes === info?.timeframes) return;
+            this.marketTimeframes = info?.timeframes;
+            this.deps.onTimeframesChanged?.(this.id);
+        }, () => {
+            if (probe === this.timeframeProbe && this.marketTimeframes === undefined) this.timeframeProbe = null;
+        });
     }
 
     /** @internal Resolve a timeframe choice against the capabilities known for this cell. */
     resolveTimeframeChoice(value: string, fallback = value): string | null {
-        const symbol = this.symbol;
-        const source = this.timeframeSource(symbol);
-        if (!source) return fallback;
-        const metadata = this.timeframeMetadata;
-        const symbolTimeframes = metadata?.symbol === symbol && metadata.provider === source.provider ? metadata.timeframes : undefined;
-        if (symbolTimeframes) return resolveTimeframeChoice(value, symbolTimeframes, undefined, fallback);
-        const info = this.inner?.data.providerInstance(source.provider)?.info?.();
-        return resolveTimeframeChoice(value, info?.timeframes, info?.supportedTimeframes, fallback);
+        const source = this.timeframeSource();
+        const probe = this.timeframeProbe;
+        const timeframes = source && probe?.market === source.market && probe.provider === source.provider ? this.marketTimeframes : undefined;
+        return resolveTimeframeChoice(value, timeframes, fallback);
     }
 
     /** The timeframe the user asked for — what the cell persists and the timeframe link

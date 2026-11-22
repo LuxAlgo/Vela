@@ -131,6 +131,26 @@ describe('CoinbaseProvider.getBars (stubbed fetch)', () => {
         expect(bars.map((b) => b.time)).toEqual([Date.UTC(2021, 0, 4), Date.UTC(2021, 0, 11)]);
     });
 
+    it('aggregates 120S from native one-minute candles', async () => {
+        const rows = [3, 2, 1, 0].map((m) => row(m * 60, 90, 110, 100, 101 + m, 1));
+        const calls = stubCandles(rows);
+
+        const bars = await new CoinbaseProvider().getBars('BTC-USD', '120S', { limit: 2 });
+        expect(calls.find((u) => u.includes('/candles'))).toContain('granularity=60');
+        expect(bars.map(({ time, close, volume }) => ({ time, close, volume }))).toEqual([
+            { time: 0, close: 102, volume: 2 }, { time: 2 * MIN, close: 104, volume: 2 },
+        ]);
+    });
+
+    it.each(['30S', '90S'])('refuses %s before requesting candles', async (timeframe) => {
+        const calls = stubCandles([]);
+
+        await expect(new CoinbaseProvider().getBars('BTC-USD', timeframe, { limit: 2 })).rejects.toMatchObject({
+            name: 'DataUnavailableError', reason: 'timeframe', symbol: 'BTC-USD', timeframe, finest: '1', default: '1',
+        });
+        expect(calls).toEqual([]);
+    });
+
     it('uses range.from directly (the cache tail refresh) as the forward window start', async () => {
         const calls = stubCandles([row(5000)]);
         await new CoinbaseProvider().getBars('BTC-USD', '1h', { from: 5_000_000, to: 5_100_000 });

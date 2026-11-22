@@ -2,6 +2,7 @@ import type { OHLCV } from '../../../core/model/ohlcv';
 import type { BarRange, SymbolInfo } from '../../../core/ports/MarketDataFeed';
 import type { DataProvider, ProviderInfo, ProviderCapabilities, SymbolDescriptor } from '../../../core/ports/DataProvider';
 import { baseOf, ledgerCryptoIconUrl } from '../../symbol-base';
+import { minuteBarTimeframe } from '../../timeframe';
 import type { Unsubscribe } from '../../../core/util/types';
 
 const SPOT_BASE = 'https://api.binance.com/api/v3';
@@ -132,16 +133,15 @@ export class BinanceProvider implements DataProvider {
             displayName: 'Binance',
             requiresApiKey: false,
             supportedTimeframes: SUPPORTED_TIMEFRAMES,
-            timeframes: { finest: '1' },
             capabilities: { enumerate: true, stream: true, symbolInfo: true },
         };
     }
 
     async getBars(ticker: string, timeframe: string, range: BarRange): Promise<OHLCV[]> {
+        const tf = normalizeTf(minuteBarTimeframe(ticker, timeframe));
         try {
             const { apiSymbol, isFutures } = parseTicker(ticker);
             const base = isFutures ? FUTURES_BASE : await this.spotBase();
-            const tf = normalizeTf(timeframe);
 
             const nativeInterval = TF_TO_INTERVAL[tf];
             if (nativeInterval) {

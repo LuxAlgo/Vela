@@ -8,7 +8,7 @@ import type { MessageLike, Translator } from '../core/i18n/types';
 import { Drawer } from '@luxalgo/vela-ui/drawer';
 import { injectChromeStyles } from '../ui/chromeStyles';
 import { rangeLabel, type RangePreset } from './bottombar';
-import { timeframeLabel } from './timeframe';
+import { currentTimeframeChoice, workspaceTimeframeLabel, type TimeframeChoiceResolver } from './timeframe';
 import { css } from '@luxalgo/vela-ui/css';
 import { t } from '@luxalgo/vela-ui/t';
 
@@ -79,7 +79,7 @@ const TEXT = {
 export interface TimeframeDrawerOptions {
     host: HTMLElement;
     timeframes: readonly string[];
-    resolveTimeframe?: (tf: string) => string | null;
+    resolveTimeframe: TimeframeChoiceResolver;
     ranges: readonly RangePreset[];
     /** Read live at open — the current timeframe (highlights its chip). */
     currentTimeframe: () => string;
@@ -130,9 +130,10 @@ export class TimeframeDrawer {
         for (const tf of opts.timeframes) {
             const chip = doc.createElement('button');
             chip.className = 'vela-tfd-chip';
-            chip.textContent = timeframeLabel(tf, opts.i18n);
             chip.addEventListener('click', () => {
-                opts.onTimeframe(tf);
+                const choice = opts.resolveTimeframe(tf);
+                if (choice === null) return;
+                opts.onTimeframe(choice);
                 this.drawer.hide();
             });
             this.tfChips.set(tf, chip);
@@ -148,7 +149,7 @@ export class TimeframeDrawer {
         const i18n = this.opts.i18n;
         for (const { el, text } of this.headings) el.textContent = textOf(i18n, text);
         for (const [id, chip] of this.rangeChips) chip.textContent = rangeLabel(id, i18n);
-        for (const [tf, chip] of this.tfChips) chip.textContent = timeframeLabel(tf, i18n);
+        for (const [tf, chip] of this.tfChips) chip.textContent = workspaceTimeframeLabel(tf, i18n);
     }
 
     open(): void {
@@ -159,17 +160,15 @@ export class TimeframeDrawer {
 
     refresh(): void {
         const tf = this.opts.currentTimeframe();
-        const resolve = (value: string) => this.opts.resolveTimeframe ? this.opts.resolveTimeframe(value) : value;
-        const current = resolve(tf);
+        const current = currentTimeframeChoice(this.opts.timeframes, tf, this.opts.resolveTimeframe);
         const range = this.opts.activeRange();
         for (const [id, chip] of this.rangeChips) {
             if (range !== null && id === range) chip.dataset.active = '1';
             else delete chip.dataset.active;
         }
         for (const [id, chip] of this.tfChips) {
-            const choice = resolve(id);
-            chip.disabled = choice === null;
-            if (range === null && (id === tf || (choice !== null && choice === current))) chip.dataset.active = '1';
+            chip.disabled = this.opts.resolveTimeframe(id) === null;
+            if (range === null && id === current) chip.dataset.active = '1';
             else delete chip.dataset.active;
         }
     }

@@ -1,3 +1,5 @@
+import { DataUnavailableError } from '../core/data-unavailable';
+
 /** Named non-minute resolutions → ms. `M` is treated as a 30-day month (bucketing only). */
 const NAMED_TF_MS: Record<string, number> = { D: 86_400_000, W: 604_800_000, M: 2_592_000_000 };
 
@@ -21,4 +23,13 @@ export function timeframeToMs(timeframe: string): number {
         if (mult !== undefined) return parseInt(m[1]!, 10) * mult;
     }
     return 3_600_000;
+}
+
+/** Express a seconds resolution in whole minutes for providers with minute-based candles. */
+export function minuteBarTimeframe(ticker: string, timeframe: string): string {
+    const match = /^(\d+)\s*S$/i.exec(timeframe.trim());
+    if (!match) return timeframe;
+    const seconds = Number(match[1]);
+    if (seconds > 0 && seconds % 60 === 0) return String(seconds / 60);
+    throw new DataUnavailableError({ reason: 'timeframe', symbol: ticker, timeframe, finest: '1', default: '1' });
 }

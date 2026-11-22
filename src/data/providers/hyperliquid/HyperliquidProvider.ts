@@ -2,6 +2,7 @@ import type { OHLCV } from '../../../core/model/ohlcv';
 import type { BarRange, SymbolInfo } from '../../../core/ports/MarketDataFeed';
 import type { DataProvider, ProviderInfo, SymbolDescriptor } from '../../../core/ports/DataProvider';
 import { baseOf, ledgerCryptoIconUrl } from '../../symbol-base';
+import { minuteBarTimeframe } from '../../timeframe';
 import type { Unsubscribe } from '../../../core/util/types';
 
 const INFO_URL = 'https://api.hyperliquid.xyz/info';
@@ -162,15 +163,14 @@ export class HyperliquidProvider implements DataProvider {
             displayName: 'Hyperliquid',
             requiresApiKey: false,
             supportedTimeframes: SUPPORTED_TIMEFRAMES,
-            timeframes: { finest: '1' },
             capabilities: { enumerate: true, stream: true, symbolInfo: true },
         };
     }
 
     async getBars(ticker: string, timeframe: string, range: BarRange): Promise<OHLCV[]> {
+        const tf = normalizeTf(minuteBarTimeframe(ticker, timeframe));
         try {
             const coin = await this.resolveCoin(ticker);
-            const tf = normalizeTf(timeframe);
 
             const nativeInterval = TF_TO_INTERVAL[tf];
             if (nativeInterval) {

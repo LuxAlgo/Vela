@@ -6,7 +6,7 @@ import { textOf } from '../core/i18n/text';
 import type { MessageLike, Translator } from '../core/i18n/types';
 import { Dialog } from '@luxalgo/vela-ui/dialog';
 import { injectChromeStyles } from '../ui/chromeStyles';
-import { parseTimeframe, TIMEFRAME_UNAVAILABLE } from './timeframe';
+import { parseTimeframe, TIMEFRAME_UNAVAILABLE, type TimeframeChoiceResolver } from './timeframe';
 import { css } from '@luxalgo/vela-ui/css';
 import { t } from '@luxalgo/vela-ui/t';
 
@@ -42,7 +42,6 @@ const TEXT = {
 };
 
 export interface TimeframeQuickOptions {
-    resolveTimeframe?: (input: string, canonical: string) => string | null;
     onApply: (canonical: string) => void;
     onOpenChange?: (open: boolean) => void;
     host?: HTMLElement;
@@ -50,7 +49,7 @@ export interface TimeframeQuickOptions {
     i18n?: Translator;
 }
 
-export class TimeframeQuick {
+class TimeframeQuickControl {
     private readonly dialog: Dialog;
     private readonly input: HTMLInputElement;
     private readonly hint: HTMLElement;
@@ -60,7 +59,7 @@ export class TimeframeQuick {
         return textOf(this.i18n, text);
     }
 
-    constructor(private readonly opts: TimeframeQuickOptions) {
+    constructor(opts: TimeframeQuickOptions, private readonly resolveChoice?: TimeframeChoiceResolver) {
         this.i18n = opts.i18n ?? null;
         const doc = (opts.host ?? document.body).ownerDocument;
         injectChromeStyles(STYLE_ID, CSS, doc);
@@ -102,7 +101,7 @@ export class TimeframeQuick {
     relabel(): void {
         this.dialog.titleEl.textContent = this.t(TEXT.title);
         this.dialog.setI18n(this.i18n);
-        this.refresh();
+        if (this.isOpen) this.renderHint();
     }
 
     open(seed = ''): void {
@@ -140,12 +139,8 @@ export class TimeframeQuick {
         this.dialog.destroy();
     }
 
-    refresh(): void {
-        if (this.isOpen) this.renderHint();
-    }
-
     private resolveTimeframe(canonical: string): string | null {
-        return this.opts.resolveTimeframe ? this.opts.resolveTimeframe(this.input.value.trim(), canonical) : canonical;
+        return this.resolveChoice ? this.resolveChoice(this.input.value.trim(), canonical) : canonical;
     }
 
     private renderHint(): void {
@@ -162,4 +157,15 @@ export class TimeframeQuick {
             delete this.hint.dataset.invalid;
         }
     }
+}
+
+export class TimeframeQuick extends TimeframeQuickControl {
+    constructor(opts: TimeframeQuickOptions) {
+        super(opts);
+    }
+}
+
+/** @internal Connect workspace timeframe choices without changing standalone options. */
+export function createWorkspaceTimeframeQuick(opts: TimeframeQuickOptions, resolve: TimeframeChoiceResolver): TimeframeQuickControl {
+    return new TimeframeQuickControl(opts, resolve);
 }

@@ -117,6 +117,26 @@ describe('BinanceProvider.getBars (stubbed fetch)', () => {
         expect(calls.some((u) => u.includes('symbol=BTCUSDT.P'))).toBe(false); // .P stripped for the API
     });
 
+    it('aggregates 120S from native one-minute candles', async () => {
+        const rows = [0, 1, 2, 3].map((m) => [m * MIN, '100', '110', '90', String(101 + m), '1']);
+        const calls = stubFetch(rows);
+
+        const bars = await new BinanceProvider().getBars('BTCUSDT', '120S', { limit: 2 });
+        expect(calls.find((u) => u.includes('/klines'))).toContain('interval=1m');
+        expect(bars.map(({ time, close, volume }) => ({ time, close, volume }))).toEqual([
+            { time: 0, close: 102, volume: 2 }, { time: 2 * MIN, close: 104, volume: 2 },
+        ]);
+    });
+
+    it.each(['30S', '90S'])('refuses %s before probing the spot endpoint', async (timeframe) => {
+        const calls = stubFetch([]);
+
+        await expect(new BinanceProvider().getBars('BTCUSDT', timeframe, { limit: 2 })).rejects.toMatchObject({
+            name: 'DataUnavailableError', reason: 'timeframe', symbol: 'BTCUSDT', timeframe, finest: '1', default: '1',
+        });
+        expect(calls).toEqual([]);
+    });
+
     it('fails soft (empty + warning) when a fetch errors, instead of rejecting', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         vi.stubGlobal('fetch', vi.fn((input: string | URL) => {
