@@ -23,12 +23,12 @@ function bars(rows: Array<[price: number, volume?: number]>): Bar[] {
     return rows.map(([p, v], i) => ({ time: i * HR, open: p, high: p, low: p, close: p, volume: v ?? 0 }));
 }
 
-/** Linear projector (x = time/HR, y = 1000 − price) that serves `data` via barsInRange. */
-function fakeProjector(data: Bar[]): Projector {
+/** Linear projector that serves `data` via barsInRange. */
+function fakeProjector(data: Bar[], barSpacing = 1): Projector {
     return {
-        xOf: (t) => t / HR,
+        xOf: (t) => (t / HR) * barSpacing,
         yOf: (price) => 1000 - price,
-        pxToPoint: (x, y) => ({ time: x * HR, price: 1000 - y }),
+        pxToPoint: (x, y) => ({ time: (x / barSpacing) * HR, price: 1000 - y }),
         paneIdAtY: () => 'price',
         barsInRange: (from, to) => data.filter((b) => b.time >= Math.min(from, to) && b.time <= Math.max(from, to)),
         width: 500,
@@ -136,6 +136,43 @@ describe('drawings/AnchoredVwap', () => {
         const round = deserializeDrawing(ser) as AnchoredVwap;
         expect(round.vwap.midColor).toBe('#123456');
         expect(round.vwap.multiplier).toBe(2.5);
+    });
+
+    describe('pointer targets', () => {
+        const proj = fakeProjector(bars([[100], [300], [100], [300], [100]]), 80);
+        const init = { paneId: 'price', anchors: [{ time: 0, price: 100 }] };
+        const tolerance = 6;
+
+        it.each(['#5b9cf633', '#5b9cf600'])('lets presses through the band interior with fill %s', (bandFill) => {
+            const d = new AnchoredVwap({ ...init, props: { bandFill } });
+            const { mid, upper } = d.layout(proj)!;
+            const [x, midY] = mid[3]!;
+            const upperY = upper[3]![1];
+            expect(d.hitTest(x, (midY + upperY) / 2, proj, tolerance)).toBe(false);
+        });
+
+        it.each([
+            ['#5b9cf600', false],
+            ['#5bf0', false],
+            ['transparent', false],
+            ['rgba(255, 0, 0, 0)', false],
+            ['rgb(255 0 0 / 0%)', false],
+            ['rgb(255 0 0 / none)', false],
+            ['rgb(255, 0, 0)', true],
+            ['rgba(255, 0, 0, 0.25)', true],
+        ])('matches band stroke visibility for %s', (color, visible) => {
+            const d = new AnchoredVwap({ ...init, props: { upperColor: color, lowerColor: color } });
+            const { upper, lower } = d.layout(proj)!;
+            expect(d.hitTest(...upper[3]!, proj, tolerance)).toBe(visible);
+            expect(d.hitTest(...lower[3]!, proj, tolerance)).toBe(visible);
+        });
+
+        it('keeps the main line and anchor handle interactive', () => {
+            const d = new AnchoredVwap(init);
+            const { mid } = d.layout(proj)!;
+            expect(d.hitTest(...mid[3]!, proj, tolerance)).toBe(true);
+            expect(d.hitHandle(...mid[0]!, proj, tolerance)).toBe(0);
+        });
     });
 
     it('degrades gracefully when the projector exposes no bar data', () => {

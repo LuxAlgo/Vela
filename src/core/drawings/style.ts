@@ -38,6 +38,16 @@ export interface DrawingText {
     side?: 'above' | 'below';
 }
 
+/** Whether a stroke color explicitly has zero opacity. */
+export function isTransparentStrokeColor(color: string): boolean {
+    const value = color.trim().toLowerCase();
+    if (value === 'transparent' || /^#(?:[0-9a-f]{3}0|[0-9a-f]{6}00)$/.test(value)) return true;
+
+    const alpha = (/\/\s*([^()/]+)\)$/.exec(value)?.[1]
+        ?? /^(?:rgba?|hsla?)\([^,]+,[^,]+,[^,]+,([^,()]+)\)$/.exec(value)?.[1])?.trim();
+    return alpha === 'none' || (alpha !== undefined && Number.parseFloat(alpha) <= 0);
+}
+
 /** The default drawing accent — the Vela logo blue. */
 export const DEFAULT_DRAWING_COLOR = ACCENT_BRIGHT;
 

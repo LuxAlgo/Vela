@@ -2,6 +2,13 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Anchored VWAP panning.** Drag inside the shaded band to pan the chart and keep the anchor in
+  place. Use the VWAP line, a visible band stroke, or the anchor handle to move the drawing.
+
 ## [0.10.14]
 
 ### Added

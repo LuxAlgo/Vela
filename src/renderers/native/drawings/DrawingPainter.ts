@@ -1,4 +1,5 @@
 import type { Drawing, Projector, DrawingStyle } from '../../../core/drawings';
+import { isTransparentStrokeColor } from '../../../core/drawings/style';
 import { Box, SegmentDrawing, TrendLine, FibRatios, RadialFib, FibSpiral, GannSquare, GANN_SQUARE_ARCS, DedekindTessellation, MachFigure, MeasureBox, PositionTool, PatternDrawing, CalloutBase, Callout, Comment, PriceNote, Signpost, Note, PriceLabel, ArrowMark, GlyphStamp, RegressionChannel, AnchoredVwap, FixedRangeVolumeProfile, Magnifier, PriceActionZone, Liquidity, magnifierTimeframeLabel, lineSegmentIntersection, effectiveFillColor, VALID_FILL, INVALID_FILL, DEFAULT_DRAWING_COLOR } from '../../../core/drawings';
 import type { VelaTheme } from '../../../core/options';
 import { contrastColor, dashPattern, extendEndpoints, namedFontSize, labelLineHeight, TEXT_FRAME_INSET, TEXT_FRAME_RISE, uprightLineAngle } from '../../shared/drawing-geometry';
@@ -1284,7 +1285,7 @@ export class DrawingPainter {
 
         const w = d.style.lineWidth;
         const hLine = (show: boolean, color: string, style: DrawingStyle['lineStyle'], y: number | null): void => {
-            if (!show || y == null || isTransparent(color)) return;
+            if (!show || y == null || isTransparentStrokeColor(color)) return;
             this.stroke(ctx, { lineColor: color, lineWidth: w, lineStyle: style }, () => {
                 ctx.moveTo(L.x0, y);
                 ctx.lineTo(L.x1, y);
@@ -1339,7 +1340,7 @@ export class DrawingPainter {
     /** Stroke a connected polyline with a line style (dash + width + color). Skips fully-transparent
      *  colors so the default (hidden) band edges cost nothing. */
     private strokePolyline(ctx: CanvasRenderingContext2D, pts: ReadonlyArray<[number, number]>, style: DrawingStyle): void {
-        if (pts.length < 2 || isTransparent(style.lineColor)) return;
+        if (pts.length < 2 || isTransparentStrokeColor(style.lineColor)) return;
         this.stroke(ctx, style, () => {
             ctx.moveTo(pts[0]![0], pts[0]![1]);
             for (let i = 1; i < pts.length; i += 1) ctx.lineTo(pts[i]![0], pts[i]![1]);
@@ -1865,16 +1866,6 @@ export class DrawingPainter {
         }
     }
 }
-
-/** True when a color is fully transparent (8-digit hex `…00` or an `rgba(…,0)`) — so we can
- *  skip stroking hidden band edges entirely. */
-function isTransparent(color: string): boolean {
-    const c = color.trim().toLowerCase();
-    if (/^#[0-9a-f]{8}$/.test(c)) return c.endsWith('00');
-    const m = /rgba?\([^)]*,\s*([\d.]+)\s*\)$/.exec(c);
-    return m ? parseFloat(m[1]!) === 0 : false;
-}
-
 
 /** Begin a rounded-rectangle path (arcTo-based, no `ctx.roundRect` dependency). */
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
