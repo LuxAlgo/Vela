@@ -75,7 +75,7 @@ export function resolveFormatters(settings: FormatSettings, overrides?: Partial<
         timeStamp(ms, options) {
             const fallback = (): string => base.timeStamp(ms, options);
             if (typeof o.timeStamp !== 'function') return fallback();
-            return viaHost(o.timeStamp, ms, { ...ctx(options?.surface, 'crosshair', options?.timeZone, fallback), withTime: options?.withTime ?? true }, fallback);
+            return viaHost(o.timeStamp, ms, { ...ctx(options?.surface, 'crosshair', options?.timeZone, fallback), withTime: options?.withTime ?? true, ...(options?.withSeconds !== undefined ? { withSeconds: options.withSeconds } : {}) }, fallback);
         },
         duration(ms, options) {
             const fallback = (): string => base.duration(ms, options);

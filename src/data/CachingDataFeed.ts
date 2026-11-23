@@ -4,7 +4,7 @@ import type { OHLCV } from '../core/model/ohlcv';
 import type { Unsubscribe } from '../core/util/types';
 import { BarStore, seriesKey, sharedBarStore } from './BarStore';
 import { parseSymbol } from './ProviderRegistry';
-import { timeframeToMs } from './timeframe';
+import { isVariableDurationTimeframe, timeframeToMs } from './timeframe';
 
 /** Series cache key — the symbol's own grammar carries the venue: a `provider:` prefix
  *  keys per venue (the multi-provider feed hands canonical prefixed symbols down); a
@@ -46,8 +46,10 @@ export class CachingDataFeed implements MarketDataFeed {
     ) {}
 
     async load(cfg: MarketConfig): Promise<OHLCV[]> {
-        // Offline data is already in memory — nothing to cache.
-        if (cfg.data && cfg.data.length > 0) return this.inner.load(cfg);
+        // Offline data is already in memory — nothing to cache. Variable-duration series
+        // (tick bars) may contain duplicate-millisecond bars and depend on external
+        // aggregation state, so they bypass the time-keyed BarStore.
+        if ((cfg.data && cfg.data.length > 0) || isVariableDurationTimeframe(cfg.timeframe ?? '')) return this.inner.load(cfg);
 
         const symbol = cfg.symbol ?? 'TEST';
         const key = cacheKey(symbol, cfg.timeframe ?? '60', cfg.session);
@@ -93,6 +95,7 @@ export class CachingDataFeed implements MarketDataFeed {
     async loadProgressive(cfg: MarketConfig, onBatch: (bars: OHLCV[]) => void, opts?: { signal?: AbortSignal }): Promise<OHLCV[] | null> {
         if (cfg.data && cfg.data.length > 0) return this.inner.load(cfg);
         if (!this.inner.loadProgressive) return null;
+        if (isVariableDurationTimeframe(cfg.timeframe ?? '')) return this.inner.loadProgressive(cfg, onBatch, opts);
         const symbol = cfg.symbol ?? 'TEST';
         const key = cacheKey(symbol, cfg.timeframe ?? '60', cfg.session);
         const cached = this.store.get(key);
@@ -121,6 +124,7 @@ export class CachingDataFeed implements MarketDataFeed {
      */
     async loadRange(cfg: MarketConfig, range: BarRange): Promise<OHLCV[]> {
         if (!this.inner.loadRange) return this.inner.load(cfg);
+        if (isVariableDurationTimeframe(cfg.timeframe ?? '')) return this.inner.loadRange(cfg, range);
         const key = cacheKey(cfg.symbol ?? 'TEST', cfg.timeframe ?? '60', cfg.session);
         let cached = this.store.get(key);
         let newest = cached?.[cached.length - 1];

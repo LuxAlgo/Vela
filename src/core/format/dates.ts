@@ -71,16 +71,20 @@ export function dateFormat(settings: FormatSettings, options: Intl.DateTimeForma
 }
 
 /** The `Intl` options of a time of day under the settings' clock. */
-function clockOptions(settings: FormatSettings): Intl.DateTimeFormatOptions {
-    if (settings.hourCycle === 'h23') return { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' };
-    if (settings.hourCycle === 'h12') return { hour: 'numeric', minute: '2-digit', hourCycle: 'h12' };
-    return { hour: 'numeric', minute: '2-digit' };
+function clockOptions(settings: FormatSettings, withSeconds = false): Intl.DateTimeFormatOptions {
+    const sec = withSeconds ? { second: '2-digit' as const } : {};
+    if (settings.hourCycle === 'h23') return { hour: '2-digit', minute: '2-digit', ...sec, hourCycle: 'h23' };
+    if (settings.hourCycle === 'h12') return { hour: 'numeric', minute: '2-digit', ...sec, hourCycle: 'h12' };
+    return { hour: 'numeric', minute: '2-digit', ...sec };
 }
 
-/** English time of day: Vela's `14:30` on the default clock, `Intl` on any other. */
-function englishClock(wall: Date, settings: FormatSettings): string {
-    if (settings.hourCycle === 'h23') return localizeAscii(`${pad2(wall.getUTCHours())}:${pad2(wall.getUTCMinutes())}`, settings);
-    return stripBidiMarks(dateFormat(settings, clockOptions(settings)).format(wall));
+/** English time of day: Vela's `14:30` (or `14:30:05` with seconds) on the default clock, `Intl` on any other. */
+function englishClock(wall: Date, settings: FormatSettings, withSeconds = false): string {
+    if (settings.hourCycle === 'h23') {
+        const base = `${pad2(wall.getUTCHours())}:${pad2(wall.getUTCMinutes())}`;
+        return localizeAscii(withSeconds ? `${base}:${pad2(wall.getUTCSeconds())}` : base, settings);
+    }
+    return stripBidiMarks(dateFormat(settings, clockOptions(settings, withSeconds)).format(wall));
 }
 
 const TICK_OPTIONS: Record<'year' | 'month' | 'day', Intl.DateTimeFormatOptions> = {
@@ -94,28 +98,30 @@ const isClockUnit = (unit: TimeTickUnit): boolean => unit === 'hour' || unit ===
 export function formatTimeTick(ms: number, options: TimeTickFormatOptions, settings: FormatSettings): string {
     const wall = new Date(ms + (options.offsetMs ?? 0));
     const unit = options.unit;
+    const withSeconds = unit === 'second';
     if (settings.english) {
-        if (isClockUnit(unit)) return englishClock(wall, settings);
+        if (isClockUnit(unit)) return englishClock(wall, settings, withSeconds);
         const month = EN_MONTHS_SHORT[wall.getUTCMonth()]!;
         if (unit === 'year') return localizeAscii(String(wall.getUTCFullYear()), settings);
         if (unit === 'month') return month;
         return localizeAscii(`${month} ${wall.getUTCDate()}`, settings);
     }
-    const opts = isClockUnit(unit) ? clockOptions(settings) : TICK_OPTIONS[unit as 'year' | 'month' | 'day'];
+    const opts = isClockUnit(unit) ? clockOptions(settings, withSeconds) : TICK_OPTIONS[unit as 'year' | 'month' | 'day'];
     return stripBidiMarks(dateFormat(settings, opts).format(wall));
 }
 
 export function formatTimeStamp(ms: number, options: TimeStampFormatOptions | undefined, settings: FormatSettings): string {
     const wall = new Date(ms + zoneOffsetMs(ms, options?.timeZone ?? 'UTC'));
     const withTime = options?.withTime ?? true;
+    const withSeconds = options?.withSeconds === true;
     if (settings.english) {
         const date = localizeAscii(
             `${EN_WEEKDAYS_SHORT[wall.getUTCDay()]} ${wall.getUTCDate()} ${EN_MONTHS_SHORT[wall.getUTCMonth()]} '${pad2(wall.getUTCFullYear() % 100)}`,
             settings,
         );
-        return withTime ? `${date} ${englishClock(wall, settings)}` : date;
+        return withTime ? `${date} ${englishClock(wall, settings, withSeconds)}` : date;
     }
-    const opts: Intl.DateTimeFormatOptions = { weekday: 'short', day: 'numeric', month: 'short', year: '2-digit', ...(withTime ? clockOptions(settings) : {}) };
+    const opts: Intl.DateTimeFormatOptions = { weekday: 'short', day: 'numeric', month: 'short', year: '2-digit', ...(withTime ? clockOptions(settings, withSeconds) : {}) };
     return stripBidiMarks(dateFormat(settings, opts).format(wall));
 }
 

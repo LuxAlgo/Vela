@@ -12,7 +12,9 @@ import type { OHLCV } from '../core/model/ohlcv';
 import type { VisibleRangePreset } from '../core/visible-range';
 import type { VisibleRange } from '../core/ports/IChartRenderer';
 import type { DrawingsOption } from '../core/drawings';
-import type { MarketDataFeed } from '../core/ports/MarketDataFeed';
+import type { MarketDataFeed, SymbolInfo } from '../core/ports/MarketDataFeed';
+import { isTickTimeframe } from '../data/timeframe';
+import { matchSeriesAdapter } from '../data/series-adapters';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import type { IndicatorHandle } from '../core/IndicatorHandle';
 import type { VelaEventMap } from '../core/events/types';
@@ -219,6 +221,10 @@ export interface CellDeps {
     /** What the cell can draw changed with its symbol's facts — the drawn style, the greyed
      *  styles — while the chosen style did not: refresh the style chrome, nothing to save. */
     onPriceStyleShown?(id: string): void;
+    /** The workspace's configured timeframe presets, for per-symbol availability checks. */
+    timeframes?(): readonly string[];
+    /** Per-symbol timeframe availability changed — refresh the timeframe chrome, nothing to save. */
+    onTimeframesShown?(id: string): void;
     /** The cell's indicator ledger changed (count/picker refresh upstream). */
     onIndicatorsChanged(id: string): void;
     /** A Status line tab or watermark pref changed on this cell (the style link mirrors upstream). */
@@ -302,6 +308,8 @@ export class ChartCell {
     /** Latched: the symbol's own trading zone (`SymbolInfo.timezone`) — what the exchange
      *  rule resolves to on this cell. Undefined until metadata lands or when none is declared. */
     private exchangeZone: string | undefined;
+    /** Timeframe presets the active symbol's source cannot serve (greyed in pickers). */
+    private unavailableTfs: string[] = [];
 
     private inner: Vela | null;
     /** The live app theme — seeded from deps, updated on `theme:changed` (the base the
@@ -768,7 +776,64 @@ export class ChartCell {
                 this.pushSettingsSections(); // the Trading session group follows the symbol
             }
             this.refreshSessionShading();
+            void this.refreshTimeframeAvailability(chart, symbol, si);
         });
+    }
+
+    /** Compute which workspace timeframe presets are unavailable for `(symbol, si)` and notify
+     *  the shell if the set changed. Checks registered series adapters first, then symbol metadata. */
+    private async refreshTimeframeAvailability(chart: Vela, symbol: string, si: SymbolInfo | undefined): Promise<void> {
+        const list = this.deps.timeframes?.();
+        if (!list || list.length === 0) return;
+        const resolved = chart.data.resolve(symbol);
+        const provider = resolved ? chart.data.providerInstance(resolved.provider) : undefined;
+        const providerInfo = provider?.info?.();
+        const providerHasTicks = providerInfo?.supportedTimeframes?.some((t) => isTickTimeframe(t)) === true;
+        const siList = si?.timeframes?.list?.map((t) => chartTimeframeOf(t)).filter((t): t is string => t !== null);
+        const siFinestMs = si?.timeframes?.finest !== undefined ? timeframeMs(si.timeframes.finest) : NaN;
+        const siHasTicks = si?.timeframes?.ticks === true || si?.['has_ticks'] === true;
+
+        const next: string[] = [];
+        for (const tf of list) {
+            const adapter = resolved && provider ? matchSeriesAdapter(tf, provider, resolved.provider) : undefined;
+            if (adapter?.supports && resolved && provider) {
+                let ok = true;
+                try {
+                    ok = await adapter.supports(
+                        {
+                            providerName: resolved.provider,
+                            provider,
+                            ticker: resolved.ticker,
+                            session: this.session,
+                            symbolInfo: async () => si,
+                        },
+                        tf,
+                    );
+                } catch {
+                    ok = false;
+                }
+                if (this.inner !== chart || this.metadataProbeSymbol !== symbol) return;
+                if (!ok) next.push(tf);
+                continue;
+            }
+            if (isTickTimeframe(tf)) {
+                const inList = siList?.includes(chartTimeframeOf(tf) ?? tf) === true;
+                if (si !== undefined && !siHasTicks && !inList && !providerHasTicks) next.push(tf);
+                continue;
+            }
+            if (siList) {
+                const canon = chartTimeframeOf(tf) ?? tf;
+                if (!siList.includes(canon)) next.push(tf);
+            } else if (Number.isFinite(siFinestMs)) {
+                const tfMs = timeframeMs(tf);
+                if (Number.isFinite(tfMs) && tfMs < siFinestMs) next.push(tf);
+            }
+        }
+        if (this.inner !== chart || this.metadataProbeSymbol !== symbol) return;
+        const same = next.length === this.unavailableTfs.length && next.every((v, i) => v === this.unavailableTfs[i]);
+        if (same) return;
+        this.unavailableTfs = next;
+        this.deps.onTimeframesShown?.(this.id);
     }
 
     /** (Re)derive the pre/post-market shading bands for this cell's market. The bands
@@ -1095,6 +1160,11 @@ export class ChartCell {
         return typeof live === 'string' ? live : (this.state.priceStyle ?? 'candles');
     }
 
+    /** The timeframe presets the cell's current symbol cannot serve (greyed in pickers). */
+    unavailableTimeframes(): readonly string[] {
+        return this.unavailableTfs;
+    }
+
     /** The style ids the symbol's data cannot draw — greyed in the style pickers. Empty while
      *  the symbol's facts are unknown. */
     unavailablePriceStyles(): string[] {
@@ -1158,7 +1228,7 @@ export class ChartCell {
         const asked = timeframeLabel(e.timeframe, i18n);
         const to = chartTimeframeOf(e.default) ?? chartTimeframeOf(e.finest);
         const again = this.fallback !== null && this.fallback.symbol === e.symbol && this.fallback.timeframe === e.timeframe;
-        if (to === null || again || timeframeMs(to) === timeframeMs(e.timeframe)) {
+        if (to === null || again || to === e.timeframe || timeframeMs(to) === timeframeMs(e.timeframe)) {
             this.deps.toast(textOf(i18n, TEXT.unavailable, { symbol, timeframe: asked }), 'error', 6000);
             return;
         }
