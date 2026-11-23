@@ -13,7 +13,7 @@ import { chartType } from '../chart-types/registry';
 import { topbarActionOverride, widgetActions, type SidePanelButton, type WidgetContext } from './contributions';
 import { resolveTopbarComposition, topbarHas, TOPBAR_BUILTIN_IDS, type ResolvedTopbarComposition, type TopbarComposition } from './topbar-composition';
 import { BUILTIN_PRICE_STYLES, priceStyleIds } from '../renderers/native/core/chartConfig';
-import { favoriteTimeframeChips, timeframeLabel } from './timeframe';
+import { favoriteTimeframeChips, parseTimeframe, timeframeLabel } from './timeframe';
 import { parseSymbol } from '../data/ProviderRegistry';
 import { css } from '@luxalgo/vela-ui/css';
 import { t } from '@luxalgo/vela-ui/t';
@@ -240,6 +240,7 @@ const TEXT = {
     layout: msg('widget.topbar.layout', 'Layout'),
     switchTimeframe: msg('widget.topbar.switchTimeframe', 'Switch timeframe to {timeframe}'),
     currentTimeframe: msg('widget.topbar.currentTimeframe', 'Timeframe — {timeframe}'),
+    timeframeUnavailable: msg('widget.topbar.timeframeUnavailable', 'Not available for this symbol'),
     currentLayout: msg('widget.topbar.currentLayout', 'Layout — {layout}'),
     currentStyle: msg('widget.topbar.currentStyle', 'Chart style — {style}'),
 };
@@ -292,6 +293,8 @@ export class Topbar {
     private priceStyle: string;
     /** Style ids the current symbol's data cannot draw: listed greyed, not selectable. */
     private unavailableStyles: ReadonlySet<string> = new Set();
+    /** Timeframe ids the current symbol's data cannot serve: listed greyed, not selectable. */
+    private unavailableTimeframes: ReadonlySet<string> = new Set();
     private readonly onHairlineSync = (): void => {
         if (this.hairlineRaf) return;
         const win = this.el.ownerDocument.defaultView;
@@ -537,6 +540,12 @@ export class Topbar {
         this.timeframe = tf;
         this.tfMenu.setItems(this.tfItems());
         this.renderTfChips();
+    }
+
+    /** Reflect the timeframes the current symbol's source cannot serve (greyed in the menu). */
+    setUnavailableTimeframes(unavailable: readonly string[] = []): void {
+        this.unavailableTimeframes = new Set(unavailable);
+        this.tfMenu.setItems(this.tfItems());
     }
 
     /** Reflect the favorite-timeframe set — the quick-switch chips and the dropdown stars. */
@@ -797,12 +806,21 @@ export class Topbar {
     private tfItems(): MenuItemDescriptor[] {
         // Stars only when the host handles the toggle — a starless dropdown otherwise.
         const stars = this.opts.onTimeframeFavorite !== undefined;
-        return this.opts.timeframes.map((tf) => ({
-            id: tf,
-            label: timeframeLabel(tf, this.i18n),
-            checked: tf === this.timeframe,
-            ...(stars ? { favorite: this.tfFavs.includes(tf) } : {}),
-        }));
+        let prevGroup: string | null = null;
+        return this.opts.timeframes.map((tf) => {
+            const group = timeframeFamily(tf);
+            const separatorBefore = prevGroup !== null && group !== prevGroup;
+            prevGroup = group;
+            const disabled = this.unavailableTimeframes.has(tf);
+            return {
+                id: tf,
+                label: timeframeLabel(tf, this.i18n),
+                checked: tf === this.timeframe,
+                ...(separatorBefore ? { separatorBefore: true } : {}),
+                ...(disabled ? { disabled: true, title: this.t(TEXT.timeframeUnavailable) } : {}),
+                ...(stars ? { favorite: this.tfFavs.includes(tf) } : {}),
+            };
+        });
     }
 
     private styleItems(): MenuItemDescriptor[] {
@@ -819,4 +837,12 @@ export class Topbar {
             ...(this.unavailableStyles.has(id) ? { disabled: true, title: this.t(PRICE_STYLE_UNAVAILABLE) } : {}),
         }));
     }
+}
+
+/** Broad timeframe unit family — separates ticks, seconds, and standard time bars cleanly. */
+function timeframeFamily(tf: string): 'ticks' | 'seconds' | 'time' {
+    const unit = parseTimeframe(tf).unit;
+    if (unit === 'T') return 'ticks';
+    if (unit === 'S') return 'seconds';
+    return 'time';
 }

@@ -15,6 +15,7 @@ import type { MarketSession } from '../core/options';
 import type { VisibleRange } from '../core/ports/IChartRenderer';
 import type { SymbolInfo } from '../core/ports/MarketDataFeed';
 import type { CalendarWindow } from './market-status';
+import { isVariableDurationTimeframe } from '../data/timeframe';
 import { timeframeMs } from './timeframe';
 
 /** The `sessionZones` feature payload: `[start, end)` epoch-ms bands per phase.
@@ -237,7 +238,7 @@ export class SessionShadingTracker {
         this.covered = null;
         this.session = opts.session;
         const tfMs = timeframeMs(opts.timeframe);
-        this.intraday = Number.isFinite(tfMs) && tfMs < DAY_MS;
+        this.intraday = isVariableDurationTimeframe(opts.timeframe) || (Number.isFinite(tfMs) && tfMs < DAY_MS);
         this.lastRange = opts.range;
         void data
             .symbolInfo(symbol)

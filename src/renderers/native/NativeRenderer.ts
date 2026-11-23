@@ -28,7 +28,7 @@ import { textOf } from '../../core/i18n/text';
 import type { MessageLike } from '../../core/i18n/types';
 import { ENGLISH_FORMAT } from '../../core/format/formatters';
 import type { FormatSurface } from '../../core/format/types';
-import type { OHLCV } from '../../core/model/ohlcv';
+import { isSameBar, isNewerBar, type OHLCV } from '../../core/model/ohlcv';
 import type { Millis } from '../../core/model/time';
 import type { VolumeLayerData, VpvrLayerData } from '../../core/model/volume-layers';
 import type { Pane } from '../../core/model/scene';
@@ -2120,7 +2120,7 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     // ── price data ──
-    setBars(bars: OHLCV[], opts?: { preserveView?: boolean }): void {
+    setBars(bars: OHLCV[], opts?: { preserveView?: boolean; variableDuration?: boolean }): void {
         if (this.introRaf != null) { cancelAnimationFrame(this.introRaf); this.introRaf = null; this.modelAlpha = 1; } // a re-set interrupts a running reveal
         // A series replacement invalidates the forming-bar glide: after an in-place market
         // switch the NEW market's forming bar shares the same bucket open-time, so a stale
@@ -2130,12 +2130,14 @@ export class NativeRenderer implements IChartRenderer {
         this.liveEaseTime = 0;
         const prevBars = this.bars;
         const prevHeadTime = prevBars[0]?.time;
-        this.bars = normalizeBars(bars);
+        this.scene.variableDuration = opts?.variableDuration === true;
+        this.bars = normalizeBars(bars, this.scene.variableDuration);
         this.scene.bars = this.bars;
         this.coords.setBars(this.bars.map((b) => b.time));
         // The newest candle may already prove this device's clock slow (see ClockCorrection).
+        // Variable-duration bars (ticks) are not aligned to wall-clock periods, so skip it.
         const newest = this.bars[this.bars.length - 1];
-        if (newest) clockCorrection.observeCandle(newest.time, this.coords.barInterval);
+        if (newest && !this.scene.variableDuration) clockCorrection.observeCandle(newest.time, this.coords.barInterval);
         // The bar array's head may have moved (a history-backfill prepend) — re-derive
         // every mounted model's anchor offset against the new indices.
         for (const model of this.scene.indicators.values()) this.refreshAnchorOffset(model);
@@ -2192,14 +2194,14 @@ export class NativeRenderer implements IChartRenderer {
     updateBar(bar: OHLCV): void {
         const n = this.bars.length;
         const last = this.bars[n - 1];
-        if (last && bar.time === last.time) {
+        if (last && isSameBar(last, bar)) {
             this.bars[n - 1] = bar; // actual forming bar — the ease target
             if (!this.animLiveBar.on || this.liveEaseTime !== bar.time) {
                 this.syncLiveEase(bar); // glide off, or the first tick of this bar: snap
             } else {
                 this.animator.start(); // glide the displayed high/low/close toward this tick
             }
-        } else if (!last || bar.time > last.time) {
+        } else if (!last || isNewerBar(bar, last)) {
             // The newest bar is scrolled off the right edge (and no glide is bringing it
             // back): the user is reading history — hold the view on the same bars instead of
             // sliding it along with every new one.
@@ -2214,7 +2216,7 @@ export class NativeRenderer implements IChartRenderer {
             if (holdView) this.coords.setViewport({ ...vp, rightOffset: vp.rightOffset - 1 });
             // A candle landing before the device clock reaches its open proves the clock
             // slow — learned before this frame paints, so the countdown never reads `01:04`.
-            clockCorrection.observeCandle(bar.time, this.coords.barInterval);
+            if (!this.scene.variableDuration) clockCorrection.observeCandle(bar.time, this.coords.barInterval);
         } else {
             return;
         }
@@ -4776,14 +4778,25 @@ function asScaleMode(v: unknown): ScaleMode {
     return v === 'percent' || v === 'indexed' ? v : 'price';
 }
 
-/** Sort ascending + dedupe by time (last write wins). */
-function normalizeBars(bars: OHLCV[]): OHLCV[] {
-    const sorted = [...bars].sort((a, b) => a.time - b.time);
+/** Sort ascending + dedupe (last write wins). Variable-duration series (tick charts)
+ *  preserve distinct bars that open in the same millisecond, collapsing only bars that
+ *  explicitly share the same `(time, seq)` identity. */
+function normalizeBars(bars: OHLCV[], preserveDuplicateTimes = false): OHLCV[] {
+    const sorted = [...bars].sort((a, b) => a.time - b.time || (a.seq ?? 0) - (b.seq ?? 0));
     const out: OHLCV[] = [];
     for (const bar of sorted) {
         const last = out[out.length - 1];
-        if (last && last.time === bar.time) out[out.length - 1] = bar;
-        else out.push(bar);
+        if (last && last.time === bar.time) {
+            if (!preserveDuplicateTimes) {
+                out[out.length - 1] = bar;
+                continue;
+            }
+            if (last.seq !== undefined && bar.seq !== undefined && last.seq === bar.seq) {
+                out[out.length - 1] = bar;
+                continue;
+            }
+        }
+        out.push(bar);
     }
     return out;
 }

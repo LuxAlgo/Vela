@@ -7,6 +7,7 @@ import type { Unsubscribe } from '../core/util/types';
 import { ProviderRegistry, parseSymbol, type Resolved } from './ProviderRegistry';
 import { CachingDataFeed } from './CachingDataFeed';
 import { BarStore, sharedBarStore } from './BarStore';
+import { matchSeriesAdapter, type SeriesAdapter, type SeriesAdapterContext } from './series-adapters';
 import { DataUnavailableError, dataUnavailableMessage, isDataUnavailableError } from '../core/data-unavailable';
 
 
@@ -36,7 +37,10 @@ export class MultiProviderFeed implements MarketDataFeed {
     private readonly symInfoInflight = new Map<string, Promise<SymbolInfo | undefined>>();
 
     constructor(store: BarStore = sharedBarStore) {
-        this.cache = new CachingDataFeed(new RegistryFetchFeed(this.registry), store);
+        this.cache = new CachingDataFeed(
+            new RegistryFetchFeed(this.registry, (resolved) => this.fetchSymbolInfo(resolved)),
+            store,
+        );
     }
 
     // ── Registry surface (driven by chart.data / DataControl) ──────────────
@@ -277,34 +281,66 @@ function refusalOf(e: DataUnavailableError, ticker: string, tf: string): DataUna
     return new DataUnavailableError(details, e.message === dataUnavailableMessage(e) ? undefined : e.message);
 }
 
+async function safeAdapterBars(adapter: SeriesAdapter, ctx: SeriesAdapterContext, range: BarRange): Promise<OHLCV[]> {
+    try {
+        return await adapter.getBars(ctx, range);
+    } catch (e) {
+        if (isDataUnavailableError(e)) throw refusalOf(e, ctx.ticker, ctx.timeframe);
+        console.warn(`[vela] series adapter "${adapter.id}" fetch failed for ${ctx.ticker} ${ctx.timeframe} — ${e instanceof Error ? e.message : String(e)}`);
+        return [];
+    }
+}
+
 /**
  * The cache's inner feed: given a CANONICAL config (provider name + ticker already
- * resolved), look the provider up and call its neutral `getBars` / `subscribe`.
- * Live ticks use the provider's `subscribe` if it has one, else a generic 3s poll.
+ * resolved), look the provider up and call its neutral `getBars` / `subscribe` — or a
+ * matching registered {@link SeriesAdapter}. Live ticks use `subscribe` if present, else
+ * a generic 3s poll.
  */
 class RegistryFetchFeed implements MarketDataFeed {
-    constructor(private readonly registry: ProviderRegistry) {}
+    constructor(
+        private readonly registry: ProviderRegistry,
+        private readonly readSymbolInfo: (resolved: Resolved) => Promise<SymbolInfo | undefined>,
+    ) {}
+
+    private adapterContext(name: string, provider: DataProvider, ticker: string, timeframe: string, session?: string): SeriesAdapterContext {
+        return {
+            providerName: name,
+            provider,
+            ticker,
+            timeframe,
+            ...(session !== undefined ? { session } : {}),
+            symbolInfo: () => this.readSymbolInfo({ provider: name, ticker }),
+        };
+    }
 
     load(cfg: MarketConfig): Promise<OHLCV[]> {
         const { provider: name, ticker } = parseSymbol(cfg.symbol ?? '');
         const provider = this.registry.get(name ?? '');
         if (!provider) return Promise.resolve([]);
-        return safeBars(provider, ticker, cfg.timeframe ?? '60', { limit: cfg.bars ?? 500, session: cfg.session });
+        const tf = cfg.timeframe ?? '60';
+        const range: BarRange = { limit: cfg.bars ?? 500, session: cfg.session };
+        const adapter = matchSeriesAdapter(tf, provider, name ?? '');
+        if (adapter) return safeAdapterBars(adapter, this.adapterContext(name ?? '', provider, ticker, tf, cfg.session), range);
+        return safeBars(provider, ticker, tf, range);
     }
 
     async loadProgressive(cfg: MarketConfig, onBatch: (bars: OHLCV[]) => void, opts?: { signal?: AbortSignal }): Promise<OHLCV[] | null> {
         const { provider: name, ticker } = parseSymbol(cfg.symbol ?? '');
         const provider = this.registry.get(name ?? '');
         if (!provider) return [];
+        const tf = cfg.timeframe ?? '60';
+        // Series adapters own their own bar construction through `load` — never bypass them.
+        if (matchSeriesAdapter(tf, provider, name ?? '')) return null;
         if (!provider.getBarsProgressive) return null; // incapable — the caller keeps its own paths
         try {
-            return await provider.getBarsProgressive(ticker, cfg.timeframe ?? '60', { limit: cfg.bars ?? 500, session: cfg.session }, onBatch, opts);
+            return await provider.getBarsProgressive(ticker, tf, { limit: cfg.bars ?? 500, session: cfg.session }, onBatch, opts);
         } catch (e) {
             // Same fault posture as `safeBars`: a throwing provider empties the chart,
             // never rejects the load — batches already painted stay painted. A permanent
             // refusal rejects, as there.
-            if (isDataUnavailableError(e)) throw refusalOf(e, ticker, cfg.timeframe ?? '60');
-            console.warn(`[vela] progressive fetch failed for ${ticker} ${cfg.timeframe ?? '60'} — ${e instanceof Error ? e.message : String(e)}`);
+            if (isDataUnavailableError(e)) throw refusalOf(e, ticker, tf);
+            console.warn(`[vela] progressive fetch failed for ${ticker} ${tf} — ${e instanceof Error ? e.message : String(e)}`);
             return [];
         }
     }
@@ -313,7 +349,11 @@ class RegistryFetchFeed implements MarketDataFeed {
         const { provider: name, ticker } = parseSymbol(cfg.symbol ?? '');
         const provider = this.registry.get(name ?? '');
         if (!provider) return Promise.resolve([]);
-        return safeBars(provider, ticker, cfg.timeframe ?? '60', { ...range, session: cfg.session });
+        const tf = cfg.timeframe ?? '60';
+        const mergedRange: BarRange = { ...range, session: cfg.session };
+        const adapter = matchSeriesAdapter(tf, provider, name ?? '');
+        if (adapter) return safeAdapterBars(adapter, this.adapterContext(name ?? '', provider, ticker, tf, cfg.session), mergedRange);
+        return safeBars(provider, ticker, tf, mergedRange);
     }
 
     subscribe(cfg: MarketConfig, onBar: (bar: OHLCV) => void): Unsubscribe {
@@ -321,16 +361,25 @@ class RegistryFetchFeed implements MarketDataFeed {
         const provider = this.registry.get(name ?? '');
         if (!provider) return () => {};
         const tf = cfg.timeframe ?? '60';
+        const adapter = matchSeriesAdapter(tf, provider, name ?? '');
+        if (adapter) {
+            const ctx = this.adapterContext(name ?? '', provider, ticker, tf, cfg.session);
+            if (adapter.subscribe) return adapter.subscribe(ctx, onBar);
+            return this.poll(() => adapter.getBars(ctx, { limit: 2, session: cfg.session }), onBar);
+        }
         if (provider.subscribe) return provider.subscribe(ticker, tf, onBar, cfg.session ? { session: cfg.session } : undefined);
+        return this.poll(() => provider.getBars(ticker, tf, { limit: 2, session: cfg.session }), onBar);
+    }
 
+    private poll(fetchLatest: () => Promise<OHLCV[]>, onBar: (bar: OHLCV) => void): Unsubscribe {
         let stopped = false;
         let timer: ReturnType<typeof setTimeout> | null = null;
         const poll = async (): Promise<void> => {
             if (stopped) return;
             try {
                 // Last two bars: the (possibly just-closed) previous bar and the forming
-                // one. onBar dedupes by time, so the older one is harmless.
-                const bars = await provider.getBars(ticker, tf, { limit: 2, session: cfg.session });
+                // one. onBar dedupes by time/seq, so the older one is harmless.
+                const bars = await fetchLatest();
                 // Re-check AFTER the await: an unsubscribe during the fetch (a market
                 // switch) must not push the OLD market's bars into the new series — on the
                 // same timeframe the forming bar shares its open time, so a stale bar would

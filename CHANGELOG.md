@@ -2,6 +2,12 @@
 
 All notable changes to Vela, newest first.
 
+## [0.10.16]
+
+### Added
+
+- **Tick timeframes (`nT`) and pluggable series adapters.** Vela now recognizes tick-count timeframes (`1T`, `10T`, `100T`, `1000T`, or bare `T`) across timeframe parsing, picker sorting, and per-symbol availability gating, and exposes `registerSeriesAdapter` on the plugin SDK so extensions can supply custom or variable-duration bar series. On variable-duration series, bars carry an optional monotonic `seq` identity for same-millisecond updates, sub-minute time-axis ticks and crosshair stamps show seconds, the bar-close countdown hides automatically, and fixed-interval gap healing stands down.
+
 ## [0.10.15]
 
 ### Added
