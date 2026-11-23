@@ -298,6 +298,10 @@ export class SymbolPicker {
     /** The ranked pool cache — `key` fingerprints the raw pool the ranking ran on. */
     private ranked: { key: string; result: SymbolDescriptor[] } | null = null;
     private ranking = false;
+    /** The dialog is showing, by its own open/close callbacks (set before the open-time
+     *  rebuild runs). A ranking that lands while it is closed repaints nothing: the next
+     *  open rebuilds the rows, so no row icons load for a list nobody sees. */
+    private shown = false;
 
     constructor(private readonly opts: SymbolPickerOptions) {
         const doc = (opts.host ?? document.body).ownerDocument;
@@ -345,6 +349,7 @@ export class SymbolPicker {
             flush: true,
             content: (body) => body.append(head, this.list),
             onOpenChange: (open) => {
+                this.shown = open;
                 if (open) {
                     this.relabel();
                     this.input.value = this.seed.toUpperCase();
@@ -499,7 +504,7 @@ export class SymbolPicker {
                 })
                 .finally(() => {
                     this.ranking = false;
-                    this.refresh(); // repaint the (possibly open) list with the ranked pool
+                    if (this.shown) this.refresh(); // repaint the open list with the ranked pool
                 });
         }
         return this.ranked?.result ?? raw;
