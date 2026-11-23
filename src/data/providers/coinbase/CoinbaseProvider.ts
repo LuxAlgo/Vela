@@ -29,6 +29,9 @@ const MAX_CANDLES_PER_REQ = 300;
 /** Public REST shaping: a small concurrency cap + min-spacing keeps the sustained rate under ~10/s. */
 const REST_CONCURRENCY = 4;
 const REST_MIN_INTERVAL_MS = 120;
+/** How long the landed products list answers per-symbol info (the chart's own symbol-info
+ *  freshness); older, the product is asked for. */
+const PRODUCTS_INFO_TTL_MS = 10 * 60_000;
 /** How many times a single request retries after a 429 before giving up. */
 const REQUEST_MAX_RETRIES = 4;
 /** Exponential-backoff base + jitter for a 429 retry when no Retry-After is given (ms). */
@@ -170,6 +173,9 @@ function clampLimit(bars: OHLCV[], limit?: number): OHLCV[] {
 export class CoinbaseProvider implements DataProvider {
     /** Cached symbol enumeration (the products list is large; fetch once). */
     private symbolsPromise: Promise<SymbolDescriptor[]> | null = null;
+    /** The products list once it has LANDED, by id — per-symbol info reads it instead of
+     *  spending a gated request (and the gate's spacing) on `/products/{id}`. */
+    private products: { at: number; byId: Map<string, CoinbaseProduct> } | null = null;
     /** Shared request gate: caps concurrency, spaces request starts, honors 429 backoff. */
     private readonly gate = new RequestGate(REST_CONCURRENCY, REST_MIN_INTERVAL_MS);
 
@@ -223,7 +229,10 @@ export class CoinbaseProvider implements DataProvider {
 
     async getSymbolInfo(ticker: string): Promise<SymbolInfo | undefined> {
         const product = parseProductId(ticker);
-        const p = (await this.json(`${REST_BASE}/products/${product}`).catch(() => null)) as CoinbaseProduct | null;
+        // The landed products list holds the same record `/products/{id}` answers; only a
+        // product it lacks, or a list older than PRODUCTS_INFO_TTL_MS, is asked for.
+        const listed = this.products && Date.now() - this.products.at < PRODUCTS_INFO_TTL_MS ? this.products.byId.get(product) : undefined;
+        const p = listed ?? ((await this.json(`${REST_BASE}/products/${product}`).catch(() => null)) as CoinbaseProduct | null);
         if (!p || !p.id) return undefined;
         const tickSize = p.quote_increment != null ? parseFloat(p.quote_increment) : 0.01;
         const mintick = tickSize > 0 ? tickSize : 0.01;
@@ -271,7 +280,9 @@ export class CoinbaseProvider implements DataProvider {
 
     private async fetchProducts(): Promise<CoinbaseProduct[]> {
         const data = await this.json(`${REST_BASE}/products`);
-        return Array.isArray(data) ? (data as CoinbaseProduct[]) : [];
+        const list = Array.isArray(data) ? (data as CoinbaseProduct[]) : [];
+        this.products = { at: Date.now(), byId: new Map(list.filter((p) => p && typeof p.id === 'string').map((p) => [p.id, p])) };
+        return list;
     }
 
     /**

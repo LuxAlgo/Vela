@@ -26,7 +26,7 @@ import { ChartContextMenu } from '../widget/context-menu';
 import { WidgetHistory } from '../widget/history';
 import type { RangePreset } from '../widget/bottombar';
 import { indicatorLedger, ledgerEntryName, ledgerNativeType, type LedgerManifestEntry, type LedgerNativeEntry, type ResolvedIndicator } from '../widget/indicators';
-import { inputDeltas, type InputValue } from '../core/model/inputs';
+import { inputDeltas, type InputValue, type SymbolPickerFn } from '../core/model/inputs';
 import {
     legendActionsProviderFor,
     legendCalloutsProviderFor,
@@ -182,6 +182,9 @@ export interface CellDeps {
     /** Where the renderer mounts its MODAL dialogs (chart/indicator settings) — the
      *  workspace root, so dialogs center over the whole grid instead of one cell. */
     dialogHost: HTMLElement;
+    /** Default symbol picker wired onto every cell's renderer for `input.symbol` controls
+     *  (a host attachment can still override it via `chart.renderer.setSymbolPicker`). */
+    symbolPicker?: SymbolPickerFn;
     /** The workspace-global display-timezone CHOICE — an IANA zone, or the exchange
      *  rule, which each cell resolves to its own market's zone ({@link ChartCell.applyTimezone}). */
     timezone(): string;
@@ -420,6 +423,7 @@ export class ChartCell {
         // Modal dialogs (chart settings, indicator settings) escape the cell's
         // overflow clip and center over the whole grid.
         this.inner.renderer.set('dialogHost', deps.dialogHost);
+        if (deps.symbolPicker) this.inner.renderer.setSymbolPicker(deps.symbolPicker);
         // Contributed legend-row actions — the row resolves on THIS cell's chart; the
         // context follows the workspace rule (built fresh per click, active-cell bound).
         this.inner.renderer.setLegendActions(legendActionsProviderFor(this.inner, () => deps.context()));
@@ -1383,14 +1387,15 @@ export class ChartCell {
         ];
     }
 
-    /** Add by picker LIBRARY index (natives precede the manifest — mirrors libraryRows). */
-    addFromLibrary(index: number): void {
+    /** Add by picker LIBRARY index (natives precede the manifest — mirrors libraryRows).
+     *  Returns `true` when the added study needs user input configuration (and opened its
+     *  settings dialog), so the caller can close the library picker cleanly. */
+    addFromLibrary(index: number): boolean {
         const natives = this.supportedNatives();
-        if (index < natives.length) this.addNative(natives[index]!.type);
-        else {
-            const entry = this.manifest[index - natives.length];
-            if (entry) this.addManifestInstance(entry);
-        }
+        if (index < natives.length) return this.addNative(natives[index]!.type, { confirmInputs: true });
+        const entry = this.manifest[index - natives.length];
+        if (entry) this.addManifestInstance(entry);
+        return false;
     }
 
     /** Remove by picker ON-CHART index (native instances precede script instances — mirrors onChartRows). */
@@ -1505,14 +1510,14 @@ export class ChartCell {
         if (handle.visible !== visible) handle.setVisible(visible);
     }
 
-    addNative(type: string): void {
+    addNative(type: string, opts?: { confirmInputs?: boolean }): boolean {
         const chart = this.inner;
-        if (!chart) return;
+        if (!chart) return false;
         const before = new Set(chart.indicators().map((h) => h.id));
         let added: IndicatorHandle | null = chart.addNativeIndicator(type);
         this.syncPresentNatives();
         this.refreshNativeCatalog();
-        if (before.has(added.id)) return;
+        if (before.has(added.id)) return false;
         this.history.push({
             undo: () => {
                 added?.remove();
@@ -1524,6 +1529,19 @@ export class ChartCell {
                 this.refreshNativeCatalog();
             },
         });
+        if (opts?.confirmInputs) {
+            const values = added.inputValues();
+            const needsConfig = added.inputs.some((inp) => inp.confirm && String(values[inp.key] ?? inp.defval ?? '') === '');
+            if (needsConfig) {
+                const targetId = added.id;
+                const off = added.on('ready', () => {
+                    off();
+                    if (!this.destroyed && this.inner === chart) chart.renderer.openIndicatorSettings(targetId);
+                });
+                return true;
+            }
+        }
+        return false;
     }
 
     private removeNative(handle: IndicatorHandle): void {

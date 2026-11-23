@@ -8,6 +8,7 @@ import { trendSpecs } from './trend';
 import { volatilitySpecs } from './volatility';
 import { volumeSpecs } from './volume';
 import { overlaySpecs } from './overlays';
+import { correlationSpecs } from './correlation';
 
 /**
  * The classic indicator catalog — the standard technical-analysis studies every
@@ -23,6 +24,7 @@ export const classicSpecs: ClassicIndicatorSpec[] = [
     ...volatilitySpecs,
     ...volumeSpecs,
     ...overlaySpecs,
+    ...correlationSpecs,
 ];
 
 /** Register the classic indicator catalog (idempotent). Called by the composition root. */

@@ -3,6 +3,15 @@
 All notable changes to `@luxalgo/vela-ui`, newest first. Vela's own changes, including how it
 uses the kit, are in [Vela's changelog](../../CHANGELOG.md).
 
+## [0.4.4]
+
+### Fixed
+
+- **A dialog opened on top of another dialog stacks above it.** Opening a dialog that was
+  already mounted earlier in the host now moves its backdrop and positioner to the end of
+  the host, so nested dialogs such as a symbol picker opened from indicator settings appear
+  in front of the dialog that triggered them.
+
 ## [0.4.3]
 
 ### Added

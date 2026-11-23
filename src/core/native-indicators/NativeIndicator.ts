@@ -5,6 +5,8 @@ import type { Fill, Background, PriceLine } from '../model/scene';
 import type { DrawingLine, DrawingBox, DrawingLabel, DrawingPolyline, DrawingLinefill, DrawingTable } from '../model/drawings';
 import type { InputSchema, InputValue } from '../model/inputs';
 import type { VisibleRange, IndicatorStatus } from '../ports/IChartRenderer';
+import type { BarRange } from '../ports/MarketDataFeed';
+import type { Unsubscribe } from '../util/types';
 import type { DataControl } from '../DataControl';
 import type { MessageLike, Translator } from '../i18n/types';
 import { textOf } from '../i18n/text';
@@ -55,6 +57,17 @@ export interface NativeIndicatorContext {
     bars(): readonly OHLCV[];
     /** Market-data access (trades / capabilities) for data-driven natives. */
     readonly data: DataControl;
+    /**
+     * Fetch bars for another symbol/timeframe through the chart's data feed (the same gateway
+     * scripting engines use). Unresolvable or empty answers resolve to `[]`.
+     */
+    fetchSeries?(symbol: string, timeframe: string, range: BarRange): Promise<OHLCV[]>;
+    /**
+     * Subscribe to live bar updates for another symbol/timeframe. Returns an unsubscribe
+     * function; always a no-op while `live` is `false` (bar replay or static mode), and
+     * automatically torn down when this indicator context stops.
+     */
+    subscribeSeries?(symbol: string, timeframe: string, onBar: (bar: OHLCV) => void): Unsubscribe;
     /**
      * Push a fresh render output; the chart mounts it (first call) or patches it (subsequent).
      * Series payloads are index-aligned: one slot per bar of `bars()` AS IT STANDS AT THE

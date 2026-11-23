@@ -2,6 +2,58 @@
 
 All notable changes to Vela, newest first.
 
+## [0.10.15]
+
+### Added
+
+- **Ichimoku Cloud, Correlation Coefficient, Correlation - Log, and Volatility Close-to-Close built-in indicators.**
+  Ichimoku Cloud plots Conversion Line, Base Line, backward-shifted Lagging Span, and the
+  forward-projected bullish/bearish cloud into the chart's right whitespace, with an optional
+  secondary symbol input. Correlation Coefficient and Correlation - Log compute rolling Pearson
+  correlation across instruments (prices or log returns) in their own pane and open their
+  settings dialog automatically when added from the indicator picker so you can pick the
+  symbol(s) immediately. Volatility Close-to-Close computes annualized sample standard deviation
+  of bar-to-bar close log returns.
+- **Built-in symbol picker inside indicator settings and multi-symbol support for native indicators.**
+  Symbol inputs in indicator settings now open the workspace's symbol search dialog by default
+  without dismissing the settings dialog behind it, and custom native indicators can request
+  and subscribe to secondary symbol series through `fetchSeries` and `subscribeSeries`.
+
+### Changed
+
+- **Indicators from a script list appear sooner.** When the `indicators` option lists
+  scripts by URL, the workspace now downloads them all at once instead of one after
+  another. The indicators that start switched on no longer wait for every other script
+  in the list: with 13 scripts, they appear in about half a second instead of nearly two.
+- **Hyperliquid charts start with far fewer requests.** The Hyperliquid provider builds
+  its symbol list from one request for every exchange's markets, instead of one request
+  per exchange after first asking which exchanges exist. A chart now opens with 4
+  requests instead of 14, and its first candles arrive sooner.
+- **Coinbase charts switch symbols faster.** The Coinbase provider reads a symbol's
+  details from the product list it already downloaded instead of asking Coinbase again.
+  Coinbase limits how fast requests can be sent, so the candles no longer wait behind
+  that extra request and a switch takes about half as long.
+- **Opening a Binance perpetual no longer downloads the futures list again.** The
+  provider reads each perpetual's details from the futures list it already has, instead
+  of downloading the whole list for every new perpetual you open.
+- **Binance charts start faster.** The Binance provider now asks only for actively traded
+  pairs when it builds its symbol list. The download is about six times smaller and holds
+  the same symbols, so a Binance chart shows its first candles sooner.
+- **Charts on the same market load their candles once.** When several charts in a
+  workspace open the same symbol and timeframe together, on first load or when synced
+  charts switch, they now share one download instead of each asking for the same
+  candles. The last chart fills in as fast as the first.
+
+### Fixed
+
+- **A closed symbol search no longer loads symbol icons.** With a custom symbol ranking
+  registered, closing the search before its results finished ranking still rebuilt the
+  hidden list and loaded about a hundred icons nobody could see. The list now rebuilds
+  the next time the search opens.
+- **Crossing band fills render cleanly under WebGL2.** Where two filled series cross between
+  adjacent bars (such as an Ichimoku Cloud twist), the fill now splits cleanly at the
+  intersection instead of drawing an overlapping bow-tie quad.
+
 ## [0.10.14]
 
 ### Added
@@ -66,6 +118,9 @@ All notable changes to Vela, newest first.
   spot on screen, over another bar and price, and the label measured from there. The
   start now stays on the time and price you clicked, through a pan, a zoom, a new bar
   or a price-scale change.
+- **Crossing band fills render cleanly under WebGL2.** Where two filled series cross between
+  adjacent bars (such as an Ichimoku Cloud twist), the fill now splits cleanly at the
+  intersection instead of drawing an overlapping bow-tie quad.
 
 ## [0.10.13]
 

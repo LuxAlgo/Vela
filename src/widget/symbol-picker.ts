@@ -298,6 +298,13 @@ export class SymbolPicker {
     /** The ranked pool cache — `key` fingerprints the raw pool the ranking ran on. */
     private ranked: { key: string; result: SymbolDescriptor[] } | null = null;
     private ranking = false;
+    /** The dialog is showing, by its own open/close callbacks (set before the open-time
+     *  rebuild runs). A ranking that lands while it is closed repaints nothing: the next
+     *  open rebuilds the rows, so no row icons load for a list nobody sees. */
+    private shown = false;
+    /** One-shot selection override when opened for an indicator's symbol input rather than
+     *  the main chart; cleared as soon as the dialog closes. */
+    private pickOverride: ((symbol: string) => void) | null = null;
 
     constructor(private readonly opts: SymbolPickerOptions) {
         const doc = (opts.host ?? document.body).ownerDocument;
@@ -345,6 +352,7 @@ export class SymbolPicker {
             flush: true,
             content: (body) => body.append(head, this.list),
             onOpenChange: (open) => {
+                this.shown = open;
                 if (open) {
                     this.relabel();
                     this.input.value = this.seed.toUpperCase();
@@ -359,6 +367,7 @@ export class SymbolPicker {
                     // Every close path (pick, Escape, X, outside tap) — a field still
                     // focused when it leaves the screen keeps iOS's focus-zoom alive.
                     this.input.blur();
+                    this.pickOverride = null;
                 }
                 opts.onOpenChange?.(open);
             },
@@ -401,9 +410,16 @@ export class SymbolPicker {
         this.source = source;
     }
 
-    open(initialQuery = ''): void {
+    open(initialQuery = '', opts?: { onSelect?: (symbol: string) => void }): void {
         this.seed = initialQuery;
+        this.pickOverride = opts?.onSelect ?? null;
         this.dialog.show();
+    }
+
+    /** True while open for a one-shot caller override (e.g. an indicator's symbol input)
+     *  rather than switching the active chart's symbol. */
+    get isPicking(): boolean {
+        return this.pickOverride !== null;
     }
 
     get isOpen(): boolean {
@@ -434,7 +450,10 @@ export class SymbolPicker {
      *  listed, never loadable), any other row loads itself. */
     private pick(s: SymbolDescriptor): void {
         const target = isGroupRow(s) ? (defaultMemberOf(this.pool(), s) ?? s) : s;
-        this.select(target.ticker, target.prefix ?? target.provider, this.opts.onSelect);
+        // Capture and clear before `select()` closes the dialog (Zag's onOpenChange runs async).
+        const handler = this.pickOverride ?? this.opts.onSelect;
+        this.pickOverride = null;
+        this.select(target.ticker, target.prefix ?? target.provider, handler);
     }
 
     /** Expand/collapse a group row IN PLACE — same query, same page, same scroll; only
@@ -499,7 +518,7 @@ export class SymbolPicker {
                 })
                 .finally(() => {
                     this.ranking = false;
-                    this.refresh(); // repaint the (possibly open) list with the ranked pool
+                    if (this.shown) this.refresh(); // repaint the open list with the ranked pool
                 });
         }
         return this.ranked?.result ?? raw;

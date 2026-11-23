@@ -120,6 +120,11 @@ export class IndicatorInputsDialog {
 
     private readonly onDialogKey = (e: KeyboardEvent): void => {
         if (e.key === 'Escape') {
+            if (e.defaultPrevented) return;
+            // A nested modal dialog (such as a host symbol picker) opened on top of this dialog
+            // owns Escape — leave our dialog open until the user returns to it.
+            const targetDialog = (e.target as Element | null)?.closest('.vela-dialog-panel');
+            if (targetDialog && targetDialog !== this.dialog) return;
             e.preventDefault();
             if (isPopoverOpen()) { closeOpenPopovers(); return; }
             this.close();
@@ -434,11 +439,12 @@ export class IndicatorInputsDialog {
         }
 
         const fit = isFitControl(lead);
+        const controlWidth = fit ? undefined : lead.type === 'symbol' ? SYMBOL_CONTROL_PX : CONTROL_PX;
         return append(fieldRow({
             label: nameOf(lead, this.i18n),
             id,
             fit,
-            controlWidth: fit ? undefined : CONTROL_PX,
+            controlWidth,
             info,
             control: this.buildControl(row, lead, id),
         }));
@@ -905,13 +911,17 @@ export class IndicatorInputsDialog {
         btn.id = id;
         btn.style.cssText = `${this.ctrlStyle()}display:flex;align-items:center;cursor:pointer;text-align:left;`;
         const label = document.createElement('span');
-        label.textContent = value || this.t(TEXT.selectSymbol);
+        const syncLabel = (): void => {
+            label.textContent = value || this.t(TEXT.selectSymbol);
+            label.style.color = value ? '' : 'var(--vela-fg-muted)';
+        };
         label.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+        syncLabel();
         btn.append(label);
         btn.addEventListener('click', () => picker(value, (picked) => {
             if (!picked) return;
             value = picked;
-            label.textContent = picked;
+            syncLabel();
             emit(picked);
         }));
         return btn;
@@ -934,6 +944,8 @@ export class IndicatorInputsDialog {
 
 /** The width of the dialog's control column: number and text fields, and a dropdown's minimum. */
 const CONTROL_PX = 100;
+/** Wider column for symbol inputs so qualified tickers (`BINANCE:ETHUSDT`) read cleanly. */
+const SYMBOL_CONTROL_PX = 160;
 
 /** Whether an input renders as a dropdown (single or multi-select); mirrors `buildControl`. */
 function isSelectInput(inp: InputSchema): boolean {
