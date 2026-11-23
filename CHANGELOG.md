@@ -4,12 +4,41 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Changed
+
+- **Indicators from a script list appear sooner.** When the `indicators` option lists
+  scripts by URL, the workspace now downloads them all at once instead of one after
+  another. The indicators that start switched on no longer wait for every other script
+  in the list: with 13 scripts, they appear in about half a second instead of nearly two.
+- **Hyperliquid charts start with far fewer requests.** The Hyperliquid provider builds
+  its symbol list from one request for every exchange's markets, instead of one request
+  per exchange after first asking which exchanges exist. A chart now opens with 4
+  requests instead of 14, and its first candles arrive sooner.
+- **Coinbase charts switch symbols faster.** The Coinbase provider reads a symbol's
+  details from the product list it already downloaded instead of asking Coinbase again.
+  Coinbase limits how fast requests can be sent, so the candles no longer wait behind
+  that extra request and a switch takes about half as long.
+- **Opening a Binance perpetual no longer downloads the futures list again.** The
+  provider reads each perpetual's details from the futures list it already has, instead
+  of downloading the whole list for every new perpetual you open.
+- **Binance charts start faster.** The Binance provider now asks only for actively traded
+  pairs when it builds its symbol list. The download is about six times smaller and holds
+  the same symbols, so a Binance chart shows its first candles sooner.
+- **Charts on the same market load their candles once.** When several charts in a
+  workspace open the same symbol and timeframe together, on first load or when synced
+  charts switch, they now share one download instead of each asking for the same
+  candles. The last chart fills in as fast as the first.
+
 ### Fixed
 
 - **Charts on the same market share one live price feed.** Several charts in a workspace
   showing the same symbol and timeframe each opened their own live connection, so they
   used more connections than needed and could briefly show different latest prices. They
   now share one feed and always show the same price.
+- **A closed symbol search no longer loads symbol icons.** With a custom symbol ranking
+  registered, closing the search before its results finished ranking still rebuilt the
+  hidden list and loaded about a hundred icons nobody could see. The list now rebuilds
+  the next time the search opens.
 
 ## [0.10.14]
 

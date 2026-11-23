@@ -83,6 +83,32 @@ describe('CachingDataFeed', () => {
         expect(cached[cached.length - 1]!.time).toBeLessThan(r1[r1.length - 1]!.time);
     });
 
+    it('charts loading the same series at the same time share one request', async () => {
+        const { feed, cf } = setup(600);
+        const [a, b, c, d] = await Promise.all([cf.load(CFG), cf.load(CFG), cf.load(CFG), cf.load(CFG)]);
+
+        expect(feed.loadCalls).toBe(1);
+        for (const r of [b, c, d]) expect(r).toEqual(a);
+        a[0]!.close = -1; // each chart gets its own copy
+        expect(b[0]!.close).not.toBe(-1);
+    });
+
+    it('charts returning to a cached series at the same time share one tail request', async () => {
+        const { feed, cf } = setup(600);
+        await cf.load(CFG);
+        const [a, b] = await Promise.all([cf.load(CFG), cf.load(CFG)]);
+
+        expect(feed.loadCalls).toBe(1);
+        expect(feed.rangeCalls).toBe(1);
+        expect(b).toEqual(a);
+    });
+
+    it('loads of different depths or series do not share', async () => {
+        const { feed, cf } = setup(600);
+        await Promise.all([cf.load(CFG), cf.load({ ...CFG, bars: 300 }), cf.load({ ...CFG, timeframe: '15' })]);
+        expect(feed.loadCalls).toBe(3);
+    });
+
     it('a re-run (same N) fetches ONLY the tail via loadRange — no second full load', async () => {
         const { feed, cf } = setup(600);
         await cf.load(CFG);
