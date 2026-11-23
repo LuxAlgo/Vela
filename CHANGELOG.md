@@ -9,6 +9,10 @@ All notable changes to Vela, newest first.
 - **Binance charts start faster.** The Binance provider now asks only for actively traded
   pairs when it builds its symbol list. The download is about six times smaller and holds
   the same symbols, so a Binance chart shows its first candles sooner.
+- **Charts on the same market load their candles once.** When several charts in a
+  workspace open the same symbol and timeframe together, on first load or when synced
+  charts switch, they now share one download instead of each asking for the same
+  candles. The last chart fills in as fast as the first.
 
 ## [0.10.14]
 
