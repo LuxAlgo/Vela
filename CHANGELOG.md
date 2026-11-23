@@ -6,6 +6,9 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
+- **Opening a Binance perpetual no longer downloads the futures list again.** The
+  provider reads each perpetual's details from the futures list it already has, instead
+  of downloading the whole list for every new perpetual you open.
 - **Binance charts start faster.** The Binance provider now asks only for actively traded
   pairs when it builds its symbol list. The download is about six times smaller and holds
   the same symbols, so a Binance chart shows its first candles sooner.
