@@ -18,6 +18,9 @@ const FUTURES_WS = 'wss://fstream.binance.com';
  * illiquid symbol (which degrades to polling harmlessly anyway).
  */
 const STREAM_STALL_MS = 15_000;
+/** How long the downloaded futures exchangeInfo answers per-symbol info (the chart's own
+ *  symbol-info freshness); older, it is downloaded again. */
+const FUTURES_INFO_TTL_MS = 10 * 60_000;
 /** Reconnect backoff after an unexpected socket close. */
 const STREAM_RECONNECT_MS = 2_000;
 
@@ -125,6 +128,9 @@ export class BinanceProvider implements DataProvider {
     private spotBaseProbe: Promise<string> | null = null;
     /** Cached symbol enumeration (exchangeInfo is large; fetch once). */
     private symbolsPromise: Promise<SymbolDescriptor[]> | null = null;
+    /** The futures `exchangeInfo` (every contract, ~1.2 MB), shared by the symbol list and
+     *  per-symbol info so it downloads once per {@link FUTURES_INFO_TTL_MS}, not per symbol. */
+    private futuresInfo: { at: number; data: Promise<{ symbols?: BinanceSymbol[] }> } | null = null;
 
     info(): ProviderInfo {
         return {
@@ -170,10 +176,11 @@ export class BinanceProvider implements DataProvider {
 
     async getSymbolInfo(ticker: string): Promise<SymbolInfo | undefined> {
         const { apiSymbol, isFutures } = parseTicker(ticker);
-        const base = isFutures ? FUTURES_BASE : await this.spotBase();
-        // Spot accepts ?symbol=; the futures exchangeInfo returns all symbols.
-        const url = isFutures ? `${base}/exchangeInfo` : `${base}/exchangeInfo?symbol=${apiSymbol}`;
-        const data = (await this.json(url).catch(() => null)) as { symbols?: BinanceSymbol[] } | null;
+        // Spot accepts ?symbol=; the futures exchangeInfo returns all symbols, so it is the
+        // one the symbol list already downloaded.
+        const data = isFutures
+            ? await this.futuresExchangeInfo().catch(() => null)
+            : ((await this.json(`${await this.spotBase()}/exchangeInfo?symbol=${apiSymbol}`).catch(() => null)) as { symbols?: BinanceSymbol[] } | null);
         const symbols: BinanceSymbol[] = data?.symbols ?? [];
         const s = isFutures ? symbols.find((x) => x.symbol === apiSymbol) : symbols[0];
         if (!s) return undefined;
@@ -309,14 +316,31 @@ export class BinanceProvider implements DataProvider {
 
     private async listSpot(): Promise<SymbolDescriptor[]> {
         const base = await this.spotBase();
-        const data = (await this.json(`${base}/exchangeInfo`)) as { symbols?: BinanceSymbol[] };
+        // Trading symbols only, without their permission sets: the same rows the filter below
+        // keeps, in a download about six times smaller (both parameters are Binance's own).
+        const data = (await this.json(`${base}/exchangeInfo?symbolStatus=TRADING&showPermissionSets=false`)) as { symbols?: BinanceSymbol[] };
         return (data.symbols ?? [])
             .filter((s) => s.status === 'TRADING')
             .map((s) => ({ ticker: s.symbol, description: `${s.baseAsset} / ${s.quoteAsset}`, type: 'crypto' }));
     }
 
+    /** The futures exchangeInfo: one request shared by every concurrent and later asker
+     *  within {@link FUTURES_INFO_TTL_MS}. A failed request is not remembered. */
+    private futuresExchangeInfo(): Promise<{ symbols?: BinanceSymbol[] }> {
+        const now = Date.now();
+        if (!this.futuresInfo || now - this.futuresInfo.at >= FUTURES_INFO_TTL_MS) {
+            const data = this.json(`${FUTURES_BASE}/exchangeInfo`) as Promise<{ symbols?: BinanceSymbol[] }>;
+            const entry = { at: now, data };
+            this.futuresInfo = entry;
+            data.catch(() => {
+                if (this.futuresInfo === entry) this.futuresInfo = null;
+            });
+        }
+        return this.futuresInfo.data;
+    }
+
     private async listFutures(): Promise<SymbolDescriptor[]> {
-        const data = (await this.json(`${FUTURES_BASE}/exchangeInfo`)) as { symbols?: BinanceSymbol[] };
+        const data = await this.futuresExchangeInfo();
         return (data.symbols ?? [])
             .filter((s) => s.contractType === 'PERPETUAL' && s.status === 'TRADING')
             .map((s) => ({ ticker: `${s.symbol}.P`, description: `${s.baseAsset} / ${s.quoteAsset} Perpetual`, type: 'futures' }));

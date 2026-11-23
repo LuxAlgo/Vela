@@ -36,6 +36,10 @@ const SINGLE_FETCH_BARS = PAGE_BARS + 1;
  * `data` — it transparently falls back to a full `load`.
  */
 export class CachingDataFeed implements MarketDataFeed {
+    /** Loads in flight, keyed by series + depth: charts loading the same series at once (a
+     *  workspace's first boot, symbol- or timeframe-synced cells) share one request. */
+    private readonly loadInflight = new Map<string, Promise<OHLCV[]>>();
+
     constructor(
         private readonly inner: MarketDataFeed,
         private readonly store: BarStore = sharedBarStore,
@@ -47,9 +51,21 @@ export class CachingDataFeed implements MarketDataFeed {
 
         const symbol = cfg.symbol ?? 'TEST';
         const key = cacheKey(symbol, cfg.timeframe ?? '60', cfg.session);
+        const n = cfg.bars ?? 500;
+
+        // Concurrent askers for the same series and depth share one load; each gets its own copy.
+        const flightKey = `${key}|${n}`;
+        let flight = this.loadInflight.get(flightKey);
+        if (!flight) {
+            flight = this.loadSeries(cfg, symbol, key, n).finally(() => this.loadInflight.delete(flightKey));
+            this.loadInflight.set(flightKey, flight);
+        }
+        return (await flight).map((b) => ({ ...b }));
+    }
+
+    private async loadSeries(cfg: MarketConfig, symbol: string, key: string, n: number): Promise<OHLCV[]> {
         this.store.retainSymbol(symbol); // current-symbol-only purge
         const cached = this.store.get(key);
-        const n = cfg.bars ?? 500;
 
         // Tail-only path: enough closed history is cached to cover the requested
         // window (`n - 1` accounts for the forming bar we always drop). Fetch just
