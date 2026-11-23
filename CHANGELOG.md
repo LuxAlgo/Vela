@@ -10,6 +10,16 @@ All notable changes to Vela, newest first.
   details from the product list it already downloaded instead of asking Coinbase again.
   Coinbase limits how fast requests can be sent, so the candles no longer wait behind
   that extra request and a switch takes about half as long.
+- **Opening a Binance perpetual no longer downloads the futures list again.** The
+  provider reads each perpetual's details from the futures list it already has, instead
+  of downloading the whole list for every new perpetual you open.
+- **Binance charts start faster.** The Binance provider now asks only for actively traded
+  pairs when it builds its symbol list. The download is about six times smaller and holds
+  the same symbols, so a Binance chart shows its first candles sooner.
+- **Charts on the same market load their candles once.** When several charts in a
+  workspace open the same symbol and timeframe together, on first load or when synced
+  charts switch, they now share one download instead of each asking for the same
+  candles. The last chart fills in as fast as the first.
 
 ## [0.10.14]
 
