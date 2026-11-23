@@ -6,6 +6,10 @@ All notable changes to Vela, newest first.
 
 ### Changed
 
+- **Hyperliquid charts start with far fewer requests.** The Hyperliquid provider builds
+  its symbol list from one request for every exchange's markets, instead of one request
+  per exchange after first asking which exchanges exist. A chart now opens with 4
+  requests instead of 14, and its first candles arrive sooner.
 - **Coinbase charts switch symbols faster.** The Coinbase provider reads a symbol's
   details from the product list it already downloaded instead of asking Coinbase again.
   Coinbase limits how fast requests can be sent, so the candles no longer wait behind
