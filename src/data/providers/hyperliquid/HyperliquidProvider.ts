@@ -151,6 +151,10 @@ export class HyperliquidProvider implements DataProvider {
     private perpDexsPromise: Promise<PerpDex[]> | null = null;
     /** Cached `meta` per HIP-3 dex name. */
     private readonly dexMetaPromises = new Map<string, Promise<PerpMeta>>();
+    /** Every perp dex's `meta` from ONE `allPerpMetas` request, keyed by dex name (`''` = the
+     *  main dex), started by the symbol list; null when the answer doesn't line up with
+     *  `perpDexs`, and then the per-dex `meta` requests run exactly as before. */
+    private allMetasPromise: Promise<Map<string, PerpMeta> | null> | null = null;
     /** Upper-cased HIP-3 coin → its listed spelling, filled as dex metas arrive. */
     private readonly hip3Coins = new Map<string, string>();
     /** Cached symbol enumeration. */
@@ -234,6 +238,7 @@ export class HyperliquidProvider implements DataProvider {
 
     listSymbols(): Promise<SymbolDescriptor[]> {
         if (!this.symbolsPromise) {
+            void this.fetchAllMetas(); // before the listings below ask for any dex's meta
             this.symbolsPromise = Promise.all([
                 this.listPerps().catch(() => [] as SymbolDescriptor[]),
                 this.listSpot().catch(() => [] as SymbolDescriptor[]),
@@ -433,7 +438,37 @@ export class HyperliquidProvider implements DataProvider {
     }
 
     private fetchMeta(): Promise<PerpMeta> {
-        return (this.metaPromise ??= this.post({ type: 'meta' }).then((d) => d as PerpMeta));
+        return (this.metaPromise ??= this.fromAllMetas('').then((m) => m ?? this.post({ type: 'meta' }).then((d) => d as PerpMeta)));
+    }
+
+    /**
+     * `allPerpMetas` answers the main dex first, then each HIP-3 dex in `perpDexs` order: the
+     * same records the per-dex `meta` requests return, in one round trip instead of one per
+     * dex after `perpDexs` lands. Accepted only when it lines up: one entry per dex, each
+     * listing only its own coins (`dex:COIN`; the main dex none).
+     */
+    private fetchAllMetas(): Promise<Map<string, PerpMeta> | null> {
+        return (this.allMetasPromise ??= Promise.all([this.post({ type: 'allPerpMetas' }), this.fetchPerpDexs()])
+            .then(([all, dexes]) => {
+                if (!Array.isArray(all) || all.length !== dexes.length + 1) return null;
+                const byDex = new Map<string, PerpMeta>();
+                for (let i = 0; i < all.length; i += 1) {
+                    const meta = all[i] as PerpMeta | null;
+                    if (!meta || !Array.isArray(meta.universe)) return null;
+                    const dex = i === 0 ? '' : dexes[i - 1]!.name;
+                    const owns = (name: unknown): boolean => typeof name === 'string' && (dex ? name.startsWith(`${dex}:`) : !name.includes(':'));
+                    if (!meta.universe.every((u) => owns(u?.name))) return null;
+                    byDex.set(dex, meta);
+                }
+                return byDex;
+            })
+            .catch(() => null));
+    }
+
+    /** A dex's meta from the combined answer, once the symbol list has asked for it. */
+    private fromAllMetas(dex: string): Promise<PerpMeta | undefined> {
+        if (!this.allMetasPromise) return Promise.resolve(undefined);
+        return this.allMetasPromise.then((all) => all?.get(dex));
     }
 
     private fetchSpotMeta(): Promise<SpotMeta> {
@@ -450,7 +485,7 @@ export class HyperliquidProvider implements DataProvider {
     private fetchDexMeta(dex: string): Promise<PerpMeta> {
         let p = this.dexMetaPromises.get(dex);
         if (!p) {
-            p = this.post({ type: 'meta', dex }).then((d) => {
+            p = this.fromAllMetas(dex).then((m) => m ?? this.post({ type: 'meta', dex })).then((d) => {
                 const meta = (d ?? {}) as PerpMeta;
                 for (const u of meta.universe ?? []) this.hip3Coins.set(u.name.toUpperCase(), u.name);
                 return meta;

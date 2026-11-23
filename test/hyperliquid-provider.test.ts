@@ -261,6 +261,46 @@ describe('Hyperliquid HIP-3 markets (builder-deployed perp dexes)', () => {
         return [];
     };
 
+    // `allPerpMetas` answers the main dex, then each dex in `perpDexs` order ('down' has no markets).
+    const allPerpMetas = [mainMeta, dexMetas.xyz, dexMetas.flx, dexMetas.gone, { universe: [], collateralToken: 0 }];
+    const withAll = (b: any): unknown => (b.type === 'allPerpMetas' ? allPerpMetas : route(b));
+
+    it('the symbol list asks for every dex\'s markets in one request, and lists the same symbols', async () => {
+        stubInfo(route); // no combined answer: the per-dex requests
+        const perDex = await new HyperliquidProvider().listSymbols();
+        const calls = stubInfo(withAll);
+        const combined = await new HyperliquidProvider().listSymbols();
+
+        expect(combined).toEqual(perDex);
+        expect(calls.map((c) => c.type).sort()).toEqual(['allPerpMetas', 'perpDexs', 'spotMeta']);
+    });
+
+    it('a combined answer that does not line up with the dex list falls back to the per-dex requests', async () => {
+        stubInfo(route);
+        const perDex = await new HyperliquidProvider().listSymbols();
+        const shuffled = [mainMeta, dexMetas.flx, dexMetas.xyz, dexMetas.gone, { universe: [] }];
+        const calls = stubInfo((b) => (b.type === 'allPerpMetas' ? shuffled : route(b)));
+        const list = await new HyperliquidProvider().listSymbols();
+
+        expect(list).toEqual(perDex);
+        expect(calls.filter((c) => c.type === 'meta' && c.dex != null).map((c) => c.dex).sort()).toEqual(['down', 'flx', 'gone', 'xyz']);
+    });
+
+    it('symbol info outside the symbol list keeps its own small request', async () => {
+        const calls = stubInfo(withAll);
+        expect(await new HyperliquidProvider().getSymbolInfo('BTC')).toMatchObject({ ticker: 'BTC' });
+        expect(calls.map((c) => c.type)).toEqual(['meta']);
+    });
+
+    it('symbol info after the symbol list reads the combined answer', async () => {
+        const calls = stubInfo(withAll);
+        const p = new HyperliquidProvider();
+        await p.listSymbols();
+        expect(await p.getSymbolInfo('xyz:TSLA')).toMatchObject({ ticker: 'xyz:TSLA', currency: 'USD' });
+        expect(await p.getSymbolInfo('flx:SILVER')).toMatchObject({ currency: 'USDH' });
+        expect(calls.filter((c) => c.type === 'meta')).toHaveLength(0);
+    });
+
     it('search lists every live HIP-3 market with the dex that lists it', async () => {
         stubInfo(route);
         const list = await new HyperliquidProvider().listSymbols();

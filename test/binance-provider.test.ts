@@ -198,6 +198,69 @@ describe('BinanceProvider — pagination, fallback, enumeration (stubbed fetch)'
         expect(tickers).not.toContain('OLDX'); // not TRADING
         expect(tickers).not.toContain('BTCUSDT_240927.P'); // not PERPETUAL
     });
+
+    it('asks Binance for the trading spot symbols only, without their permission sets', async () => {
+        const urls: string[] = [];
+        vi.stubGlobal('fetch', vi.fn((input: string | URL) => {
+            const url = input.toString();
+            urls.push(url);
+            if (url.includes('/ping')) return Promise.resolve(res(true, {}));
+            if (url.includes('exchangeInfo')) return Promise.resolve(res(true, { symbols: [] }));
+            return Promise.resolve(res(false, {}));
+        }));
+
+        await new BinanceProvider().listSymbols();
+        const spotList = urls.find((u) => !u.includes('fapi') && u.includes('/exchangeInfo'));
+        expect(spotList).toBeDefined();
+        const params = new URL(spotList!).searchParams;
+        expect(params.get('symbolStatus')).toBe('TRADING');
+        expect(params.get('showPermissionSets')).toBe('false');
+    });
+
+    it('downloads the futures list once for the symbol list and every perpetual it describes', async () => {
+        const futures = { symbols: [
+            { symbol: 'BTCUSDT', status: 'TRADING', contractType: 'PERPETUAL', baseAsset: 'BTC', quoteAsset: 'USDT', filters: [{ filterType: 'PRICE_FILTER', tickSize: '0.10' }] },
+            { symbol: 'ETHUSDT', status: 'TRADING', contractType: 'PERPETUAL', baseAsset: 'ETH', quoteAsset: 'USDT', filters: [{ filterType: 'PRICE_FILTER', tickSize: '0.01' }] },
+        ] };
+        const urls: string[] = [];
+        vi.stubGlobal('fetch', vi.fn((input: string | URL) => {
+            const url = input.toString();
+            urls.push(url);
+            if (url.includes('/ping')) return Promise.resolve(res(true, {}));
+            if (url.includes('fapi') && url.includes('exchangeInfo')) return Promise.resolve(res(true, futures));
+            if (url.includes('exchangeInfo')) return Promise.resolve(res(true, { symbols: [] }));
+            return Promise.resolve(res(false, {}));
+        }));
+
+        const p = new BinanceProvider();
+        const [, btc, eth] = await Promise.all([p.listSymbols(), p.getSymbolInfo('BTCUSDT.P'), p.getSymbolInfo('ETHUSDT.P')]);
+        const sol = await p.getSymbolInfo('SOLUSDT.P'); // not listed: still answered from the same download
+
+        expect(urls.filter((u) => u.includes('fapi') && u.includes('exchangeInfo'))).toHaveLength(1);
+        expect(btc).toMatchObject({ ticker: 'BTCUSDT.P', mintick: 0.1, pricescale: 10, type: 'futures' });
+        expect(eth).toMatchObject({ ticker: 'ETHUSDT.P', mintick: 0.01, pricescale: 100 });
+        expect(sol).toBeUndefined();
+    });
+
+    it('asks for the futures list again after a failed download', async () => {
+        let fail = true;
+        const urls: string[] = [];
+        vi.stubGlobal('fetch', vi.fn((input: string | URL) => {
+            const url = input.toString();
+            urls.push(url);
+            if (url.includes('fapi') && url.includes('exchangeInfo')) {
+                if (fail) return Promise.resolve(res(false, {}, 500));
+                return Promise.resolve(res(true, { symbols: [{ symbol: 'BTCUSDT', status: 'TRADING', contractType: 'PERPETUAL', baseAsset: 'BTC', quoteAsset: 'USDT' }] }));
+            }
+            return Promise.resolve(res(false, {}));
+        }));
+
+        const p = new BinanceProvider();
+        expect(await p.getSymbolInfo('BTCUSDT.P')).toBeUndefined();
+        fail = false;
+        expect(await p.getSymbolInfo('BTCUSDT.P')).toMatchObject({ ticker: 'BTCUSDT.P' });
+        expect(urls.filter((u) => u.includes('fapi') && u.includes('exchangeInfo'))).toHaveLength(2);
+    });
 });
 
 /** Minimal scriptable WebSocket double. */

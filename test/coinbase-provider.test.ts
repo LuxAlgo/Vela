@@ -205,6 +205,30 @@ describe('CoinbaseProvider — pagination + enumeration + symbol info (stubbed f
         expect(info!.mintick).toBe(0.01);
         expect(info!.pricescale).toBe(100);
     });
+
+    it('describes a listed product from the products list, without asking for it again', async () => {
+        const products = [
+            { id: 'BTC-USD', base_currency: 'BTC', quote_currency: 'USD', quote_increment: '0.01', status: 'online', trading_disabled: false },
+        ];
+        const urls: string[] = [];
+        vi.stubGlobal('fetch', vi.fn((input: string | URL) => {
+            const url = input.toString();
+            urls.push(url);
+            if (/\/products$/.test(url)) return Promise.resolve(res(true, products));
+            if (/\/products\/ETH-USD$/.test(url)) return Promise.resolve(res(true, { id: 'ETH-USD', base_currency: 'ETH', quote_currency: 'USD', quote_increment: '0.1' }));
+            return Promise.resolve(res(false, {}));
+        }));
+
+        const p = new CoinbaseProvider();
+        await p.listSymbols();
+        const btc = await p.getSymbolInfo('BTC-USD');
+        expect(btc).toMatchObject({ ticker: 'BTC-USD', basecurrency: 'BTC', currency: 'USD', mintick: 0.01, pricescale: 100 });
+        expect(urls.filter((u) => u.includes('/products/BTC-USD'))).toHaveLength(0);
+
+        // A product the list lacks is still asked for.
+        expect(await p.getSymbolInfo('ETH-USD')).toMatchObject({ ticker: 'ETH-USD', mintick: 0.1 });
+        expect(urls.filter((u) => /\/products\/ETH-USD$/.test(u))).toHaveLength(1);
+    });
 });
 
 /** Minimal scriptable WebSocket double. */
