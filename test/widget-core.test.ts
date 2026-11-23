@@ -79,6 +79,24 @@ describe('resolveIndicators', () => {
         expect(wrapped[0]).toMatchObject({ name: 'C', language: 'pine' });
     });
 
+    it('downloads every script at once and keeps the manifest order', async () => {
+        const pending = new Map<string, (r: Response) => void>();
+        const fetchImpl = vi.fn((url: RequestInfo | URL) => new Promise<Response>((done) => pending.set(String(url), done))) as unknown as typeof fetch;
+        const manifest = ['a', 'b', 'c'].map((n) => ({ name: n, url: `https://scripts.example/${n}.demo`, enabled: n === 'a' }));
+
+        const resolving = resolveIndicators(manifest, fetchImpl);
+        await Promise.resolve();
+        expect([...pending.keys()]).toEqual(manifest.map((m) => m.url)); // all asked before any answered
+        for (const n of ['c', 'b', 'a']) pending.get(`https://scripts.example/${n}.demo`)!(res(`${n} source`)); // answered out of order
+
+        const list = await resolving;
+        expect(list.map((i) => [i.name, i.script, i.enabled])).toEqual([
+            ['a', 'a source', true],
+            ['b', 'b source', false],
+            ['c', 'c source', false],
+        ]);
+    });
+
     it('fetches a manifest URL and per-entry script urls; broken entries are dropped, not fatal', async () => {
         const fetchImpl = vi.fn(async (url: RequestInfo | URL) => {
             const u = String(url);
