@@ -305,3 +305,47 @@ describe('fieldSection — info element', () => {
         expect(fieldSection('Plain').hasAttribute('data-info')).toBe(false);
     });
 });
+
+describe('IndicatorInputsDialog — Escape isolation', () => {
+    it('closes on Escape even when a chart keydown handler already called preventDefault', () => {
+        openDialog({ inputs: [{ key: 'len', title: 'Length', type: 'int', defval: 14 }] });
+        expect(dialog?.isOpen()).toBe(true);
+
+        const chartArea = document.createElement('div');
+        const gearBtn = document.createElement('button');
+        chartArea.appendChild(gearBtn);
+        document.body.appendChild(chartArea);
+        // Mirrors KeyboardController.onKey calling preventDefault() on Escape for clearCrosshair.
+        chartArea.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') e.preventDefault();
+        });
+
+        gearBtn.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+        expect(dialog?.isOpen()).toBe(false);
+    });
+
+    it('stays open on Escape while a nested dialog (e.g. symbol picker) is stacked above it', () => {
+        openDialog({ inputs: [{ key: 'len', title: 'Length', type: 'int', defval: 14 }] });
+        expect(dialog?.isOpen()).toBe(true);
+
+        const nested = document.createElement('div');
+        nested.setAttribute('role', 'dialog');
+        nested.setAttribute('data-state', 'open');
+        const input = document.createElement('input');
+        nested.appendChild(input);
+        document.body.appendChild(nested);
+
+        // Escape dispatched from inside the nested dialog leaves IndicatorInputsDialog open.
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+        expect(dialog?.isOpen()).toBe(true);
+
+        // Even dispatched on document.body while the nested dialog is open above it.
+        document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+        expect(dialog?.isOpen()).toBe(true);
+
+        // Once the nested dialog closes, Escape closes IndicatorInputsDialog.
+        nested.remove();
+        document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+        expect(dialog?.isOpen()).toBe(false);
+    });
+});
