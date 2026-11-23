@@ -15,7 +15,14 @@ export type { ChartConfig, ChartStyle } from './renderers/native/core/chartConfi
 export { MultiProviderFeed } from './data/MultiProviderFeed';
 export { CachingDataFeed } from './data/CachingDataFeed';
 export { BarStore, sharedBarStore } from './data/BarStore';
-export { timeframeToMs } from './data/timeframe';
+export { timeframeToMs, parseTickTimeframe, isTickTimeframe, isVariableDurationTimeframe } from './data/timeframe';
+export {
+    registerSeriesAdapter,
+    unregisterSeriesAdapter,
+    seriesAdapters,
+    type SeriesAdapter,
+    type SeriesAdapterContext,
+} from './data/series-adapters';
 export { DataControl } from './core/DataControl';
 export { DrawingsControl } from './core/DrawingsControl';
 export { MarksControl } from './core/MarksControl';

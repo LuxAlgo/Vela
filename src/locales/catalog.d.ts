@@ -2523,8 +2523,10 @@ export interface VelaCoreMessageCatalog {
     'widget.timeframe.short.minutes': string;
     'widget.timeframe.short.months': string;
     'widget.timeframe.short.seconds': string;
+    'widget.timeframe.short.ticks': string;
     'widget.timeframe.short.weeks': string;
     'widget.timeframe.short.years': string;
+    'widget.timeframe.ticks': string;
     'widget.timeframe.weeks': string;
     'widget.timeframe.years': string;
     'widget.timeframeDrawer.dateRange': string;
@@ -2545,6 +2547,7 @@ export interface VelaCoreMessageCatalog {
     'widget.topbar.screenshot': string;
     'widget.topbar.switchTimeframe': string;
     'widget.topbar.timeframe': string;
+    'widget.topbar.timeframeUnavailable': string;
     'widget.topbar.timeframes': string;
     'widget.topbar.undo': string;
     'widget.watermark.mark': string;

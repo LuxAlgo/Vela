@@ -86,6 +86,8 @@ export interface TimeStampFormatOptions {
     surface?: FormatSurface;
     /** Append the time of day. Default true; false on daily and coarser bars. */
     withTime?: boolean;
+    /** Include seconds (`HH:MM:SS`) when `withTime` is true (sub-minute and variable-duration bars). */
+    withSeconds?: boolean;
     /** The display time zone. Default `'UTC'`. */
     timeZone?: string;
 }

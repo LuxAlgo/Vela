@@ -43,6 +43,8 @@ export interface SymbolInfo {
         default?: string;
         /** When present, the EXHAUSTIVE list of timeframes served. */
         list?: readonly string[];
+        /** True when the source serves tick-based timeframes (`nT`) for this symbol. */
+        ticks?: boolean;
     };
     /**
      * `false` when the source has no volume data for this symbol: the chart then does not

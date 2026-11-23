@@ -235,8 +235,10 @@ export function formatTimeStamp(
     barIntervalMs: number,
     fmt: ResolvedFormatters = ENGLISH_FORMAT,
     surface: FormatSurface = 'crosshair',
+    withSeconds?: boolean,
 ): string {
-    return fmt.timeStamp(ms, { timeZone: displayZone(timeZone, barIntervalMs), withTime: barIntervalMs < DAY, surface });
+    const showSeconds = withSeconds ?? (barIntervalMs > 0 && barIntervalMs < MIN);
+    return fmt.timeStamp(ms, { timeZone: displayZone(timeZone, barIntervalMs), withTime: barIntervalMs < DAY, withSeconds: showSeconds, surface });
 }
 
 function pickStep(targetMs: number): number {

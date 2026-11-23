@@ -110,7 +110,8 @@ export class CrosshairRenderer {
             this.chip(ctx, dataW + 1, ch.y, formatAxisValue(pane.scale, pane.bounds.height, price, percentScaleFor(scene, pane), scene.priceMintick, pane.axisFormat, scene.format, 'crosshair'), chipBg, 'left', false, theme.background);
         }
         // time chip on the bottom axis
-        if (vertical) this.chip(ctx, x, dataH + 1, formatTimeStamp(coords.logicalToTime(logical), scene.timezone, coords.barInterval, scene.format), chipBg, 'center', true, theme.background);
+        const showSeconds = scene.variableDuration || (coords.barInterval > 0 && coords.barInterval < 60_000);
+        if (vertical) this.chip(ctx, x, dataH + 1, formatTimeStamp(coords.logicalToTime(logical), scene.timezone, coords.barInterval, scene.format, 'crosshair', showSeconds), chipBg, 'center', true, theme.background);
     }
 
     destroy(): void {
@@ -173,7 +174,8 @@ export class CrosshairRenderer {
                 this.chip(ctx, dataW + 1, ext.y, formatAxisValue(pane.scale, pane.bounds.height, ext.price, percentScaleFor(scene, pane), scene.priceMintick, pane.axisFormat, scene.format, 'crosshair'), chipBg, 'left', false, theme.background);
             }
         }
-        this.chip(ctx, x, dataH + 1, formatTimeStamp(ext.time, scene.timezone, coords.barInterval, scene.format), chipBg, 'center', true, theme.background);
+        const showSeconds = scene.variableDuration || (coords.barInterval > 0 && coords.barInterval < 60_000);
+        this.chip(ctx, x, dataH + 1, formatTimeStamp(ext.time, scene.timezone, coords.barInterval, scene.format, 'crosshair', showSeconds), chipBg, 'center', true, theme.background);
         ctx.globalAlpha = 1;
     }
 

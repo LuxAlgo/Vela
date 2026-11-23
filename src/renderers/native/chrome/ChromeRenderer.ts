@@ -390,7 +390,8 @@ export class ChromeRenderer {
         // ── axis chips: last-price label and/or countdown ──
         // The corrected clock, not the device's: on a slow device the next candle lands
         // while the device clock still reads before its open, and the chip read `01:04`.
-        const cdText = scene.showCountdown ? countdownText(last.time, coords.barInterval, clockCorrection.now(), scene.format) : null;
+        // Variable-duration series (tick charts) have no wall-clock close, so hide it.
+        const cdText = scene.showCountdown && !scene.variableDuration ? countdownText(last.time, coords.barInterval, clockCorrection.now(), scene.format) : null;
         const showCountdown = cdText !== null;
         const showLabel = scene.showPriceLabel;
         if (!showLabel && !showCountdown) return;
