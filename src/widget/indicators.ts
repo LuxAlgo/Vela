@@ -4,7 +4,7 @@
 // Manifest shape (array or {indicators: [...]} wrapper):
 //   [{ "name": "EMA 20", "script": "...pine source...", "language": "pine",
 //      "enabled": true }, ...]
-// An entry may carry `"url"` instead of `"script"` — the source is fetched lazily.
+// An entry may carry `"url"` instead of `"script"` — the sources are fetched (in parallel) when the manifest resolves.
 import type { InputValue } from '../core/model/inputs';
 
 export interface IndicatorManifestEntry {
@@ -63,30 +63,34 @@ export async function resolveIndicators(
         manifest = config;
     }
 
-    const out: ResolvedIndicator[] = [];
-    for (const entry of entriesOf(manifest)) {
-        try {
-            let script = entry.script;
-            if (script === undefined && entry.url !== undefined) {
-                let url = entry.url;
-                try {
-                    // Relative to the manifest URL (itself relative to the page, if any).
-                    const base = typeof location !== 'undefined' ? new URL(baseUrl ?? '.', location.href) : new URL(baseUrl ?? '');
-                    url = new URL(entry.url, base).href;
-                } catch {
-                    /* absolute or bare-path url — fetch it as written */
+    // Every `url` source is fetched at once, so one slow script holds neither the others nor
+    // the enabled entries each chart is waiting to add; the list keeps the manifest's order.
+    const resolved = await Promise.all(
+        entriesOf(manifest).map(async (entry): Promise<ResolvedIndicator | null> => {
+            try {
+                let script = entry.script;
+                if (script === undefined && entry.url !== undefined) {
+                    let url = entry.url;
+                    try {
+                        // Relative to the manifest URL (itself relative to the page, if any).
+                        const base = typeof location !== 'undefined' ? new URL(baseUrl ?? '.', location.href) : new URL(baseUrl ?? '');
+                        url = new URL(entry.url, base).href;
+                    } catch {
+                        /* absolute or bare-path url — fetch it as written */
+                    }
+                    const res = await fetchImpl(url);
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    script = await res.text();
                 }
-                const res = await fetchImpl(url);
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                script = await res.text();
+                if (script === undefined) throw new Error('entry has neither script nor url');
+                return { name: entry.name, script, language: entry.language, enabled: entry.enabled !== false, category: entry.category };
+            } catch (err) {
+                console.warn(`[vela] indicator "${entry.name}" skipped:`, err);
+                return null;
             }
-            if (script === undefined) throw new Error('entry has neither script nor url');
-            out.push({ name: entry.name, script, language: entry.language, enabled: entry.enabled !== false, category: entry.category });
-        } catch (err) {
-            console.warn(`[vela] indicator "${entry.name}" skipped:`, err);
-        }
-    }
-    return out;
+        }),
+    );
+    return resolved.filter((r): r is ResolvedIndicator => r !== null);
 }
 
 /**
