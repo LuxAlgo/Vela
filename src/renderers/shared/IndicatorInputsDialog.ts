@@ -120,11 +120,17 @@ export class IndicatorInputsDialog {
 
     private readonly onDialogKey = (e: KeyboardEvent): void => {
         if (e.key === 'Escape') {
-            if (e.defaultPrevented) return;
-            // A nested modal dialog (such as a host symbol picker) opened on top of this dialog
-            // owns Escape — leave our dialog open until the user returns to it.
-            const targetDialog = (e.target as Element | null)?.closest('.vela-dialog-panel');
+            // A nested dialog (such as a symbol picker) opened on top of this dialog owns
+            // Escape — leave our dialog open until the user returns to it. Do NOT bail on
+            // `e.defaultPrevented` alone: chart-container key handlers (e.g. clearing the
+            // crosshair) call preventDefault() before the event reaches `document`.
+            const targetDialog = (e.target as Element | null)?.closest('[role="dialog"]');
             if (targetDialog && targetDialog !== this.dialog) return;
+            const doc = this.dialog?.ownerDocument ?? document;
+            const hasDialogAbove = [...doc.querySelectorAll('[role="dialog"][data-state="open"]')].some(
+                (el) => el !== this.dialog && (!this.dialog || !!(this.dialog.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING)),
+            );
+            if (hasDialogAbove) return;
             e.preventDefault();
             if (isPopoverOpen()) { closeOpenPopovers(); return; }
             this.close();

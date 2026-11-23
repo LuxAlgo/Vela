@@ -2,6 +2,12 @@
 
 All notable changes to Vela, newest first.
 
+## [0.10.17]
+
+### Fixed
+
+- **Pressing Escape closes indicator settings even when focus is on the chart.** A chart key handler clearing the crosshair used to prevent Escape from dismissing an open indicator settings dialog, while nested dialogs (such as a symbol picker opened from a symbol input) now reliably keep Escape to themselves until closed.
+
 ## [0.10.16]
 
 ### Added
