@@ -198,6 +198,24 @@ describe('BinanceProvider — pagination, fallback, enumeration (stubbed fetch)'
         expect(tickers).not.toContain('OLDX'); // not TRADING
         expect(tickers).not.toContain('BTCUSDT_240927.P'); // not PERPETUAL
     });
+
+    it('asks Binance for the trading spot symbols only, without their permission sets', async () => {
+        const urls: string[] = [];
+        vi.stubGlobal('fetch', vi.fn((input: string | URL) => {
+            const url = input.toString();
+            urls.push(url);
+            if (url.includes('/ping')) return Promise.resolve(res(true, {}));
+            if (url.includes('exchangeInfo')) return Promise.resolve(res(true, { symbols: [] }));
+            return Promise.resolve(res(false, {}));
+        }));
+
+        await new BinanceProvider().listSymbols();
+        const spotList = urls.find((u) => !u.includes('fapi') && u.includes('/exchangeInfo'));
+        expect(spotList).toBeDefined();
+        const params = new URL(spotList!).searchParams;
+        expect(params.get('symbolStatus')).toBe('TRADING');
+        expect(params.get('showPermissionSets')).toBe('false');
+    });
 });
 
 /** Minimal scriptable WebSocket double. */
