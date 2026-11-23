@@ -677,8 +677,9 @@ export class VelaWorkspace {
             onOpenChange: (open) => {
                 // In-chart dialogs (indicator inputs, chart settings) live inside a cell's
                 // chart container, so opening the search from the topbar never hits their
-                // outside-dismiss — close them on every cell explicitly.
-                if (open) for (const cell of this.cells()) cell.chart.renderer.closeDialogs();
+                // outside-dismiss — close them on every cell explicitly, EXCEPT when the
+                // picker was launched from inside an indicator's own symbol input.
+                if (open && !this.symbolPicker.isPicking) for (const cell of this.cells()) cell.chart.renderer.closeDialogs();
                 this.trackDialog(open);
             },
         });
@@ -695,7 +696,9 @@ export class VelaWorkspace {
                       i18n: this.localeState,
                       library: () => this.active.libraryRows(),
                       onChart: () => this.active.onChartRows(),
-                      onAdd: (i) => this.active.addFromLibrary(i),
+                      onAdd: (i) => {
+                          if (this.active.addFromLibrary(i)) this.indicatorPicker?.close();
+                      },
                       onRemove: (i) => this.active.removeFromChart(i),
                       onOpenChange: (open) => {
                           // Same rule as the symbol search: the renderer's in-chart dialogs never see
@@ -2122,6 +2125,7 @@ export class VelaWorkspace {
                 watermark: this.opts.watermark !== false,
                 nativeBackend: this.cellBackend,
                 dialogHost: this.root,
+                symbolPicker: (current, onPick) => this.symbolPicker.open(current.replace(/^[^:]*:/, ''), { onSelect: onPick }),
                 timezone: () => this.timezone,
                 setTimezone: (zone) => this.setTimezone(zone),
                 context: () => this.context(),

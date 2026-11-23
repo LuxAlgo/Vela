@@ -433,6 +433,11 @@ export class Dialog {
             if (api.open) {
                 this.exit?.cancel();
                 this.exit = null;
+                // A dialog opened on top of an already-open sibling (for example a symbol picker
+                // launched from indicator settings) must stack above it in DOM order.
+                if (!this.wasOpen && this.positioner.parentNode === host && host.lastElementChild !== this.positioner) {
+                    host.append(this.backdrop, this.positioner);
+                }
                 this.setShown(true);
             } else if (closing) {
                 this.holdExit();

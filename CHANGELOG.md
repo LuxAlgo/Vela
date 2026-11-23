@@ -4,6 +4,21 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- **Ichimoku Cloud, Correlation Coefficient, Correlation - Log, and Volatility Close-to-Close built-in indicators.**
+  Ichimoku Cloud plots Conversion Line, Base Line, backward-shifted Lagging Span, and the
+  forward-projected bullish/bearish cloud into the chart's right whitespace, with an optional
+  secondary symbol input. Correlation Coefficient and Correlation - Log compute rolling Pearson
+  correlation across instruments (prices or log returns) in their own pane and open their
+  settings dialog automatically when added from the indicator picker so you can pick the
+  symbol(s) immediately. Volatility Close-to-Close computes annualized sample standard deviation
+  of bar-to-bar close log returns.
+- **Built-in symbol picker inside indicator settings and multi-symbol support for native indicators.**
+  Symbol inputs in indicator settings now open the workspace's symbol search dialog by default
+  without dismissing the settings dialog behind it, and custom native indicators can request
+  and subscribe to secondary symbol series through `fetchSeries` and `subscribeSeries`.
+
 ### Changed
 
 - **Indicators from a script list appear sooner.** When the `indicators` option lists
@@ -35,6 +50,9 @@ All notable changes to Vela, newest first.
   registered, closing the search before its results finished ranking still rebuilt the
   hidden list and loaded about a hundred icons nobody could see. The list now rebuilds
   the next time the search opens.
+- **Crossing band fills render cleanly under WebGL2.** Where two filled series cross between
+  adjacent bars (such as an Ichimoku Cloud twist), the fill now splits cleanly at the
+  intersection instead of drawing an overlapping bow-tie quad.
 
 ## [0.10.14]
 
@@ -100,6 +118,9 @@ All notable changes to Vela, newest first.
   spot on screen, over another bar and price, and the label measured from there. The
   start now stays on the time and price you clicked, through a pan, a zoom, a new bar
   or a price-scale change.
+- **Crossing band fills render cleanly under WebGL2.** Where two filled series cross between
+  adjacent bars (such as an Ichimoku Cloud twist), the fill now splits cleanly at the
+  intersection instead of drawing an overlapping bow-tie quad.
 
 ## [0.10.13]
 

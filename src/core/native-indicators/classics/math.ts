@@ -627,3 +627,50 @@ export function cumSum(v: readonly number[]): number[] {
 export function fill(len: number, value: number): number[] {
     return new Array<number>(len).fill(value);
 }
+
+/** Natural log return `ln(v[i] / v[i-1])`, NaN on bar 0 or when either price is non-positive / NaN. */
+export function logReturns(v: readonly number[]): number[] {
+    const out = new Array<number>(v.length).fill(Number.NaN);
+    for (let i = 1; i < v.length; i++) {
+        const cur = v[i]!;
+        const prev = v[i - 1]!;
+        if (Number.isFinite(cur) && Number.isFinite(prev) && cur > 0 && prev > 0) {
+            out[i] = Math.log(cur / prev);
+        }
+    }
+    return out;
+}
+
+/** Sample variance over a trailing window of `len` bars (`n − 1` divisor; NaN when `len < 2` or any entry is non-finite). */
+export function sampleVariance(v: readonly number[], len: number): number[] {
+    if (len < 2) return fill(v.length, Number.NaN);
+    return windowed(v, len, (w, from, to) => {
+        let s = 0;
+        for (let k = from; k <= to; k++) s += w[k]!;
+        const mean = s / len;
+        let sq = 0;
+        for (let k = from; k <= to; k++) {
+            const d = w[k]! - mean;
+            sq += d * d;
+        }
+        return sq / (len - 1);
+    });
+}
+
+/**
+ * Align a secondary symbol's bars onto the chart's timeline: each chart bar receives the
+ * latest external bar whose open-time is at or before the chart bar's open-time (`null`
+ * before the external series starts or when it is empty). Both inputs are sorted ascending.
+ */
+export function alignBars(chartBars: readonly OHLCV[], extBars: readonly OHLCV[]): Array<OHLCV | null> {
+    const n = chartBars.length;
+    const out = new Array<OHLCV | null>(n).fill(null);
+    if (extBars.length === 0) return out;
+    let j = -1;
+    for (let i = 0; i < n; i++) {
+        const t = chartBars[i]!.time;
+        while (j + 1 < extBars.length && extBars[j + 1]!.time <= t) j++;
+        if (j >= 0) out[i] = extBars[j]!;
+    }
+    return out;
+}

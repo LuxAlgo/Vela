@@ -7,7 +7,7 @@ import type { IndicatorModel } from '../model/indicator';
 import type { ValuePatch, SeriesValueDelta } from '../model/patch';
 import { isLineLikeSeries } from '../model/series';
 import type { InputSchema, InputValue } from '../model/inputs';
-import type { VelaTheme, MarketConfig, MarketSwitch, MarketSnapshot, AddIndicatorOptions, PriceStyle, MoveTarget, PaneInfo } from '../options';
+import { normalizeSession, type VelaTheme, type MarketConfig, type MarketSwitch, type MarketSnapshot, type AddIndicatorOptions, type PriceStyle, type MoveTarget, type PaneInfo } from '../options';
 import type { PaneController } from '../PanesControl';
 import type { PaneAction } from '../ports/IChartRenderer';
 import type { CodeUpdateResult, IndicatorHandle } from '../IndicatorHandle';
@@ -386,7 +386,8 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
      */
     private async fetchSeries(symbol: string, timeframe: string, range: BarRange): Promise<OHLCV[]> {
         const parsed = parseExtendedTicker(symbol);
-        const cfg: MarketConfig = { symbol: parsed.symbol, timeframe };
+        const session = normalizeSession(range.session);
+        const cfg: MarketConfig = { symbol: parsed.symbol, timeframe, ...(session ? { session } : {}) };
         const bars = await (this.feed.loadRange ? this.feed.loadRange(cfg, range) : this.feed.load({ ...cfg, bars: range.limit }));
         return parsed.transform ? parsed.transform.full(bars) : bars;
     }
@@ -2556,8 +2557,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
             // One context per start: once the instance is stopped, nothing it left in flight
             // may reach the scene (a stopped market's payload, or a removed indicator's).
             let alive = true;
+            const secondaryUnsubs: Unsubscribe[] = [];
             native.revokeContext = () => {
                 alive = false;
+                for (const off of secondaryUnsubs.splice(0)) off();
             };
             const ctx: NativeIndicatorContext = {
                 id,
@@ -2567,6 +2570,27 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
                 session: this.config.market.session,
                 bars: () => this.bars,
                 data: this.dataControl,
+                fetchSeries: (symbol, timeframe, range) =>
+                    this.fetchSeries(symbol, timeframe, { ...(this.config.market.session ? { session: this.config.market.session } : {}), ...range }),
+                subscribeSeries: (symbol, timeframe, onBar) => {
+                    if (!alive || !this.config.live || this.replayQueue !== null) return () => {};
+                    const parsed = parseExtendedTicker(symbol);
+                    const cfg: MarketConfig = {
+                        symbol: parsed.symbol,
+                        timeframe,
+                        ...(this.config.market.session ? { session: this.config.market.session } : {}),
+                    };
+                    const rawOff = this.feed.subscribe(cfg, (bar) => {
+                        if (alive) onBar(bar);
+                    });
+                    const off: Unsubscribe = () => {
+                        const idx = secondaryUnsubs.indexOf(off);
+                        if (idx >= 0) secondaryUnsubs.splice(idx, 1);
+                        rawOff();
+                    };
+                    secondaryUnsubs.push(off);
+                    return off;
+                },
                 emit: (out) => {
                     if (alive) this.applyModel(id, this.buildNativeModel(record, out, this.bars[0]?.time));
                 },

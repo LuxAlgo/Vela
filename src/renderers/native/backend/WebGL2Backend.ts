@@ -648,6 +648,9 @@ export class WebGL2Backend implements IRenderBackend {
             const tCur = coords.priceToY(a1.value, pane.scale, pane.bounds);
             const bCur = coords.priceToY(b1.value, pane.scale, pane.bounds);
             // Style by the LEFT/head column (matches FillPrimitive's run-head convention).
+            const dPrev = tPrev - bPrev;
+            const dCur = tCur - bCur;
+            const crosses = dPrev * dCur < 0;
             const grad = fill.gradient?.[i - 1 - off];
             if (grad) {
                 const yTop = coords.priceToY(grad.topValue, pane.scale, pane.bounds);
@@ -657,12 +660,31 @@ export class WebGL2Backend implements IRenderBackend {
                 const bc = parseColor(grad.bottomColor);
                 const span = yBot - yTop;
                 const at = (y: number): RGBA => lerpColor(tc, bc, clamp01((y - yTop) / span));
-                // quad corners: TL(xPrev,tPrev) TR(xCur,tCur) BR(xCur,bCur) BL(xPrev,bPrev)
-                b.quad4(xPrev, tPrev, at(tPrev), xCur, tCur, at(tCur), xCur, bCur, at(bCur), xPrev, bPrev, at(bPrev));
+                if (crosses) {
+                    const frac = dPrev / (dPrev - dCur);
+                    const xCross = xPrev + frac * (xCur - xPrev);
+                    const yCross = tPrev + frac * (tCur - tPrev);
+                    const cCross = at(yCross);
+                    b.tri(xPrev, tPrev, at(tPrev), xCross, yCross, cCross, xPrev, bPrev, at(bPrev));
+                    b.tri(xCross, yCross, cCross, xCur, tCur, at(tCur), xCur, bCur, at(bCur));
+                } else {
+                    // quad corners: TL(xPrev,tPrev) TR(xCur,tCur) BR(xCur,bCur) BL(xPrev,bPrev)
+                    b.quad4(xPrev, tPrev, at(tPrev), xCur, tCur, at(tCur), xCur, bCur, at(bCur), xPrev, bPrev, at(bPrev));
+                }
             } else {
                 const color = fill.colors ? fill.colors[i - 1 - off] : fill.color;
                 if (!color) continue;
-                b.quad(xPrev, tPrev, xCur, tCur, xCur, bCur, xPrev, bPrev, parseColor(color));
+                const c = parseColor(color);
+                if (crosses) {
+                    // Split crossing ribbons at their intersection so neither triangle overlaps (no bow-tie).
+                    const frac = dPrev / (dPrev - dCur);
+                    const xCross = xPrev + frac * (xCur - xPrev);
+                    const yCross = tPrev + frac * (tCur - tPrev);
+                    b.tri(xPrev, tPrev, c, xCross, yCross, c, xPrev, bPrev, c);
+                    b.tri(xCross, yCross, c, xCur, tCur, c, xCur, bCur, c);
+                } else {
+                    b.quad(xPrev, tPrev, xCur, tCur, xCur, bCur, xPrev, bPrev, c);
+                }
             }
         }
     }
