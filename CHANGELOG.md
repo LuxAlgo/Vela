@@ -29,6 +29,13 @@ All notable changes to Vela, newest first.
   charts switch, they now share one download instead of each asking for the same
   candles. The last chart fills in as fast as the first.
 
+### Fixed
+
+- **A closed symbol search no longer loads symbol icons.** With a custom symbol ranking
+  registered, closing the search before its results finished ranking still rebuilt the
+  hidden list and loaded about a hundred icons nobody could see. The list now rebuilds
+  the next time the search opens.
+
 ## [0.10.14]
 
 ### Added
