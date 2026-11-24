@@ -2,6 +2,12 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Clicking a checkbox's title toggles it.** In indicator, chart, and drawing settings, clicking the words next to a checkbox (such as "Show Session Anchor") now checks or unchecks it, the same as clicking the box. Hovering the title still leaves the box alone.
+
 ## [0.10.17]
 
 ### Fixed

@@ -84,8 +84,13 @@ const injectFieldStyles = defineStyles(
                     opacity: 0.85;
                 }
             }
-            /* Titles are fully inert: spans, not label[for] — native labels propagate :hover
-               and clicks onto their control, and both belong to the input alone. */
+            /* Titles are spans, not label[for]: a native label propagates :hover onto its
+               control, and hover belongs to the input alone. A checkbox's title still
+               toggles it on click (see labelEl). */
+            [data-slot~='field-label'][data-toggles] {
+                cursor: pointer;
+                user-select: none;
+            }
             [data-slot~='field-cell'] {
                 display: flex;
                 align-items: center;
@@ -255,15 +260,30 @@ export interface FieldRowOptions {
     className?: string;
 }
 
-function labelEl(text: string, opts: { id?: string; size?: FieldLabelSize }): HTMLElement {
-    // A SPAN on purpose, never a `<label for>`: the title is fully INERT — it neither
-    // reacts to hover (native labels propagate `:hover` onto their control) nor to
-    // clicks. Only the input itself is interactive. The a11y association a label would
-    // have given lives on the control as `aria-labelledby` instead.
+function labelEl(text: string, opts: { id?: string; size?: FieldLabelSize; toggles?: HTMLElement }): HTMLElement {
+    // A SPAN on purpose, never a `<label for>`: native labels propagate `:hover` onto
+    // their control, and hover belongs to the input alone. The a11y association a label
+    // would have given lives on the control as `aria-labelledby` instead.
     const el = document.createElement('span');
     cls(el, 'label');
     if (opts.size) el.dataset.size = opts.size;
     el.textContent = text;
+    // A checkbox's title toggles it on click, as a label would: the title reads as part
+    // of the option, and a small box is a hard target. Clicking the switch's root (its
+    // own `<label>`) goes through the input, so a disabled switch stays put.
+    const toggles = opts.toggles;
+    if (toggles) {
+        el.dataset.toggles = '';
+        // Focus on press, as the switch's own press does, so a mouse click on the title
+        // reads as a pointer focus (no keyboard focus ring) and selects no text.
+        el.addEventListener('pointerdown', (e) => {
+            const input = toggles.querySelector('input');
+            if (!input || input.disabled) return;
+            e.preventDefault();
+            input.focus({ preventScroll: true });
+        });
+        el.addEventListener('click', () => toggles.click());
+    }
     const id = opts.id;
     if (id) {
         el.id = `${id}--title`;
@@ -305,7 +325,7 @@ export function fieldRow(opts: FieldRowOptions): HTMLElement {
             cls(it, 'inline-item');
             if (item.toggleFirst) it.style.flexDirection = 'row-reverse';
             if (item.label) {
-                it.appendChild(labelEl(item.label, { id: item.id, size }));
+                it.appendChild(labelEl(item.label, { id: item.id, size, ...(item.toggleFirst ? { toggles: item.control } : {}) }));
             }
             if (item.fit) it.appendChild(item.control);
             else {
@@ -331,7 +351,7 @@ export function fieldRow(opts: FieldRowOptions): HTMLElement {
             tone: 'bright',
             onCheckedChange: (v) => opts.toggle?.onChange(v),
         });
-        wrap.append(sw.el, labelEl(opts.label, { id: opts.toggle?.id ?? opts.id, size }));
+        wrap.append(sw.el, labelEl(opts.label, { id: opts.toggle?.id ?? opts.id, size, toggles: sw.el }));
         if (opts.info) wrap.appendChild(opts.info);
         if (opts.toggle?.get) {
             const get = opts.toggle.get;
@@ -371,7 +391,7 @@ export function fieldRow(opts: FieldRowOptions): HTMLElement {
                 if (controls.length > 0) dimControls(controls, v);
             },
         });
-        left.append(sw.el, labelEl(opts.label, { id: opts.toggle.id ?? opts.id, size }));
+        left.append(sw.el, labelEl(opts.label, { id: opts.toggle.id ?? opts.id, size, toggles: sw.el }));
         wrap.appendChild(left);
         if (controls.length > 0) dimControls(controls, opts.toggle.checked);
         if (opts.toggle.get) {
