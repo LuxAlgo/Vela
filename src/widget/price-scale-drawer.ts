@@ -108,6 +108,8 @@ export class PriceScaleDrawer {
             axisLabels: this.flag('axisLabels'),
             priceLabel: this.flag('priceLabel'),
             countdown: this.flag('countdown'),
+            indicatorValueLabels: this.flag('indicatorValueLabels'),
+            indicatorNameLabels: this.flag('indicatorNameLabels'),
             priceLine: this.flag('currentPriceLine'),
         }, chart.i18n);
 

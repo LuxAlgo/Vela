@@ -112,6 +112,8 @@ export interface VelaCoreMessageCatalog {
     'chart.settings.grid': string;
     'chart.settings.horizontal': string;
     'chart.settings.indexedTo100': string;
+    'chart.settings.indicatorNameLabels': string;
+    'chart.settings.indicatorValueLabels': string;
     'chart.settings.invertScale': string;
     'chart.settings.lastPriceLabel': string;
     'chart.settings.lastPriceLine': string;
@@ -2350,6 +2352,8 @@ export interface VelaCoreMessageCatalog {
     'widget.contextMenu.auto': string;
     'widget.contextMenu.axisLabels': string;
     'widget.contextMenu.countdown': string;
+    'widget.contextMenu.indicatorNameLabels': string;
+    'widget.contextMenu.indicatorValueLabels': string;
     'widget.contextMenu.invert': string;
     'widget.contextMenu.labels': string;
     'widget.contextMenu.levels': string;

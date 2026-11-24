@@ -106,6 +106,8 @@ const TEXT = {
     lastPriceLine: msg('chart.settings.lastPriceLine', 'Last price line'),
     lastPriceLabel: msg('chart.settings.lastPriceLabel', 'Last price label'),
     countdownToBarClose: msg('chart.settings.countdownToBarClose', 'Countdown to bar close'),
+    indicatorValueLabels: msg('chart.settings.indicatorValueLabels', 'Indicator value labels'),
+    indicatorNameLabels: msg('chart.settings.indicatorNameLabels', 'Indicator name labels'),
     axisLabels: msg('chart.settings.axisLabels', 'Axis labels'),
     scaleBorderColor: msg('chart.settings.scaleBorderColor', 'Scale border color'),
     crosshair: msg('chart.settings.crosshair', 'Crosshair'),
@@ -771,7 +773,10 @@ export class SettingsDialog {
         body.append(sid(this.separator(), 'scales.price-scale'));
         body.append(sid(this.boolRow(TEXT.lastPriceLine, config.priceScale.currentPriceLine, (v) => this.emit({ priceScale: { currentPriceLine: v } })), 'scales.price-scale.last-price-line'));
         body.append(sid(this.boolRow(TEXT.lastPriceLabel, config.priceScale.priceLabel, (v) => this.emit({ priceScale: { priceLabel: v } })), 'scales.price-scale.last-price-label'));
-        body.append(sid(this.boolRow(TEXT.countdownToBarClose, config.priceScale.countdown, (v) => this.emit({ priceScale: { countdown: v } })), 'scales.price-scale.countdown'));        body.append(sid(this.boolRow(TEXT.axisLabels, config.priceScale.labelsVisible, (v) => this.emit({ priceScale: { labelsVisible: v } })), 'scales.price-scale.axis-labels'));
+        body.append(sid(this.boolRow(TEXT.countdownToBarClose, config.priceScale.countdown, (v) => this.emit({ priceScale: { countdown: v } })), 'scales.price-scale.countdown'));
+        body.append(sid(this.boolRow(TEXT.indicatorValueLabels, config.priceScale.indicatorValueLabels, (v) => this.emit({ priceScale: { indicatorValueLabels: v } })), 'scales.price-scale.indicator-value-labels'));
+        body.append(sid(this.boolRow(TEXT.indicatorNameLabels, config.priceScale.indicatorNameLabels, (v) => this.emit({ priceScale: { indicatorNameLabels: v } })), 'scales.price-scale.indicator-name-labels'));
+        body.append(sid(this.boolRow(TEXT.axisLabels, config.priceScale.labelsVisible, (v) => this.emit({ priceScale: { labelsVisible: v } })), 'scales.price-scale.axis-labels'));
         body.append(sid(this.colorRow(TEXT.scaleBorderColor, config.priceScale.borderColor, (v) => this.emit({ priceScale: { borderColor: v } })), 'scales.price-scale.border-color'));
         body.append(sid(this.sectionTitle(TEXT.crosshair), 'scales.crosshair'));
         body.append(sid(this.colorRow(TEXT.color, config.crosshair.color, (v) => this.emit({ crosshair: { color: v } })), 'scales.crosshair.color'));

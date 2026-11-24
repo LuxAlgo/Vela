@@ -2,7 +2,10 @@ import type { Translator } from '../../../core/i18n/types';
 import type { VelaTheme } from '../../../core/options';
 import type { IndicatorModel } from '../../../core/model/indicator';
 import type { OHLCV } from '../../../core/model/ohlcv';
-import type { LineStyle } from '../../../core/model/series';
+import { isLineLikeSeries, seriesShownOn, type LineStyle, type LineLikeSeries } from '../../../core/model/series';
+import { textOf } from '../../../core/i18n/text';
+import { parseColor } from '../backend/gl/color';
+import { spreadAxisTags, type AxisTagSlot } from './axisTags';
 import type { CoordinateSystem } from '../core/CoordinateSystem';
 import type { SceneGraph, PaneNode } from '../core/SceneGraph';
 import { percentScaleFor } from '../core/SceneGraph';
@@ -53,6 +56,8 @@ export class ChromeRenderer {
     /** Bar open times of the current series, rebuilt only when the array or its length changes (a live tick keeps both). */
     private barTimesSrc: readonly OHLCV[] | null = null;
     private barTimesCache: number[] = [];
+    /** The chart's translator, for the indicator name labels (English when absent). */
+    i18n: Translator | null = null;
 
     /** `axisTicks` is shared with the backdrop layer, so price labels and gridlines agree. */
     constructor(private readonly axisTicks = new PriceAxisTickSource()) {}
@@ -171,6 +176,7 @@ export class ChromeRenderer {
         this.drawPriceAxes(ctx, scene, coords, theme, dataW, panes);
         this.drawMergedScaleColumns(ctx, scene, coords, dataW);
         this.drawPaneSeparators(ctx, scene, theme, fullW, panes);
+        this.drawIndicatorTags(ctx, scene, coords, theme, dataW, panes, pricePane);
         this.drawPriceLineAndCountdown(ctx, scene, coords, theme, dataW, pricePane);
         this.drawTimeAxis(ctx, scene, coords, theme, dataW, dataH, fullH);
         this.drawMarkLane(ctx, scene, coords, theme, dataW, dataH);
@@ -354,6 +360,122 @@ export class ChromeRenderer {
     }
 
     /**
+     * Indicator value tags: each indicator plot's value on the last bar, as a chip in its
+     * plot color on the scale it draws against (the pane's master scale, or its own merged
+     * column), with its name in a tinted chip just inside the plot when name labels are on.
+     * Chips sharing a column are nudged apart; the last-price chip keeps its place and the
+     * tags make room around it. A plot gets no tag when it is off the price scale
+     * (`display.priceScale`), has no value or an invisible color on the last bar, or sits
+     * outside its pane's visible range.
+     */
+    private drawIndicatorTags(ctx: CanvasRenderingContext2D, scene: SceneGraph, coords: CoordinateSystem, theme: VelaTheme, dataW: number, panes: PaneNode[], pricePane: PaneNode | null): void {
+        const showValues = scene.showIndicatorValueLabels;
+        const showNames = scene.showIndicatorNameLabels;
+        if (!showValues && !showNames) return;
+        const last = scene.bars.length - 1;
+        if (last < 0) return;
+        const CHIP_H = 16;
+        const PAD = 8;
+        const background = theme.background;
+        const tagged = (m: IndicatorModel): LineLikeSeries[] => m.series.filter((s): s is LineLikeSeries => isLineLikeSeries(s) && seriesShownOn(s, 'priceScale'));
+
+        for (const pane of panes) {
+            if (pane.collapsed || !(pane.bounds.height > 0)) continue;
+            const top = pane.bounds.top;
+            const bottom = top + pane.bounds.height;
+            // Scale columns on this pane: 0 is the master scale, k + 1 the k-th merged indicator.
+            const own = scene.ownScaleIndicatorsForPane(pane.id);
+            const columns = new Map<number, Array<{ slot: AxisTagSlot; text: string; color: string; name: string } | { slot: AxisTagSlot; priceChip: true }>>();
+            const add = (column: number, entry: { slot: AxisTagSlot; text: string; color: string; name: string } | { slot: AxisTagSlot; priceChip: true }): void => {
+                const list = columns.get(column);
+                if (list) list.push(entry);
+                else columns.set(column, [entry]);
+            };
+            const tag = (m: IndicatorModel, s: LineLikeSeries, column: number, scale: PaneNode['scale'], master: boolean, plots: number): void => {
+                const p = s.points[last - scene.offsetOf(m.id)];
+                if (!p || p.value === null || !Number.isFinite(p.value)) return;
+                const raw = p.color ?? s.style.color;
+                if (!raw || parseColor(raw)[3] === 0) return; // `color = na` on the last bar: nothing shown there
+                const y = coords.priceToY(p.value, scale, pane.bounds);
+                if (!(y >= top && y <= bottom)) return;
+                const text = master
+                    ? formatAxisValue(scale, pane.bounds.height, p.value, percentScaleFor(scene, pane), scene.priceMintick, pane.axisFormat, scene.format)
+                    : formatAxisValue(scale, pane.bounds.height, p.value, undefined, scene.priceMintick, undefined, scene.format);
+                if (!text) return;
+                add(column, { slot: { top: y - CHIP_H / 2, height: CHIP_H }, text, color: withAlpha(raw, 1), name: this.tagName(m, s, plots) });
+            };
+            for (const m of scene.orderedIndicatorsForPane(pane.id)) {
+                const k = m.ownScale === true ? own.indexOf(m) : -1;
+                const series = tagged(m).filter((s) => s.overlay !== true);
+                for (const s of series) tag(m, s, k + 1, scene.scaleFor(m, pane), k < 0, tagged(m).length);
+            }
+            if (pane === pricePane) {
+                // force_overlay plots land on the price pane's master scale, whatever pane their indicator owns.
+                for (const m of scene.indicators.values()) for (const s of tagged(m)) if (s.overlay === true) tag(m, s, 0, pane.scale, true, tagged(m).length);
+                const chip = this.priceChipSlot(scene, coords, pane);
+                if (chip && columns.has(0)) add(0, { slot: chip, priceChip: true });
+            }
+
+            for (const [column, entries] of columns) {
+                const tops = spreadAxisTags(entries.map((e) => e.slot), top, bottom);
+                const x = axisColumnX(dataW, column) + 1;
+                ctx.textBaseline = 'middle';
+                entries.forEach((e, i) => {
+                    if ('priceChip' in e) return; // drawn by drawPriceLineAndCountdown, at its own level
+                    const y = tops[i]! + CHIP_H / 2;
+                    if (showValues) {
+                        const w = ctx.measureText(e.text).width + PAD;
+                        ctx.fillStyle = e.color;
+                        ctx.fillRect(x, y - CHIP_H / 2, w, CHIP_H);
+                        ctx.fillStyle = tagTextColor(e.color, background);
+                        ctx.textAlign = 'center';
+                        ctx.fillText(e.text, x + w / 2, y);
+                    }
+                    if (showNames && e.name) {
+                        const name = fitText(ctx, e.name, 160);
+                        const w = ctx.measureText(name).width + PAD;
+                        const nx = dataW - w - 2;
+                        ctx.fillStyle = background;
+                        ctx.fillRect(nx, y - CHIP_H / 2, w, CHIP_H);
+                        ctx.fillStyle = withAlpha(e.color, 0.18);
+                        ctx.fillRect(nx, y - CHIP_H / 2, w, CHIP_H);
+                        ctx.strokeStyle = withAlpha(e.color, 0.55);
+                        ctx.lineWidth = 1;
+                        ctx.strokeRect(nx + 0.5, y - CHIP_H / 2 + 0.5, w - 1, CHIP_H - 1);
+                        ctx.fillStyle = e.color;
+                        ctx.textAlign = 'center';
+                        ctx.fillText(name, nx + w / 2, y);
+                    }
+                });
+                ctx.textAlign = 'start';
+            }
+        }
+    }
+
+    /** What a plot's name label reads: the indicator's short name, plus the plot's own name
+     *  when the indicator tags more than one plot (`BB Upper`, `BB Basis`). */
+    private tagName(m: IndicatorModel, s: LineLikeSeries, plots: number): string {
+        const short = m.displayShorttitle ?? m.shorttitle;
+        const indicator = textOf(this.i18n, short ?? m.displayTitle ?? m.title);
+        if (plots <= 1) return indicator;
+        const plot = s.displayTitle ? textOf(this.i18n, s.displayTitle) : s.title;
+        return plot && plot !== indicator ? `${indicator} ${plot}` : indicator;
+    }
+
+    /** The band the last-price chip (and the countdown merged under it) takes on the price
+     *  scale, or null when neither shows — the slot indicator tags make room around. */
+    private priceChipSlot(scene: SceneGraph, coords: CoordinateSystem, pricePane: PaneNode): AxisTagSlot | null {
+        const n = scene.bars.length;
+        if (n === 0 || scene.candlesHidden) return null;
+        const last = scene.bars[n - 1]!;
+        const y = coords.priceToY(last.close, pricePane.scale, pricePane.bounds);
+        if (y < pricePane.bounds.top || y > pricePane.bounds.top + pricePane.bounds.height) return null;
+        const countdown = scene.showCountdown && !scene.variableDuration && countdownText(last.time, coords.barInterval, clockCorrection.now(), scene.format) !== null;
+        if (!scene.showPriceLabel && !countdown) return null;
+        return { top: y - 8, height: scene.showPriceLabel && countdown ? 32 : 16, fixed: true };
+    }
+
+    /**
      * The latest-price chrome on the price pane, all colored with the price element's own
      * color (candle/bar up-down, line, area, or baseline side) and white text:
      *  - the dashed current-price LINE (`showPriceLine`) — fully independent of the label,
@@ -524,4 +646,12 @@ export function priceElementColor(scene: SceneGraph, coords: CoordinateSystem, t
             return body;
         }
     }
+}
+
+/** `text`, cut with an ellipsis to fit `maxW` px in the context's current font. */
+function fitText(ctx: CanvasRenderingContext2D, text: string, maxW: number): string {
+    if (ctx.measureText(text).width <= maxW) return text;
+    let s = text;
+    while (s.length > 1 && ctx.measureText(`${s}…`).width > maxW) s = s.slice(0, -1);
+    return `${s.trimEnd()}…`;
 }

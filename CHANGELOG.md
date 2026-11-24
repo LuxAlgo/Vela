@@ -2,6 +2,12 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Indicator value and name labels on the price scale.** Each indicator plot's value on the last bar now shows as a chip in the plot's color on the scale it draws against: the price scale, an indicator pane's scale, or a merged indicator's own column. Two new toggles under the price scale's **Labels** menu (and in Chart settings → Scales and lines) control them: **Indicator value labels** (on by default) and **Indicator name labels** (off by default), which puts the indicator's name, and the plot's name when it has several, in a tinted chip beside the value. Labels that would overlap are moved apart, and the last price label always keeps its place. A plot a script keeps off the price scale (`display.priceScale: false`) gets no label. Both choices are saved with the chart settings.
+
 ## [0.10.17]
 
 ### Fixed
