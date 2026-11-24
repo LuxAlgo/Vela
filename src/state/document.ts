@@ -97,6 +97,11 @@ export interface CellState {
     /** The status line's segments, by part, as the settings dialog's Status line tab and
      *  the status line's right-click menu leave them — a per-chart display pref. */
     statuslineParts?: Partial<Record<'logo' | 'name' | 'market' | 'ohlc' | 'change', boolean>>;
+    /** The price scale the chart was on before a comparison sharing the percent scale
+     *  switched it to percent — what the axis returns to when the last such comparison
+     *  leaves. Present only while one holds the axis there; a chart that was already on a
+     *  percent or indexed scale never writes it, and its axis is left alone. */
+    scaleBeforeCompare?: { mode: string; log: boolean };
     /** The renderer's cosmetic config document (`renderer.getConfig()`). */
     rendererConfig?: unknown;
     /** The user-drawings document (`drawings.toJSON()`). */
@@ -306,6 +311,10 @@ function sanitizeCell(raw: unknown): CellState | null {
         const parts: NonNullable<CellState['statuslineParts']> = {};
         for (const key of STATUSLINE_PART_KEYS) if (typeof bag[key] === 'boolean') parts[key] = bag[key];
         if (Object.keys(parts).length > 0) out.statuslineParts = parts;
+    }
+    if (c.scaleBeforeCompare != null && typeof c.scaleBeforeCompare === 'object') {
+        const { mode, log } = c.scaleBeforeCompare as Record<string, unknown>;
+        if (typeof mode === 'string' && mode && typeof log === 'boolean') out.scaleBeforeCompare = { mode, log };
     }
     if (c.rendererConfig != null && typeof c.rendererConfig === 'object') out.rendererConfig = c.rendererConfig;
     if (c.drawings != null && typeof c.drawings === 'object') out.drawings = c.drawings;
