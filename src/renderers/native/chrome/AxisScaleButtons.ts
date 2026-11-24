@@ -17,6 +17,7 @@ export interface AxisScaleView {
     /** Autoscale on — the pane's master scale holds no frozen (manual) window. */
     auto: boolean;
     log: boolean;
+    percent: boolean;
 }
 
 export interface AxisScaleButtonsDeps {
@@ -25,6 +26,7 @@ export interface AxisScaleButtonsDeps {
     rightAxis(): number;
     onToggleAuto(paneId: string): void;
     onToggleLog(paneId: string): void;
+    onTogglePercent(paneId: string): void;
     /** The chart's translator (button tooltips). Absent: English. */
     i18n?(): Translator;
 }
@@ -32,16 +34,19 @@ export interface AxisScaleButtonsDeps {
 const TEXT = {
     auto: msg('chart.axisButtons.auto', 'Auto (fits data to screen)'),
     log: msg('chart.axisButtons.log', 'Logarithmic scale'),
+    percent: msg('chart.axisButtons.percent', 'Percentage scale'),
     /** The auto button's letter: the first of "Auto". */
     autoLetter: msg('chart.axisButtons.autoLetter', 'A'),
     /** The log button's letter: the first of "Logarithmic". */
     logLetter: msg('chart.axisButtons.logLetter', 'L'),
+    /** The percent button's symbol. */
+    percentLetter: msg('chart.axisButtons.percentLetter', '%'),
 };
 
 const STYLE_ID = 'vela-axis-scale-buttons';
 
 const BTN_PX = 18; // square hit target per letter button
-const BTN_GAP = 4; // air between A and L — close enough to read as a pair
+const BTN_GAP = 3; // fits %, L, A (3×18 + 2×3 = 60px) inside the 63px master column
 /** The chrome's 1px vertical frame at the data/gutter seam (`drawPriceAxes`). The strip
  *  stays INSIDE the scale — it must not paint over that line. */
 const AXIS_BORDER = 1;
@@ -71,15 +76,16 @@ function ensureStyles(): void {
 }
 
 /**
- * Inline A (auto) / L (log) buttons at the bottom of a pane's price scale, revealed while
- * the cursor hovers that pane's master scale column. Each toggles its mode for the hovered
- * pane; an active mode wears the selected (inverse-chip) button style. A DOM overlay on
- * the plot, matching the pane-controls pattern.
+ * Inline % (percent) / L (log) / A (auto) buttons at the bottom of a pane's price scale,
+ * revealed while the cursor hovers that pane's master scale column. Each toggles its mode
+ * for the hovered pane; an active mode wears the selected (inverse-chip) button style.
+ * A DOM overlay on the plot, matching the pane-controls pattern.
  */
 export class AxisScaleButtons {
     private readonly cluster: HTMLDivElement;
     private readonly autoBtn: HTMLButtonElement;
     private readonly logBtn: HTMLButtonElement;
+    private readonly percentBtn: HTMLButtonElement;
     private readonly tipDisposers: Array<() => void> = [];
     private hoverPaneId: string | null = null;
 
@@ -99,9 +105,10 @@ export class AxisScaleButtons {
             pointerEvents: 'auto',
         });
         this.applyTheme();
-        this.autoBtn = this.button(TEXT.autoLetter, TEXT.auto, () => this.deps.onToggleAuto(this.hoverPaneId ?? ''));
+        this.percentBtn = this.button(TEXT.percentLetter, TEXT.percent, () => this.deps.onTogglePercent(this.hoverPaneId ?? ''));
         this.logBtn = this.button(TEXT.logLetter, TEXT.log, () => this.deps.onToggleLog(this.hoverPaneId ?? ''));
-        this.cluster.append(this.autoBtn, this.logBtn);
+        this.autoBtn = this.button(TEXT.autoLetter, TEXT.auto, () => this.deps.onToggleAuto(this.hoverPaneId ?? ''));
+        this.cluster.append(this.percentBtn, this.logBtn, this.autoBtn);
         this.plot.appendChild(this.cluster);
         // Track hover on the PLOT so moving the cursor onto the buttons themselves — plot
         // children above the canvas — keeps them revealed instead of flickering away.
@@ -115,8 +122,10 @@ export class AxisScaleButtons {
 
     /** Re-read the buttons' labels in the current language (tooltips read it live). */
     relabel(): void {
+        this.percentBtn.setAttribute('aria-label', this.t(TEXT.percent));
         this.autoBtn.setAttribute('aria-label', this.t(TEXT.auto));
         this.logBtn.setAttribute('aria-label', this.t(TEXT.log));
+        this.percentBtn.textContent = this.t(TEXT.percentLetter);
         this.autoBtn.textContent = this.t(TEXT.autoLetter);
         this.logBtn.textContent = this.t(TEXT.logLetter);
     }
@@ -195,10 +204,11 @@ export class AxisScaleButtons {
         this.sync();
     }
 
-    /** Reflect the hovered pane's current auto/log state on the buttons. */
+    /** Reflect the hovered pane's current auto/log/percent state on the buttons. */
     private sync(): void {
         const pane = this.deps.panes().find((p) => p.id === this.hoverPaneId);
         if (!pane) return;
+        this.percentBtn.classList.toggle('vela-axis-on', pane.percent);
         this.autoBtn.classList.toggle('vela-axis-on', pane.auto);
         this.logBtn.classList.toggle('vela-axis-on', pane.log);
     }

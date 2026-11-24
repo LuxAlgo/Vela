@@ -20,6 +20,21 @@ import { textOf } from '../i18n/text';
  */
 export interface NativeIndicatorOutput {
     /**
+     * Per-instance display title overriding the descriptor's static `title` (e.g. a
+     * compared symbol showing its ticker and venue). Absent ⇒ descriptor's `title`.
+     */
+    title?: MessageLike;
+    /** Per-instance compact title overriding the descriptor's `shortTitle`. */
+    shortTitle?: MessageLike;
+    /** Per-instance pane placement override (applied until the user moves the indicator). */
+    paneHint?: 'price' | 'new';
+    /** Per-instance own-scale override (applied until the user moves the indicator). */
+    ownScale?: boolean;
+    /** Percent/indexed normalization mode (see `IndicatorModel.percentBaseline`). */
+    percentBaseline?: 'pane' | 'own';
+    /** Show a colored last-value + name badge on the price axis (see `IndicatorModel.priceAxisLabel`). */
+    priceAxisLabel?: boolean;
+    /**
      * Value-axis override for the pane this native OWNS (see `IndicatorModel.paneAxis`):
      * `'none'` for content that is not value-mapped, or band labels for a categorical
      * axis. Emitted per compute, so it can follow the inputs (e.g. row toggles relabel
@@ -165,6 +180,13 @@ export interface NativeIndicatorDescriptor {
      * overwrite each other (see `IndicatorModel.native.channel`).
      */
     readonly multiInstance?: boolean;
+    /**
+     * Whether this type appears in `chart.availableNativeIndicators()` (indicator pickers).
+     * Absent / `true` ⇒ listed; `false` ⇒ excluded from the picker while still addable
+     * through `chart.addNativeIndicator(type)` (for tools with their own entry point, such
+     * as symbol comparison).
+     */
+    readonly catalog?: boolean;
     inputsSchema(): InputSchema[];
     defaultInputs(): Record<string, InputValue>;
     create(): NativeIndicator;

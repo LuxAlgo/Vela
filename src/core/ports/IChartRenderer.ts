@@ -311,6 +311,12 @@ export interface IChartRenderer {
     setSymbolFacts?(facts: SymbolFacts | null): void;
 
     /**
+     * Set the active symbol's short display name (bare ticker, e.g. `'AAPL'`), used when
+     * the price axis labels multiple instruments side by side. Optional.
+     */
+    setSymbolName?(name: string | undefined): void;
+
+    /**
      * Push a bespoke NATIVE-LAYER render payload, keyed by layer `type`. Visuals that aren't
      * ordinary series/fills draw through a dedicated renderer layer instead of the model; this is
      * the channel. Producers are native indicators (`'volume'`, `'vpvr'` — layer config) and core

@@ -8,7 +8,7 @@ import { spreadAxisTags, type AxisTagSlot } from './axisTags';
 import { blend, cssRgba, readableInk, rgbaCss, type Rgba } from './tagColors';
 import type { CoordinateSystem } from '../core/CoordinateSystem';
 import type { SceneGraph, PaneNode } from '../core/SceneGraph';
-import { percentScaleFor } from '../core/SceneGraph';
+import { percentScaleFor, percentScaleForModel } from '../core/SceneGraph';
 import { effectiveCandlePaint, withAlpha } from '../core/chartConfig';
 import { columnIsUp } from '../backend/close-styles';
 // Re-exported so existing importers (crosshair) can keep sourcing it from here.
@@ -56,6 +56,9 @@ interface IndicatorTag {
     text: string;
     color: Rgba;
     name: string;
+    /** Opt-in axis label (e.g. a compared symbol): renders its value + solid name pill
+     *  whenever `showPriceLabel` is on, even while global indicator name labels are off. */
+    solidPill?: boolean;
 }
 
 /**
@@ -218,7 +221,7 @@ export class ChromeRenderer {
             }
         }
 
-        // ── axes + current-price line + countdown ──
+        // ── axes + indicator/compare tags + current-price line + countdown ──
         this.drawPriceAxes(ctx, scene, coords, theme, dataW, panes);
         this.drawMergedScaleColumns(ctx, scene, coords, dataW);
         this.drawPaneSeparators(ctx, scene, theme, fullW, panes);
@@ -423,7 +426,8 @@ export class ChromeRenderer {
     private drawIndicatorTags(ctx: CanvasRenderingContext2D, scene: SceneGraph, coords: CoordinateSystem, theme: VelaTheme, dataW: number, fullW: number, panes: PaneNode[], pricePane: PaneNode | null): void {
         const showValues = scene.showIndicatorValueLabels;
         const showNames = scene.showIndicatorNameLabels;
-        if (!showValues && !showNames) return;
+        const hasOptIn = scene.showPriceLabel && [...scene.indicators.values()].some((m) => m.priceAxisLabel === true);
+        if (!showValues && !showNames && !hasOptIn) return;
         const last = scene.bars.length - 1;
         if (last < 0) return;
         const background = cssRgba(theme.background);
@@ -441,14 +445,17 @@ export class ChromeRenderer {
             const own = scene.ownScaleIndicatorsForPane(pane.id);
             const tags: IndicatorTag[] = [];
             const add = (m: IndicatorModel, plot: TaggedPlot, column: number, scale: PaneNode['scale'], master: boolean): void => {
+                const solidPill = m.priceAxisLabel === true && scene.showPriceLabel;
+                if (!showValues && !showNames && !solidPill) return;
                 const y = coords.priceToY(plot.value, scale, pane.bounds);
                 if (!(y >= top && y <= bottom)) return;
+                const mintick = m.percentBaseline === 'own' ? undefined : scene.priceMintick;
                 const text = master
-                    ? formatAxisValue(scale, pane.bounds.height, plot.value, percentScaleFor(scene, pane), scene.priceMintick, pane.axisFormat, scene.format)
-                    : formatAxisValue(scale, pane.bounds.height, plot.value, undefined, scene.priceMintick, undefined, scene.format);
+                    ? formatAxisValue(scale, pane.bounds.height, plot.value, percentScaleForModel(scene, pane, m), mintick, pane.axisFormat, scene.format, solidPill ? 'lastPrice' : 'priceAxis')
+                    : formatAxisValue(scale, pane.bounds.height, plot.value, undefined, mintick, undefined, scene.format, solidPill ? 'lastPrice' : 'priceAxis');
                 if (!text) return;
-                const name = this.tagName(m, plot.series, labelled.get(m.id)!.length);
-                tags.push({ column, slot: { top: y - TAG_H / 2, height: TAG_H }, text, color: plot.color, name });
+                const name = solidPill ? plot.series.title || this.tagName(m, plot.series, labelled.get(m.id)!.length) : this.tagName(m, plot.series, labelled.get(m.id)!.length);
+                tags.push({ column, slot: { top: y - TAG_H / 2, height: TAG_H }, text, color: plot.color, name, ...(solidPill ? { solidPill: true } : {}) });
             };
             for (const m of scene.orderedIndicatorsForPane(pane.id)) {
                 const k = m.ownScale === true ? own.indexOf(m) : -1;
@@ -461,9 +468,10 @@ export class ChromeRenderer {
             if (tags.length === 0) continue;
 
             const priceChip = pane === pricePane ? this.priceChipSlot(scene, coords, pane) : null;
+            const anyEdgeNames = showNames || tags.some((t) => t.solidPill && t.column === 0);
             const groups = new Map<number, IndicatorTag[]>();
             for (const t of tags) {
-                const key = showNames ? 0 : t.column;
+                const key = anyEdgeNames ? 0 : t.column;
                 const group = groups.get(key);
                 if (group) group.push(t);
                 else groups.set(key, [t]);
@@ -484,16 +492,20 @@ export class ChromeRenderer {
                     const chipTop = tops[i]!;
                     if (chipTop < top || chipTop + TAG_H > bottom) return; // no room left in the pane
                     const y = chipTop + TAG_H / 2;
-                    if (showValues) {
+                    const fill = rgbaCss(t.color, 1);
+                    if (showValues || t.solidPill) {
                         const x = axisColumnX(dataW, t.column) + 1;
-                        const fill = rgbaCss(t.color, 1);
                         const w = ctx.measureText(t.text).width + TAG_PAD;
                         ctx.fillStyle = fill;
                         ctx.fillRect(x, chipTop, w, TAG_H);
                         ctx.fillStyle = tagTextColor(fill, theme.background);
                         ctx.fillText(t.text, x + w / 2, y);
                     }
-                    if (showNames && t.name) {
+                    if (t.solidPill && t.column === 0 && t.name) {
+                        const name = fitText(ctx, t.name, nameMaxW);
+                        drawAxisNameTag(ctx, name, dataW, y, fill, tagTextColor(fill, theme.background));
+                        ctx.textAlign = 'center';
+                    } else if (showNames && t.name) {
                         const name = fitText(ctx, t.name, nameMaxW);
                         const w = ctx.measureText(name).width + TAG_PAD;
                         const x = dataW - w - 2;
@@ -590,6 +602,17 @@ export class ChromeRenderer {
         const textColor = tagTextColor(color, theme.background);
         ctx.textBaseline = 'middle';
 
+        // When another shared-scale instrument is labeled on the price pane (symbol comparison),
+        // attach the main symbol's short name tag flush-left of the axis divider so every badge is
+        // immediately identifiable on one glance.
+        const hasLabeledOverlay =
+            showLabel &&
+            !!scene.symbolName &&
+            scene.indicatorsForPane(pricePane.id).some((m) => m.priceAxisLabel === true && m.ownScale !== true && taggedPlots(m, n - 1 - scene.offsetOf(m.id)).length > 0);
+        if (hasLabeledOverlay && scene.symbolName) {
+            drawAxisNameTag(ctx, scene.symbolName, dataW, y, color, textColor);
+        }
+
         if (showLabel && cdText !== null) {
             // Merged block: label row on top (centered on the price line), countdown row
             // under it. Same width, text flushed left.
@@ -662,6 +685,31 @@ function unionRange(a: { min: number; max: number } | null, b: { min: number; ma
     if (!a) return b;
     if (!b) return a;
     return { min: Math.min(a.min, b.min), max: Math.max(a.max, b.max) };
+}
+
+/** Draw a compact name pill flush-left of the right axis divider (inside the plot edge). */
+function drawAxisNameTag(ctx: CanvasRenderingContext2D, name: string, dataW: number, y: number, fill: string, textColor: string): void {
+    const PAD_X = 6;
+    const H = 16;
+    const w = Math.ceil(ctx.measureText(name).width) + PAD_X * 2;
+    const x = dataW - w - 1;
+    const top = y - H / 2;
+    const r = 2;
+    ctx.fillStyle = fill;
+    ctx.beginPath();
+    ctx.moveTo(x + r, top);
+    ctx.lineTo(x + w, top);
+    ctx.lineTo(x + w, top + H);
+    ctx.lineTo(x + r, top + H);
+    ctx.quadraticCurveTo(x, top + H, x, top + H - r);
+    ctx.lineTo(x, top + r);
+    ctx.quadraticCurveTo(x, top, x + r, top);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = textColor;
+    ctx.textAlign = 'center';
+    ctx.fillText(name, x + w / 2, y);
+    ctx.textAlign = 'start';
 }
 
 function setDash(ctx: CanvasRenderingContext2D, style: LineStyle): void {

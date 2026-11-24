@@ -16,6 +16,7 @@ import { css } from '@luxalgo/vela-ui/css';
 import { t } from '@luxalgo/vela-ui/t';
 
 const TEXT = {
+    compare: msg('widget.moreDrawer.compare', 'Compare symbol'),
     chartType: msg('widget.moreDrawer.chartType', 'Chart type'),
     layout: msg('widget.moreDrawer.layout', 'Layout'),
     alerts: msg('widget.moreDrawer.alerts', 'Alerts'),
@@ -119,6 +120,8 @@ export interface MoreDrawerOptions {
     onRedo?: () => void;
     /** Omitted ⇒ no screenshot action button (composition removed `'screenshot'`). */
     onScreenshot?: () => void;
+    /** Omitted ⇒ no Compare symbol row (composition removed `'compare'`). */
+    onCompare?: () => void;
     canUndo: () => boolean;
     canRedo: () => boolean;
     /** Chart style list + current selection (read live at open). An `unavailable` style is
@@ -262,6 +265,17 @@ export class MoreDrawer {
 
         const list = doc.createElement('div');
         list.className = 'vela-md-list';
+        if (this.opts.onCompare) {
+            list.appendChild(
+                this.row(doc, this.t(TEXT.compare), {
+                    icon: 'circle-plus',
+                    onClick: () => {
+                        this.drawer.hide();
+                        this.opts.onCompare?.();
+                    },
+                }),
+            );
+        }
         const current = this.opts.priceStyles().find((s) => s.id === this.opts.priceStyle());
         list.appendChild(this.row(doc, this.t(TEXT.chartType), { icon: 'style-line', value: current?.label, chevron: true, onClick: () => this.show('style') }));
         if (this.opts.layout) {
