@@ -20,6 +20,8 @@ const TEXT = {
     axisLabels: msg('widget.contextMenu.axisLabels', 'Price axis labels'),
     priceLabel: msg('widget.contextMenu.priceLabel', 'Last price label'),
     countdown: msg('widget.contextMenu.countdown', 'Countdown to bar close'),
+    indicatorValueLabels: msg('widget.contextMenu.indicatorValueLabels', 'Indicator value labels'),
+    indicatorNameLabels: msg('widget.contextMenu.indicatorNameLabels', 'Indicator name labels'),
     levels: msg('widget.contextMenu.levels', 'Levels'),
     priceLine: msg('widget.contextMenu.priceLine', 'Last price line'),
     moreSettings: msg('widget.contextMenu.moreSettings', 'More settings…'),
@@ -129,6 +131,8 @@ export interface PriceAxisState {
     axisLabels: boolean;
     priceLabel: boolean;
     countdown: boolean;
+    indicatorValueLabels: boolean;
+    indicatorNameLabels: boolean;
     priceLine: boolean;
 }
 
@@ -153,6 +157,8 @@ export function priceAxisItems(s: PriceAxisState, i18n?: Translator | null): Men
                 { id: 'toggle:axisLabels', label: t(TEXT.axisLabels), checked: s.axisLabels },
                 { id: 'toggle:priceLabel', label: t(TEXT.priceLabel), checked: s.priceLabel },
                 { id: 'toggle:countdown', label: t(TEXT.countdown), checked: s.countdown },
+                { id: 'toggle:indicatorValueLabels', label: t(TEXT.indicatorValueLabels), checked: s.indicatorValueLabels },
+                { id: 'toggle:indicatorNameLabels', label: t(TEXT.indicatorNameLabels), checked: s.indicatorNameLabels },
             ],
         },
         {

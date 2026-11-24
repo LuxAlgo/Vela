@@ -761,6 +761,7 @@ Entries come from one shared vocabulary:
 | Entry | What it is |
 | --- | --- |
 | `'symbol'` | The symbol button (opens the search). |
+| `'compare'` | The Compare symbol button (`+` beside the symbol button — opens the comparison picker, or a plugin's [slot override](../contributing/plugin-sdk.md#replacing-a-built-in-button--slot-overrides)). Omitting it removes the button, the mobile menu row, and skips building the comparison picker. |
 | `'timeframes'` | The favorite chips + timeframe dropdown group. |
 | `'style'` | The chart-style dropdown. |
 | `'layout'` | The layout dropdown (renders on multi-chart shells only). |

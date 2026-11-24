@@ -189,7 +189,13 @@ reading that instance's own data channel (the channel is stamped on the model as
 pane and stacking. Nothing changes for the layer code: `args.data` is still "my payload".
 Every running instance also knows its own id (`ctx.id` — the same id its handle and
 `inspect()` report), so an instance can name itself to host code and tell itself apart
-from its siblings.
+from its siblings. Set `catalog: false` on a descriptor whose entry point lives outside
+the generic indicator picker (such as the built-in `'compare'` symbol comparison): it
+stays excluded from `chart.availableNativeIndicators()` while remaining addable through
+`chart.addNativeIndicator(type, { inputs })`. An emitted `NativeIndicatorOutput` can also
+override the instance's `title`, `shortTitle`, `paneHint`, and `ownScale`, opt into
+independent visible-bar normalization in percent/indexed mode (`percentBaseline: 'own'`),
+and request a colored last-value + name chip on the price axis (`priceAxisLabel: true`).
 
 A [bar replay](../user/api-reference.md#chartreplay--the-bar-replay-control-surface)
 restarts every native when it starts and when it ends, the way a market switch does. While
@@ -337,7 +343,7 @@ registerWidgetAttachment({
 });
 ```
 
-The ids are the built-in composition ids: `'symbol'`, `'timeframes'`, `'style'`,
+The ids are the built-in composition ids: `'symbol'`, `'compare'`, `'timeframes'`, `'style'`,
 `'layout'`, `'indicators'`, `'undo-redo'`, `'alerts'`, `'panels'`, `'screenshot'` and
 `'fullscreen'`.
 Runtime visibility narrows the host's `topbar` composition and follows its rule: hiding an
@@ -455,16 +461,16 @@ comes from `ctx`, never from module state.
 
 The topbar's built-in entries are named SLOTS (see [Composing the
 topbar](../user/workspace.md#composing-the-topbar)). The simple-button slots —
-**`'indicators'`** and **`'screenshot'`** — can be TAKEN OVER by a plugin: register an
+**`'indicators'`**, **`'screenshot'`**, and **`'compare'`** — can be TAKEN OVER by a plugin: register an
 action under the built-in id, and the override owns the slot's **whole surface**:
 
 - the desktop button renders your action at the slot's position (native button gone);
 - the slot's mobile counterpart (the mobile-bar Indicators stop, the more-drawer
-  Screenshot button) routes to your `run(ctx)`;
+  Screenshot button or Compare symbol row) routes to your `run(ctx)`;
 - the slot's keyboard chord (`/` for indicators, `mod+alt+S` for screenshot) routes to
   your `run(ctx)` too — don't bind your own;
 - the native machinery behind the slot is not constructed (the built-in indicator
-  picker dialog, for `'indicators'`).
+  picker dialog for `'indicators'`, or the comparison picker dialog for `'compare'`).
 
 The composite slots (`symbol`, `timeframes`, `style`, `layout`, `undo-redo`, `alerts`,
 `panels`) are stateful controls the shell pushes state into — a `{label, icon, run}`

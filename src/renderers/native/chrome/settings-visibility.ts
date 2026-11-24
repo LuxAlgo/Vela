@@ -205,6 +205,8 @@ export const BUILTIN_SETTINGS_IDS: readonly string[] = [
     'scales.price-scale.last-price-line',
     'scales.price-scale.last-price-label',
     'scales.price-scale.countdown',
+    'scales.price-scale.indicator-value-labels',
+    'scales.price-scale.indicator-name-labels',
     'scales.price-scale.axis-labels',
     'scales.price-scale.border-color',
     'scales.crosshair',

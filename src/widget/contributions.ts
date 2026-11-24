@@ -63,7 +63,7 @@ export interface WidgetContext {
     addIndicator(entry: ExternalIndicatorEntry): void;
     /** Add a native (core-computed) indicator to the active chart through the shell —
      *  recorded in the undo/redo timeline, unlike the raw `chart.addNativeIndicator`. */
-    addNativeIndicator(type: string): void;
+    addNativeIndicator(type: string, options?: { inputs?: Record<string, InputValue> }): void;
     /** Tell the shell some PERSISTABLE third-party state changed (a debounced
      *  `state:changed` + storage write follows). Only needed for state with no shell
      *  event of its own — indicator adds/removals already trigger the save cycle. */
@@ -422,7 +422,7 @@ export function sidePanels(): SidePanelDescriptor[] {
  *  their id — the "simple button" slots. The composites (symbol, timeframes, style,
  *  layout, undo-redo, alerts, panels) are stateful controls the shell pushes state
  *  into; a plain `{label, icon, run}` descriptor cannot stand in for them. */
-export const OVERRIDABLE_TOPBAR_IDS = ['indicators', 'screenshot'] as const;
+export const OVERRIDABLE_TOPBAR_IDS = ['indicators', 'screenshot', 'compare'] as const;
 
 const overridableSet = new Set<string>(OVERRIDABLE_TOPBAR_IDS);
 const builtinTopbarSet = new Set<string>(TOPBAR_BUILTIN_IDS);
@@ -769,7 +769,7 @@ export interface CellStateContext {
     /** Add a script indicator to THIS cell through the shell (see {@link WidgetContext.addIndicator}). */
     addIndicator(entry: ExternalIndicatorEntry): void;
     /** Add a native indicator to THIS cell through the shell. */
-    addNativeIndicator(type: string): void;
+    addNativeIndicator(type: string, options?: { inputs?: Record<string, InputValue> }): void;
 }
 
 /**

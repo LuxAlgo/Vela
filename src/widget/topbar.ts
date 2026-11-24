@@ -177,6 +177,7 @@ export function priceStyleIcon(id: string): string | undefined {
 export interface TopbarOptions {
     symbol: string;
     onSymbolClick?: () => void;
+    onCompareClick?: () => void;
     timeframe: string;
     timeframes: readonly string[];
     /** Favorite timeframes — duration-sorted quick-switch chips, stars in the
@@ -228,6 +229,7 @@ export interface TopbarOptions {
 }
 
 const TEXT = {
+    compare: msg('widget.topbar.compare', 'Compare or add symbol'),
     timeframes: msg('widget.topbar.timeframes', 'Timeframes'),
     indicators: msg('widget.topbar.indicators', 'Indicators'),
     undo: msg('widget.topbar.undo', 'Undo'),
@@ -386,6 +388,7 @@ export class Topbar {
         }
         this.setHistoryState(false, false);
         const screenshotBtn = vis('screenshot') && !topbarActionOverride('screenshot') ? tool('vela-widget-screenshot', 'camera', TEXT.screenshot, opts.onScreenshotClick) : null;
+        const compareBtn = vis('compare') && opts.onCompareClick && !topbarActionOverride('compare') ? tool('vela-widget-compare', 'circle-plus', TEXT.compare, opts.onCompareClick) : null;
         const fullscreenBtn = vis('fullscreen') && opts.onFullscreenClick ? tool('vela-widget-fullscreen', 'maximize', TEXT.fullscreen, opts.onFullscreenClick) : null;
         this.alertsBtn = vis('alerts') ? tool('vela-widget-alerts', 'bell', TEXT.alerts) : doc.createElement('button');
         this.alertsBtn.style.position = 'relative';
@@ -417,7 +420,7 @@ export class Topbar {
         // controls carry a trailing hairline (except as a side's last entry); `actions`
         // is the FLOW slot for unlisted contributed actions; any other unknown id is a
         // PINNED slot for the contributed action with that id (filled by renderActions).
-        const primaries = new Set(['symbol', 'timeframes', 'style', 'layout', 'indicators']);
+        const primaries = new Set(['symbol', 'compare', 'timeframes', 'style', 'layout', 'indicators']);
         const pinSlot = (id: string, left: boolean): HTMLElement[] => {
             const slot = doc.createElement('span');
             slot.className = 'vela-widget-action-pin';
@@ -443,6 +446,8 @@ export class Topbar {
             switch (id) {
                 case 'symbol':
                     return [this.symbolEl];
+                case 'compare':
+                    return overridden(id, left) ?? (compareBtn ? [compareBtn] : []);
                 case 'timeframes':
                     return [tfGroup];
                 case 'style':
@@ -469,14 +474,29 @@ export class Topbar {
         };
         const builtin = new Set<string>(TOPBAR_BUILTIN_IDS);
         const sideEls = (list: readonly string[], left: boolean): HTMLElement[] => {
+            const entries = list.map((id) => ({ id, els: elementsFor(id, left) })).filter((e) => e.els.length > 0);
             const out: HTMLElement[] = [];
-            for (const [i, id] of list.entries()) {
-                const els = elementsFor(id, left);
-                if (els.length === 0) continue;
+            for (const [i, entry] of entries.entries()) {
+                const { id, els } = entry;
                 const item = [...els];
-                if (primaries.has(id) && i < list.length - 1) item.push(sep());
+                const nextId = entries[i + 1]?.id;
+                const prevId = entries[i - 1]?.id;
+                // Keep `symbol` and its paired `compare` (+) button adjacent with no hairline
+                // between them. The trailing hairline sits after `compare` in the DOM, but
+                // belongs to `symbol`'s visibility group so hiding `compare` at runtime leaves
+                // `symbol`'s hairline intact against `timeframes`.
+                const joinedWithCompare = id === 'symbol' && nextId === 'compare';
+                const trailingSep = primaries.has(id) && i < entries.length - 1 && !joinedWithCompare ? sep() : null;
+                if (trailingSep) item.push(trailingSep);
                 out.push(...item);
-                if (builtin.has(id) && id !== 'actions') this.itemEls.set(id, item);
+                if (builtin.has(id) && id !== 'actions') {
+                    if (id === 'compare' && prevId === 'symbol' && trailingSep) {
+                        this.itemEls.set(id, [...els]);
+                        this.itemEls.get('symbol')?.push(trailingSep);
+                    } else {
+                        this.itemEls.set(id, item);
+                    }
+                }
             }
             return out;
         };

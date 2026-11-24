@@ -81,7 +81,7 @@ export function buildContext(host: ContextHost): WorkspaceWidgetContext {
         i18n: host.i18n,
         toast: (message, kind) => host.toast(message, kind),
         addIndicator: (entry) => host.active()?.addExternalIndicator(entry),
-        addNativeIndicator: (type) => host.active()?.addNative(type),
+        addNativeIndicator: (type, options) => host.active()?.addNative(type, options),
         stateChanged: () => host.stateDirty(),
         get cells() {
             return host.cells().map((c) => ({ id: c.id, chart: c.chart, symbol: c.symbol, timeframe: c.timeframe }));

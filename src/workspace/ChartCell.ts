@@ -50,6 +50,9 @@ import { nativeIndicatorEntry } from '../core/native-indicators/NativeIndicator'
 import { priceStyleApplies } from '../chart-types/applicability';
 import { priceStyleIds } from '../renderers/native/core/chartConfig';
 import { STATUSLINE_PART_LABELS } from '../widget/statusline-model';
+import { CATEGORICAL } from '../core/palette';
+import { compareDescriptor, type ComparePlacement } from '../core/native-indicators/compare';
+import type { ActiveCompareItem } from '../widget/compare-picker';
 
 /** The cell's settings rows (the chart settings dialog renders them in the chart's language). */
 const TEXT = {
@@ -339,9 +342,12 @@ export class ChartCell {
     /** Volume intent: the seed's ledger, else the workspace `volume` option — a
      *  rehydrated ledger overwrites it (see {@link applyIndicatorLedger}). */
     private volumeIntent: boolean;
-    /** Sync mirror of the chart's native instances (id + type) — the removal handler
-     *  looks the removed id up here to learn which type an undo must re-add. */
-    private presentNatives: Array<{ id: string; type: string }> = [];
+    /** Sync mirror of the chart's native instances (id + type + input deltas) — the removal
+     *  handler looks the removed id up here to learn which type and inputs an undo must re-add. */
+    private presentNatives: Array<{ id: string; type: string; inputs?: Record<string, InputValue> }> = [];
+    /** Scale state before adding a `'same'` comparison auto-switched the price pane to `'percent'`.
+     *  Restored when the last `'same'` comparison leaves and the pane is still on `'percent'`. */
+    private autoPercentPrev: { mode: string; log: boolean } | null = null;
     private rangeBars = 0;
     private pendingRange: RangePreset | null = null;
     /** Last symbol we toasted "no provider serves this" for — once per symbol (the
@@ -594,7 +600,15 @@ export class ChartCell {
             this.syncPresentNatives();
             this.refreshNativeCatalog();
         });
-        this.inner.on('indicator:inputs', () => this.deps.onStateDirty());
+        this.inner.on('indicator:inputs', ({ id }) => {
+            this.syncPresentNatives();
+            const h = this.nativeHandles().find((n) => n.id === id);
+            if (h?.nativeType === 'compare') {
+                if ((h.inputValues().scale ?? 'same') === 'same') this.ensurePercentForCompare();
+                else this.maybeRestoreScaleAfterCompare();
+            }
+            this.deps.onStateDirty();
+        });
         // A legend-eye toggle is a persistable choice like an input edit — without this
         // a hidden indicator came back visible on reload (nothing marked the doc dirty).
         this.inner.on('indicator:visibility', () => this.deps.onStateDirty());
@@ -620,17 +634,19 @@ export class ChartCell {
                 });
             } else {
                 // A native indicator left the registry — the sync mirror still knows its
-                // type, which is what an undo must re-add. This is the SINGLE recording
-                // site for native removals (picker, legend ✕, object tree). The redo
+                // type and inputs, which is what an undo must re-add. This is the SINGLE
+                // recording site for native removals (picker, legend ✕, object tree). The redo
                 // removes the instance the undo created, never "the one of that type" —
                 // a multi-instance type may have siblings on the chart.
                 const gone = this.presentNatives.find((n) => n.id === id);
                 if (gone) {
-                    const { type } = gone;
+                    const { type, inputs } = gone;
                     let revived: IndicatorHandle | null = null;
                     this.history.push({
                         undo: () => {
-                            revived = this.inner?.addNativeIndicator(type) ?? null;
+                            revived = this.inner?.addNativeIndicator(type, inputs ? { inputs } : undefined) ?? null;
+                            if (type === 'compare' && (inputs?.scale ?? 'same') === 'same') this.ensurePercentForCompare();
+                            this.syncPresentNatives();
                             this.refreshNativeCatalog();
                         },
                         redo: () => {
@@ -639,6 +655,7 @@ export class ChartCell {
                             this.refreshNativeCatalog();
                         },
                     });
+                    if (type === 'compare') this.maybeRestoreScaleAfterCompare();
                 }
             }
             this.syncPresentNatives();
@@ -1580,11 +1597,13 @@ export class ChartCell {
         if (handle.visible !== visible) handle.setVisible(visible);
     }
 
-    addNative(type: string, opts?: { confirmInputs?: boolean }): boolean {
+    addNative(type: string, opts?: { confirmInputs?: boolean; inputs?: Record<string, InputValue> }): boolean {
         const chart = this.inner;
         if (!chart) return false;
         const before = new Set(chart.indicators().map((h) => h.id));
-        let added: IndicatorHandle | null = chart.addNativeIndicator(type);
+        const inputs = opts?.inputs;
+        if (type === 'compare' && (inputs?.scale ?? 'same') === 'same') this.ensurePercentForCompare();
+        let added: IndicatorHandle | null = chart.addNativeIndicator(type, inputs ? { inputs } : undefined);
         this.syncPresentNatives();
         this.refreshNativeCatalog();
         if (before.has(added.id)) return false;
@@ -1595,7 +1614,9 @@ export class ChartCell {
                 this.refreshNativeCatalog();
             },
             redo: () => {
-                added = this.inner?.addNativeIndicator(type) ?? null;
+                added = this.inner?.addNativeIndicator(type, inputs ? { inputs } : undefined) ?? null;
+                if (type === 'compare' && (inputs?.scale ?? 'same') === 'same') this.ensurePercentForCompare();
+                this.syncPresentNatives();
                 this.refreshNativeCatalog();
             },
         });
@@ -1614,6 +1635,67 @@ export class ChartCell {
         return false;
     }
 
+    /** Active compared symbols on this cell (for the Compare picker's removable chips). */
+    compareItems(): ActiveCompareItem[] {
+        const out: ActiveCompareItem[] = [];
+        const defaultTitle = textOf(this.inner?.i18n, compareDescriptor.title);
+        for (const h of this.nativeHandles()) {
+            if (h.nativeType !== 'compare') continue;
+            const vals = h.inputValues();
+            const symbol = typeof vals.symbol === 'string' ? vals.symbol : '';
+            const color = typeof vals.color === 'string' && vals.color ? vals.color : CATEGORICAL[0]!;
+            const fallback = parseSymbol(symbol).ticker || symbol;
+            const title = h.title && h.title !== defaultTitle ? h.title : fallback;
+            out.push({ id: h.id, symbol, title, color });
+        }
+        return out;
+    }
+
+    /** Overlay a secondary symbol for comparison with an auto-picked distinct color. */
+    addCompare(symbol: string, placement: ComparePlacement = 'same'): void {
+        const chart = this.inner;
+        if (!chart || !symbol.trim()) return;
+        const used = new Set(this.compareItems().map((c) => c.color.toLowerCase()));
+        const color = CATEGORICAL.find((c) => !used.has(c.toLowerCase())) ?? CATEGORICAL[this.compareItems().length % CATEGORICAL.length]!;
+        this.addNative('compare', { inputs: { symbol, color, scale: placement } });
+    }
+
+    /** Remove one compared symbol by indicator id (enters the undo timeline). */
+    removeCompare(id: string): void {
+        const handle = this.nativeHandles().find((h) => h.id === id && h.nativeType === 'compare');
+        if (handle) this.removeNative(handle);
+    }
+
+    /** Switch the main price scale to percentage mode when adding a shared-scale comparison
+     *  (remembering the prior mode so removing the last comparison can restore it). */
+    private ensurePercentForCompare(): void {
+        const chart = this.inner;
+        if (!chart) return;
+        const mode = chart.renderer.get('scaleMode');
+        const log = Boolean(chart.renderer.get('logScale'));
+        if (mode === 'percent' || mode === 'indexed') {
+            if (log) chart.renderer.set('logScale', false);
+            return;
+        }
+        this.autoPercentPrev ??= { mode: typeof mode === 'string' ? mode : 'price', log };
+        if (log) chart.renderer.set('logScale', false);
+        chart.renderer.set('scaleMode', 'percent');
+    }
+
+    /** Restore the prior price scale once the last shared-scale comparison is removed. */
+    private maybeRestoreScaleAfterCompare(): void {
+        const chart = this.inner;
+        const prev = this.autoPercentPrev;
+        if (!chart || !prev) return;
+        const stillSame = this.nativeHandles().some((h) => h.nativeType === 'compare' && (h.inputValues().scale ?? 'same') === 'same');
+        if (stillSame) return;
+        this.autoPercentPrev = null;
+        if (chart.renderer.get('scaleMode') === 'percent') {
+            chart.renderer.set('scaleMode', prev.mode);
+            if (prev.log) chart.renderer.set('logScale', true);
+        }
+    }
+
     private removeNative(handle: IndicatorHandle): void {
         // The undo entry is recorded by the indicator:removed handler — the single site
         // shared with the legend ✕ and the object tree.
@@ -1628,9 +1710,12 @@ export class ChartCell {
     }
 
     /** Sync mirror of the chart's native instances — the removal handler looks the
-     *  removed id up here (the registry has already forgotten it) to record its type. */
+     *  removed id up here (the registry has already forgotten it) to record its type + inputs. */
     private syncPresentNatives(): void {
-        this.presentNatives = this.nativeHandles().map((h) => ({ id: h.id, type: h.nativeType! }));
+        this.presentNatives = this.nativeHandles().map((h) => {
+            const inputs = inputDeltas(h.inputs, h.inputValues());
+            return inputs ? { id: h.id, type: h.nativeType!, inputs } : { id: h.id, type: h.nativeType! };
+        });
     }
 
     /** Refresh the native catalog (supported/present flags) for this cell's market. */
@@ -1671,7 +1756,7 @@ export class ChartCell {
             cellId: this.id,
             chart: this.chart,
             addIndicator: (entry) => this.history.silently(() => this.addExternalIndicator(entry)),
-            addNativeIndicator: (type) => this.history.silently(() => this.addNative(type)),
+            addNativeIndicator: (type, options) => this.history.silently(() => this.addNative(type, options)),
         };
     }
 
@@ -1732,6 +1817,9 @@ export class ChartCell {
             if (this.statusline && this.statusline.partVisible(part) !== visible) this.setStatuslinePart(part, visible);
         }
         // Cosmetics round-trip (validates untrusted input); the drawings follow the market below.
+        // Drop any prior auto-percent restore bookmark before converging indicators so removing
+        // an old comparison cannot overwrite the incoming document's own scaleMode.
+        this.autoPercentPrev = null;
         if (cs.rendererConfig != null) this.inner.renderer.applyConfig(cs.rendererConfig);
         if (cs.indicators) this.applyIndicatorLedger(cs.indicators as { manifest: LedgerManifestEntry[]; natives: LedgerNativeEntry[] });
         // Third-party state converges to the document too: the restored bag REPLACES
