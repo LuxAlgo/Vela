@@ -3,6 +3,7 @@
  * the renderer depends on this, never the reverse.
  */
 export type { DrawingPoint, FreeAxis, Projector, SnapMode, SegmentGeometry } from './geometry';
+export { measureLines, priceMove, type PriceMove, type PriceSteps } from './measureText';
 export type { DrawingStyle, DrawingText } from './style';
 export { defaultStyle, defaultText, DEFAULT_DRAWING_COLOR } from './style';
 export type { FieldKind, SettingsField, SettingsSchema } from './schema';

@@ -862,7 +862,13 @@ export class DrawingPainter {
         ctx.textBaseline = 'middle';
         const lh = Math.round(fs * 1.35);
         const startY = y + h / 2 - ((lines.length - 1) * lh) / 2;
-        lines.forEach((line, i) => ctx.fillText(line, x + w / 2, startY + i * lh));
+        const alpha = ctx.globalAlpha;
+        lines.forEach((line, i) => {
+            // the detail line under the headline reads quieter, in the drawing's own text color
+            ctx.globalAlpha = i === 0 ? alpha : alpha * 0.62;
+            ctx.fillText(line, x + w / 2, startY + i * lh);
+        });
+        ctx.globalAlpha = alpha;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'alphabetic';
     }

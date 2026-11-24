@@ -22,8 +22,8 @@ describe('drawings/measurement range', () => {
     it('shows both the price and date deltas by default; red when down; box hit-test', () => {
         const d = createDrawing('datepricerange', { paneId: 'price', anchors: [{ time: 0, price: 60 }, { time: 3 * HR, price: 54 }] })! as MeasureBox;
         const lines = d.measureLabel(proj);
-        expect(lines[0]).toBe('-6.00 (-10.00%)');
-        expect(lines[1]).toBe('3 bars, 3h');
+        expect(lines[0]).toBe('−6.00 · −10.00%');
+        expect(lines[1]).toBe('3 bars · 3h');
         expect(d.isUp()).toBe(false);
         expect(d.priceRange()).toEqual({ min: 54, max: 60 });
         expect(d.hitTest(1.5, 43, proj, 4)).toBe(true); // inside the box (x 0..3, y 40..46)
@@ -32,12 +32,12 @@ describe('drawings/measurement range', () => {
 
     it('the showPrice / showDate toggles drop either line', () => {
         const d = createDrawing('datepricerange', { paneId: 'price', anchors: [{ time: 0, price: 50 }, { time: 5 * HR, price: 60 }] })! as MeasureBox;
-        expect(d.measureLabel(proj)).toEqual(['+10.00 (+20.00%)', '5 bars, 5h']); // both on
+        expect(d.measureLabel(proj)).toEqual(['+10.00 · +20.00%', '5 bars · 5h']); // both on
         d.showDate = false;
-        expect(d.measureLabel(proj)).toEqual(['+10.00 (+20.00%)']); // price only
+        expect(d.measureLabel(proj)).toEqual(['+10.00 · +20.00%']); // price only
         d.showDate = true;
         d.showPrice = false;
-        expect(d.measureLabel(proj)).toEqual(['5 bars, 5h']); // date only
+        expect(d.measureLabel(proj)).toEqual(['5 bars · 5h']); // date only
         d.showDate = false;
         expect(d.measureLabel(proj)).toEqual([]); // both off
     });

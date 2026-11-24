@@ -376,10 +376,12 @@ export interface VelaCoreMessageCatalog {
     'drawing.magnifier.option.n60': string;
     'drawing.magnifier.placementHint': string;
     'drawing.magnifier.tooWide': string;
-    'drawing.measure.barsAndDuration': string;
-    'drawing.measure.priceChange': string;
+    'drawing.measure.bars': string;
+    'drawing.measure.headline': string;
+    'drawing.measure.pips': string;
     'drawing.measure.showDate': string;
     'drawing.measure.showPrice': string;
+    'drawing.measure.ticks': string;
     'drawing.modifiedschiffpitchfork.label': string;
     'drawing.note.label': string;
     'drawing.note.placeholder': string;
@@ -452,8 +454,6 @@ export interface VelaCoreMessageCatalog {
     'drawing.regressionchannel.regUpperFill': string;
     'drawing.regressionchannel.regUpperStyle': string;
     'drawing.rotatedrect.label': string;
-    'drawing.ruler.barsAndDuration': string;
-    'drawing.ruler.priceChange': string;
     'drawing.schiffpitchfork.label': string;
     'drawing.section.account': string;
     'drawing.section.accountBalance': string;
