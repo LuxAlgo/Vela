@@ -2,6 +2,13 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Compare symbols on the main chart.** A circular `+` button beside the symbol picker in the top bar (and a Compare symbol row in the mobile menu) opens a dedicated comparison picker to overlay one or more secondary symbols as colored lines. You can place each comparison on the **Same % scale** (switching the main axis to percentage mode automatically so every series rebases to 0% at the left edge of the visible window, and restoring the previous scale when the last shared comparison is removed), on a **New price scale**, or in a **New pane**. Compared symbols display colored name and last-value badges on the price axis, per-symbol percentage readouts in the legend and data window, customizable symbol/source/scale/line settings, and full undo/redo and workspace persistence.
+- **Percentage scale quick toggle on the price axis.** A `%` button now sits beside the `L` (logarithmic) and `A` (auto) buttons at the bottom of each pane's price scale for one-click toggling between absolute prices and percentage change.
+
 ## [0.10.17]
 
 ### Fixed

@@ -2,10 +2,10 @@ import type { Translator } from '../../../core/i18n/types';
 import type { VelaTheme } from '../../../core/options';
 import type { IndicatorModel } from '../../../core/model/indicator';
 import type { OHLCV } from '../../../core/model/ohlcv';
-import type { LineStyle } from '../../../core/model/series';
+import { isLineLikeSeries, seriesShownOn, type LineStyle } from '../../../core/model/series';
 import type { CoordinateSystem } from '../core/CoordinateSystem';
 import type { SceneGraph, PaneNode } from '../core/SceneGraph';
-import { percentScaleFor } from '../core/SceneGraph';
+import { percentScaleFor, percentScaleForModel } from '../core/SceneGraph';
 import { effectiveCandlePaint, withAlpha } from '../core/chartConfig';
 import { columnIsUp } from '../backend/close-styles';
 // Re-exported so existing importers (crosshair) can keep sourcing it from here.
@@ -167,11 +167,12 @@ export class ChromeRenderer {
             }
         }
 
-        // ── axes + current-price line + countdown ──
+        // ── axes + current-price line + countdown + labeled-series axis chips ──
         this.drawPriceAxes(ctx, scene, coords, theme, dataW, panes);
         this.drawMergedScaleColumns(ctx, scene, coords, dataW);
         this.drawPaneSeparators(ctx, scene, theme, fullW, panes);
-        this.drawPriceLineAndCountdown(ctx, scene, coords, theme, dataW, pricePane);
+        const mainChipYs = this.drawPriceLineAndCountdown(ctx, scene, coords, theme, dataW, pricePane);
+        this.drawSeriesAxisLabels(ctx, scene, coords, theme, dataW, panes, pricePane ? mainChipYs : []);
         this.drawTimeAxis(ctx, scene, coords, theme, dataW, dataH, fullH);
         this.drawMarkLane(ctx, scene, coords, theme, dataW, dataH);
     }
@@ -364,14 +365,14 @@ export class ChromeRenderer {
      * price level with centered text. The countdown repaints on the renderer's second pulse
      * and disappears once the bar has closed, until the next bar arrives.
      */
-    private drawPriceLineAndCountdown(ctx: CanvasRenderingContext2D, scene: SceneGraph, coords: CoordinateSystem, theme: VelaTheme, dataW: number, pricePane: PaneNode | null): void {
+    private drawPriceLineAndCountdown(ctx: CanvasRenderingContext2D, scene: SceneGraph, coords: CoordinateSystem, theme: VelaTheme, dataW: number, pricePane: PaneNode | null): number[] {
         const n = scene.bars.length;
         // A hidden price series takes its current-price line/label/countdown down with it —
         // as does a hidden price PANE (collapsed, or zero-height while a study pane is maximized).
-        if (!pricePane || n === 0 || scene.candlesHidden || pricePane.collapsed || pricePane.bounds.height <= 0) return;
+        if (!pricePane || n === 0 || scene.candlesHidden || pricePane.collapsed || pricePane.bounds.height <= 0) return [];
         const last = scene.bars[n - 1]!;
         const y = coords.priceToY(last.close, pricePane.scale, pricePane.bounds);
-        if (y < pricePane.bounds.top || y > pricePane.bounds.top + pricePane.bounds.height) return;
+        if (y < pricePane.bounds.top || y > pricePane.bounds.top + pricePane.bounds.height) return [];
         const color = priceElementColor(scene, coords, theme, last);
 
         // ── dashed line (independent of the label) ──
@@ -394,7 +395,7 @@ export class ChromeRenderer {
         const cdText = scene.showCountdown && !scene.variableDuration ? countdownText(last.time, coords.barInterval, clockCorrection.now(), scene.format) : null;
         const showCountdown = cdText !== null;
         const showLabel = scene.showPriceLabel;
-        if (!showLabel && !showCountdown) return;
+        if (!showLabel && !showCountdown) return [];
 
         const priceText = formatAxisValue(pricePane.scale, pricePane.bounds.height, last.close, percentScaleFor(scene, pricePane), scene.priceMintick, undefined, scene.format, 'lastPrice');
         const PAD = 8;
@@ -403,6 +404,17 @@ export class ChromeRenderer {
         // color yields dark text, a dark color yields light text).
         const textColor = tagTextColor(color, theme.background);
         ctx.textBaseline = 'middle';
+
+        // When another shared-scale instrument is labeled on the price pane (symbol comparison),
+        // attach the main symbol's short name tag flush-left of the axis divider so every badge is
+        // immediately identifiable on one glance.
+        const hasLabeledOverlay =
+            showLabel &&
+            !!scene.symbolName &&
+            scene.indicatorsForPane(pricePane.id).some((m) => m.priceAxisLabel === true && m.ownScale !== true && lastLabeledValue(m, theme.upColor) !== null);
+        if (hasLabeledOverlay && scene.symbolName) {
+            drawAxisNameTag(ctx, scene.symbolName, dataW, y, color, textColor);
+        }
 
         if (showLabel && cdText !== null) {
             // Merged block: label row on top (centered on the price line), countdown row
@@ -417,7 +429,7 @@ export class ChromeRenderer {
             ctx.fillText(priceText, tx, top + 8);
             ctx.fillText(cdText, tx, top + 24);
             ctx.textAlign = 'start';
-            return;
+            return [y, y + 16];
         }
 
         // Lone label or countdown — centered on the price level, text centered.
@@ -429,6 +441,69 @@ export class ChromeRenderer {
         ctx.textAlign = 'center';
         ctx.fillText(text, x + w / 2, y);
         ctx.textAlign = 'start';
+        return [y];
+    }
+
+    /**
+     * Colored last-value + name chips on the price axis for indicators that opt into
+     * `priceAxisLabel` (compared symbols). Each draws its value chip on its own scale
+     * column and its short name tag flush-left of the axis divider.
+     */
+    private drawSeriesAxisLabels(
+        ctx: CanvasRenderingContext2D,
+        scene: SceneGraph,
+        coords: CoordinateSystem,
+        theme: VelaTheme,
+        dataW: number,
+        panes: PaneNode[],
+        mainChipYs: readonly number[],
+    ): void {
+        if (!scene.showPriceLabel) return;
+        const PAD = 8;
+        const CHIP_H = 16;
+        const MIN_GAP = CHIP_H + 1;
+        ctx.textBaseline = 'middle';
+
+        for (const pane of panes) {
+            if (pane.collapsed || pane.bounds.height < CHIP_H) continue;
+            const models = scene.orderedIndicatorsForPane(pane.id);
+            const merged = scene.ownScaleIndicatorsForPane(pane.id);
+            const placed = new Map<number, number[]>();
+            if (pane.kind === 'price' && mainChipYs.length > 0) placed.set(0, [...mainChipYs]);
+
+            for (const model of models) {
+                if (model.priceAxisLabel !== true) continue;
+                const sample = lastLabeledValue(model, theme.upColor);
+                if (!sample) continue;
+                const sc = scene.scaleFor(model, pane);
+                const rawY = coords.priceToY(sample.value, sc, pane.bounds);
+                if (rawY < pane.bounds.top || rawY > pane.bounds.top + pane.bounds.height) continue;
+
+                const pct = percentScaleForModel(scene, pane, model);
+                const valueText = formatAxisValue(sc, pane.bounds.height, sample.value, pct, undefined, pane.axisFormat, scene.format, 'lastPrice');
+                if (!valueText) continue;
+
+                const col = model.ownScale === true ? merged.indexOf(model) + 1 : 0;
+                const ys = placed.get(col) ?? [];
+                const y = avoidOverlapY(rawY, ys, MIN_GAP, pane.bounds.top + CHIP_H / 2, pane.bounds.top + pane.bounds.height - CHIP_H / 2);
+                ys.push(y);
+                placed.set(col, ys);
+
+                const textColor = tagTextColor(sample.color, theme.background);
+                const x = axisColumnX(dataW, col) + 1;
+                const w = ctx.measureText(valueText).width + PAD;
+                ctx.fillStyle = sample.color;
+                ctx.fillRect(x, y - CHIP_H / 2, w, CHIP_H);
+                ctx.fillStyle = textColor;
+                ctx.textAlign = 'center';
+                ctx.fillText(valueText, x + w / 2, y);
+                ctx.textAlign = 'start';
+
+                if (sample.name && col === 0) {
+                    drawAxisNameTag(ctx, sample.name, dataW, y, sample.color, textColor);
+                }
+            }
+        }
     }
 
     private drawTimeAxis(ctx: CanvasRenderingContext2D, scene: SceneGraph, coords: CoordinateSystem, theme: VelaTheme, dataW: number, dataH: number, fullH: number): void {
@@ -476,6 +551,72 @@ function unionRange(a: { min: number; max: number } | null, b: { min: number; ma
     if (!a) return b;
     if (!b) return a;
     return { min: Math.min(a.min, b.min), max: Math.max(a.max, b.max) };
+}
+
+/** Draw a compact name pill flush-left of the right axis divider (inside the plot edge). */
+function drawAxisNameTag(ctx: CanvasRenderingContext2D, name: string, dataW: number, y: number, fill: string, textColor: string): void {
+    const PAD_X = 6;
+    const H = 16;
+    const w = Math.ceil(ctx.measureText(name).width) + PAD_X * 2;
+    const x = dataW - w - 1;
+    const top = y - H / 2;
+    const r = 2;
+    ctx.fillStyle = fill;
+    ctx.beginPath();
+    ctx.moveTo(x + r, top);
+    ctx.lineTo(x + w, top);
+    ctx.lineTo(x + w, top + H);
+    ctx.lineTo(x + r, top + H);
+    ctx.quadraticCurveTo(x, top + H, x, top + H - r);
+    ctx.lineTo(x, top + r);
+    ctx.quadraticCurveTo(x, top, x + r, top);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = textColor;
+    ctx.textAlign = 'center';
+    ctx.fillText(name, x + w / 2, y);
+    ctx.textAlign = 'start';
+}
+
+/** Latest finite value, color and short name of a `priceAxisLabel` model's primary series. */
+function lastLabeledValue(model: IndicatorModel, fallbackUp: string): { value: number; color: string; name: string } | null {
+    for (const s of model.series) {
+        if (!seriesShownOn(s, 'pane') || !seriesShownOn(s, 'priceScale')) continue;
+        const name = s.title || model.shorttitle || model.title;
+        if (isLineLikeSeries(s)) {
+            for (let i = s.points.length - 1; i >= 0; i -= 1) {
+                const p = s.points[i]!;
+                if (p.value != null && Number.isFinite(p.value)) {
+                    return { value: p.value, color: p.color ?? s.style.color, name };
+                }
+            }
+        } else if (s.kind === 'candle' || s.kind === 'bar') {
+            for (let i = s.bars.length - 1; i >= 0; i -= 1) {
+                const b = s.bars[i];
+                if (b && Number.isFinite(b.close)) {
+                    return { value: b.close, color: s.style?.up ?? fallbackUp, name };
+                }
+            }
+        }
+    }
+    return null;
+}
+
+/** Nudge a chip's vertical center away from already-placed chips on the same axis column,
+ *  flipping to the opposite side when pushing toward a pane boundary would trap it. */
+function avoidOverlapY(target: number, placed: readonly number[], minGap: number, lo: number, hi: number): number {
+    if (lo >= hi) return lo;
+    const clamped = Math.max(lo, Math.min(hi, target));
+    const free = (y: number): boolean => y >= lo && y <= hi && placed.every((other) => Math.abs(y - other) >= minGap);
+    if (free(clamped)) return clamped;
+    // Try alternating steps above and below target so boundary chips flip cleanly to open space.
+    for (let step = 1; step <= placed.length + 2; step += 1) {
+        const up = clamped - step * minGap;
+        const down = clamped + step * minGap;
+        if (free(up)) return up;
+        if (free(down)) return down;
+    }
+    return clamped;
 }
 
 function setDash(ctx: CanvasRenderingContext2D, style: LineStyle): void {

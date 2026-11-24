@@ -23,6 +23,10 @@ export function computePaneScale(
     offsetOf: (id: string) => number = () => 0,
     /** Top/bottom whitespace as percent of pane height (see `ChartMargins`). */
     margins: { top: number; bottom: number } = DEFAULT_MARGINS,
+    /** Per-model value multiplier applied when folding into the pane range (1 = raw values;
+     *  used for `percentBaseline: 'own'` overlays in percent/indexed mode so their rebased
+     *  excursions expand the shared window). */
+    valueScaleOf: (id: string) => number = () => 1,
 ): PriceScale {
     let min = Infinity;
     let max = -Infinity;
@@ -45,13 +49,18 @@ export function computePaneScale(
 
     for (const model of models) {
         const off = offsetOf(model.id);
+        const mult = valueScaleOf(model.id);
+        // `0` excludes an un-rebaseable `percentBaseline: 'own'` overlay in percent/indexed
+        // mode so raw prices in another instrument's units never distort the master window.
+        if (mult === 0) continue;
+        const considerModel = mult === 1 ? consider : (v: number | null | undefined) => consider(v != null ? v * mult : v);
         for (const s of model.series) {
             // force_overlay series render (and scale) on the PRICE pane, not their own —
             // the price pane folds them back in via overlaySeriesRange.
             if (s.overlay === true) continue;
-            considerSeries(s, i0, i1, off, consider);
+            considerSeries(s, i0, i1, off, considerModel);
         }
-        for (const pl of model.priceLines) consider(pl.price);
+        for (const pl of model.priceLines) considerModel(pl.price);
     }
 
     // Visible Pine drawings (boxes/lines/labels/…) also expand the scale.
