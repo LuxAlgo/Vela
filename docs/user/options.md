@@ -238,6 +238,8 @@ new VelaWorkspace('#chart', {
       'scales.price-scale.last-price-line',  //     Last price line
       'scales.price-scale.last-price-label', //     Last price label
       'scales.price-scale.countdown',        //     Countdown to bar close
+      'scales.price-scale.indicator-value-labels', //     Indicator value labels
+      'scales.price-scale.indicator-name-labels',  //     Indicator name labels
       'scales.price-scale.axis-labels',      //     Axis labels
       'scales.price-scale.border-color',     //     Scale border color
       'scales.crosshair',                    //   Crosshair group
