@@ -60,6 +60,9 @@ export interface MarketSwitch {
     session?: MarketSession;
     data?: OHLCV[];
     visibleRange?: VisibleRangePreset | VisibleRange;
+    /** Force a full in-place reload even when symbol/timeframe/session strings did not
+     *  change (for example after changing an external series adapter's parameters). */
+    force?: boolean;
 }
 
 /**

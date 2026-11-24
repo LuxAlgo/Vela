@@ -4,7 +4,7 @@ import { BULLISH, BEARISH, NEUTRAL, WARNING } from '../../palette';
 import type { ClassicIndicatorSpec, ClassicPlot } from './define';
 import { bool, num, str } from './define';
 import { STYLE, anchorPlot, baselineGradient, boolInput, boundedOscillator, centeredOscillator, colorInput, floatInput, gradient, intInput, lengthInput, optionInput, sourceInput, transp } from './shared';
-import { sourceValues, highs, lows, closes, trueRange, elapsedDays, ema, sma, rma, wma, stdev, stdError, sum, highest, lowest, map, zip, sub, shift } from './math';
+import { sourceValues, highs, lows, closes, trueRange, elapsedDays, logReturns, sampleVariance, ema, sma, rma, wma, stdev, stdError, sum, highest, lowest, map, zip, sub, shift } from './math';
 
 /** Volatility studies — how much price moves, regardless of direction. */
 
@@ -110,6 +110,24 @@ const volatilityOhlc: ClassicIndicatorSpec = {
         const annual = num(inputs, 'daysPerYear', 252);
         const values = map(sma(perDay, num(inputs, 'length', 10)), (v) => 100 * Math.sqrt(v * annual));
         return rangeInkedVolatility('vol', msg('indicator.volatilityOhlc.plot.vol', 'Volatility'), values, str(inputs, 'color', WARNING));
+    },
+};
+
+const volatilityCloseToClose: ClassicIndicatorSpec = {
+    type: 'volatility-close-to-close',
+    title: msg('indicator.volatilityCloseToClose.title', 'Volatility Close-to-Close'),
+    shortTitle: msg('indicator.volatilityCloseToClose.shortTitle', 'Vol Close-to-Close'),
+    overlay: false,
+    inputs: [
+        { ...lengthInput(10, 'length', msg('indicator.volatilityCloseToClose.length', 'Length'), 5000, msg('indicator.volatilityCloseToClose.length.tooltip', 'Number of bar-to-bar close log returns used for the sample variance.')), min: 2 },
+        intInput('daysPerYear', msg('indicator.volatilityCloseToClose.daysPerYear', 'Days Per Year'), 252, 1, 366, msg('indicator.volatilityCloseToClose.daysPerYear.tooltip', 'Trading days in a year, used to annualize the variance.')),
+        colorInput(WARNING, msg('indicator.volatilityCloseToClose.color', 'Volatility Line'), 'color', msg('indicator.volatilityCloseToClose.color.tooltip', 'Color of the line at its recent highs; it fades toward grey as volatility contracts.')),
+    ],
+    compute: (bars, inputs) => {
+        const variance = sampleVariance(logReturns(closes(bars)), num(inputs, 'length', 10));
+        const annual = num(inputs, 'daysPerYear', 252);
+        const values = map(variance, (v) => 100 * Math.sqrt(Math.max(v, 0) * annual));
+        return rangeInkedVolatility('vol', msg('indicator.volatilityCloseToClose.plot.vol', 'Volatility'), values, str(inputs, 'color', WARNING));
     },
 };
 
@@ -349,4 +367,4 @@ const choppiness: ClassicIndicatorSpec = {
     },
 };
 
-export const volatilitySpecs: ClassicIndicatorSpec[] = [atrSpec, historicalVolatility, volatilityOhlc, volatilityZeroTrend, chaikinVolatility, massIndex, standardDeviation, standardError, ulcerIndex, choppiness];
+export const volatilitySpecs: ClassicIndicatorSpec[] = [atrSpec, historicalVolatility, volatilityCloseToClose, volatilityOhlc, volatilityZeroTrend, chaikinVolatility, massIndex, standardDeviation, standardError, ulcerIndex, choppiness];

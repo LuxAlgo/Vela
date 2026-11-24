@@ -1,4 +1,4 @@
-import { timeframeToMs } from '../../data/timeframe';
+import { isVariableDurationTimeframe, timeframeToMs } from '../../data/timeframe';
 import type { OHLCV } from '../model/ohlcv';
 import type { BarRange } from '../ports/MarketDataFeed';
 import type { Unsubscribe } from '../util/types';
@@ -94,6 +94,7 @@ export class DrawingSeriesService implements DrawingSeriesGateway {
      *  distinguish "this pick isn't lower" from "NOTHING lower exists" (the chart is already
      *  at the finest offered step) so the consumer can word its notice honestly. */
     private resolveTimeframe(timeframe: string): string | { reason: 'not-lower' | 'none-lower' } {
+        if (isVariableDurationTimeframe(this.deps.chartTimeframe())) return { reason: 'none-lower' };
         const chartMs = timeframeToMs(this.deps.chartTimeframe());
         const finest = AUTO_STEPS[AUTO_STEPS.length - 1]!;
         if (timeframeToMs(finest) >= chartMs) return { reason: 'none-lower' };

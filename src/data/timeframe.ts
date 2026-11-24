@@ -1,10 +1,34 @@
-import { DataUnavailableError } from '../core/data-unavailable';
-
 /** Named non-minute resolutions → ms. `M` is treated as a 30-day month (bucketing only). */
 const NAMED_TF_MS: Record<string, number> = { D: 86_400_000, W: 604_800_000, M: 2_592_000_000 };
 
 /** Unit letter → ms, lower-cased except `M`: a month, which the `m` (minute) alias must not shadow. */
 const UNIT_MS: Record<string, number> = { s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000, w: 604_800_000, M: 2_592_000_000 };
+
+/**
+ * Parse a tick-count timeframe (`1T`, `100T`, `1000T`, or bare `T` ⇒ `1`). Returns the
+ * positive integer tick count, or `null` for any non-tick timeframe.
+ */
+export function parseTickTimeframe(timeframe: string): number | null {
+    const tf = timeframe.trim();
+    const m = /^(\d*)\s*[tT]$/.exec(tf);
+    if (!m) return null;
+    const count = m[1] === '' ? 1 : parseInt(m[1]!, 10);
+    return Number.isFinite(count) && count >= 1 ? count : null;
+}
+
+/** Whether `timeframe` is a tick-count resolution (`1T`, `100T`, …). */
+export function isTickTimeframe(timeframe: string): boolean {
+    return parseTickTimeframe(timeframe) !== null;
+}
+
+/**
+ * Whether bars on `timeframe` have no fixed wall-clock duration (tick bars, etc.).
+ * Fixed-duration assumptions — time-based gap healing, bar-close countdowns, and
+ * time-keyed deduplication — stand down for these series.
+ */
+export function isVariableDurationTimeframe(timeframe: string): boolean {
+    return isTickTimeframe(timeframe);
+}
 
 /**
  * Bar duration in ms for a Vela timeframe: a bare number is **minutes** (Pine
@@ -23,13 +47,4 @@ export function timeframeToMs(timeframe: string): number {
         if (mult !== undefined) return parseInt(m[1]!, 10) * mult;
     }
     return 3_600_000;
-}
-
-/** Express a seconds resolution in whole minutes for providers with minute-based candles. */
-export function minuteBarTimeframe(ticker: string, timeframe: string): string {
-    const match = /^(\d+)\s*S$/i.exec(timeframe.trim());
-    if (!match) return timeframe;
-    const seconds = Number(match[1]);
-    if (seconds > 0 && seconds % 60 === 0) return String(seconds / 60);
-    throw new DataUnavailableError({ reason: 'timeframe', symbol: ticker, timeframe, finest: '1', default: '1' });
 }

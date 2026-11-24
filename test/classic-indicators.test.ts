@@ -168,6 +168,8 @@ describe('classic catalog registration', () => {
             'commodity-channel-index': 'CCI',
             'connors-rsi': 'CRSI',
             'coppock-curve': 'Coppock',
+            'correlation-coefficient': 'CC',
+            'correlation-log': 'Correlation - Log',
             'detrended-price-oscillator': 'DPO',
             'donchian-channels': 'DC',
             ema: 'EMA',
@@ -177,6 +179,7 @@ describe('classic catalog registration', () => {
             'force-index': 'FI',
             'gator-oscillator': 'Gator Oscillator',
             'historical-volatility': 'HV',
+            'ichimoku-cloud': 'Ichimoku',
             'intraday-intensity': 'Intraday Intensity',
             'keltner-channels': 'KC',
             'klinger-oscillator': 'KVO',
@@ -246,6 +249,7 @@ describe('classic catalog registration', () => {
             'standard-error': 'StdErr',
             'trend-strength-index': 'Trend Strength Index',
             'typical-price': 'Typical Price',
+            'volatility-close-to-close': 'Vol Close-to-Close',
             'volatility-index': 'Vol Index',
             'volatility-ohlc': 'Vol OHLC',
             'volatility-zero-trend': 'Vol Zero Trend',
@@ -975,5 +979,171 @@ describe('classic studies checked against their definitions', () => {
         const edited = outputOf('guppy-multiple-moving-average', bars, { investor6: 90, traderColor: '#123456' }).plots;
         expect(edited[11]!.values).toEqual(ema(closes, 90));
         expect(edited.slice(0, 6).every((p) => p.color === '#123456')).toBe(true);
+    });
+
+    it('Volatility Close-to-Close computes annualized sample standard deviation of bar-to-bar log returns', () => {
+        // Explicit prices: close = [100, 110, 99, 108.9, 119.79] → log returns [ln(1.1), ln(0.9), ln(1.1), ln(1.1)]
+        const prices = [100, 110, 99, 108.9, 119.79];
+        const bars = prices.map((c, i) => bar(c, i));
+        const out = outputOf('volatility-close-to-close', bars, { length: 3, daysPerYear: 252 });
+        const vals = out.plots[0]!.values;
+        // Bar 0 has no return; bars 1..2 have fewer than 3 returns → NaN.
+        expect(vals[0]).toBeNaN();
+        expect(vals[1]).toBeNaN();
+        expect(vals[2]).toBeNaN();
+        // Window at bar 3: returns [ln(1.1), ln(0.9), ln(1.1)]
+        const r = [Math.log(1.1), Math.log(0.9), Math.log(1.1)];
+        const mean = (r[0]! + r[1]! + r[2]!) / 3;
+        const sampleVar = r.reduce((acc, x) => acc + (x - mean) ** 2, 0) / 2;
+        expect(vals[3]).toBeCloseTo(100 * Math.sqrt(sampleVar * 252), 10);
+        // Window at bar 4: returns [ln(0.9), ln(1.1), ln(1.1)] — identical spread, identical volatility
+        expect(vals[4]).toBeCloseTo(vals[3]!, 10);
+        // Does NOT divide by elapsed days (unlike Volatility Zero Trend): widening bar spacing leaves value unchanged.
+        const dailyBars = prices.map((c, i) => ({ ...bar(c, i), time: i * 86_400_000 }));
+        const spacedOut = outputOf('volatility-close-to-close', dailyBars, { length: 3, daysPerYear: 252 });
+        expect(spacedOut.plots[0]!.values[3]).toBeCloseTo(vals[3]!, 10);
+    });
+
+    it('Ichimoku Cloud computes all five lines, shifts Lagging back and projects the cloud forward past the last bar', () => {
+        const bars = wave(120);
+        const spec = specOf('ichimoku-cloud');
+        const desc = classicDescriptor(spec);
+        const defaults = desc.defaultInputs();
+        expect(spec.overlay).toBe(true);
+        expect(defaults).toMatchObject({ symbol: '', conversionLength: 9, baseLength: 26, spanBLength: 52, laggingLength: 26, displacement: 26 });
+
+        const out = spec.compute(bars, defaults);
+        const byKey = new Map(out.plots.map((p) => [p.key, p] as const));
+        const h = bars.map((b) => b.high);
+        const l = bars.map((b) => b.low);
+        const donchian = (len: number, i: number) => (highest(h, len)[i]! + lowest(l, len)[i]!) / 2;
+
+        expect(byKey.get('conversion')!.values[60]).toBeCloseTo(donchian(9, 60), 10);
+        expect(byKey.get('base')!.values[60]).toBeCloseTo(donchian(26, 60), 10);
+        expect(byKey.get('spanA')!.values[60]).toBeCloseTo((donchian(9, 60) + donchian(26, 60)) / 2, 10);
+        expect(byKey.get('spanB')!.values[60]).toBeCloseTo(donchian(52, 60), 10);
+        expect(byKey.get('lagging')!.offset).toBe(-25);
+        expect(byKey.get('spanA')!.offset).toBe(25);
+        expect(byKey.get('spanB')!.offset).toBe(25);
+
+        // Verify ClassicIndicator emits projected future timestamps for Span A/B, shifted cloud fill colors, and shifted Lagging Span.
+        let emitted: NativeIndicatorOutput | null = null;
+        const inst = desc.create();
+        const ctx: NativeIndicatorContext = {
+            id: 'ichi',
+            symbol: 'BTCUSDT',
+            timeframe: '1',
+            live: false,
+            bars: () => bars,
+            data: {} as NativeIndicatorContext['data'],
+            emit: (o) => { emitted = o; },
+            pushData: () => {},
+            setStatus: () => {},
+        };
+        inst.start(ctx, defaults);
+        expect(emitted).not.toBeNull();
+        const series = emitted!.series!;
+        const laggingSeries = series.find((s) => s.title === 'Lagging Span')!;
+        const spanASeries = series.find((s) => s.title === 'Leading Span A')!;
+        const spanBSeries = series.find((s) => s.title === 'Leading Span B')!;
+        expect(isLineLikeSeries(laggingSeries) && laggingSeries.points.length).toBe(bars.length);
+        if (isLineLikeSeries(laggingSeries)) {
+            // Lagging Span pulls bar 95's close back onto bar 70, and leaves the last 25 bars null.
+            expect(laggingSeries.points[70]!.value).toBeCloseTo(bars[95]!.close, 10);
+            expect(laggingSeries.points[bars.length - 1]!.value).toBeNull();
+        }
+        if (isLineLikeSeries(spanASeries) && isLineLikeSeries(spanBSeries)) {
+            expect(spanASeries.points.length).toBe(bars.length + 25);
+            expect(spanBSeries.points.length).toBe(bars.length + 25);
+            // Leading Span A on the final projected slot equals unshifted spanA at the last chart bar.
+            const stepMs = bars[1]!.time - bars[0]!.time;
+            expect(spanASeries.points[bars.length + 24]!.value).toBeCloseTo(byKey.get('spanA')!.values[bars.length - 1]!, 10);
+            expect(spanASeries.points[bars.length + 24]!.time).toBe(bars[bars.length - 1]!.time + 25 * stepMs);
+            // Cloud fill colors shift by +25 to match Leading Span A/B points 1:1.
+            const cloudFill = emitted!.fills![0]!;
+            expect(cloudFill.colors!.length).toBe(bars.length + 25);
+            expect(cloudFill.colors![0]).toBeNull();
+            expect(cloudFill.colors![bars.length + 24]).not.toBeNull();
+        }
+        inst.stop();
+    });
+
+    it('Correlation Coefficient and Correlation - Log compute exact Pearson correlations over aligned external series', async () => {
+        const bars = Array.from({ length: 40 }, (_, i) => bar(100 + i * 2 + Math.sin(i) * 3, i));
+        // Perfectly inversely correlated price series (for CC) and identical-return series (for Correlation - Log)
+        const invBars = bars.map((b) => ({ ...b, open: 500 - b.close, high: 501 - b.close, low: 499 - b.close, close: 500 - b.close }));
+        const scaledBars = bars.map((b) => ({ ...b, open: b.close * 2, high: b.close * 2 + 1, low: b.close * 2 - 1, close: b.close * 2 }));
+
+        // Empty symbol default produces all-NaN while keeping a visible plot in its own pane.
+        const ccSpec = specOf('correlation-coefficient');
+        const ccEmpty = ccSpec.compute(bars, classicDescriptor(ccSpec).defaultInputs());
+        expect(ccEmpty.plots[0]!.values.every(Number.isNaN)).toBe(true);
+        expect(classicDescriptor(ccSpec).inputsSchema().find((i) => i.key === 'symbol')?.confirm).toBe(true);
+
+        const ccOut = ccSpec.compute(bars, { ...classicDescriptor(ccSpec).defaultInputs(), symbol: 'ETHUSDT', length: 10 }, new Map([['ETHUSDT', invBars]]));
+        expect(ccOut.plots[0]!.values[39]).toBeCloseTo(-1, 10);
+
+        const clogSpec = specOf('correlation-log');
+        const clogEmpty = clogSpec.compute(bars, classicDescriptor(clogSpec).defaultInputs());
+        expect(clogEmpty.plots[0]!.values.every(Number.isNaN)).toBe(true);
+        expect(classicDescriptor(clogSpec).inputsSchema().find((i) => i.key === 'instrument')?.confirm).toBe(true);
+        expect(classicDescriptor(clogSpec).inputsSchema().find((i) => i.key === 'instrument2')?.confirm).toBe(true);
+
+        // Two scaled copies have identical log returns → correlation of log returns = +1.
+        const clogOut = clogSpec.compute(
+            bars,
+            { ...classicDescriptor(clogSpec).defaultInputs(), instrument: 'BTCUSDT', instrument2: 'ETHUSDT', length: 10 },
+            new Map([
+                ['BTCUSDT', bars],
+                ['ETHUSDT', scaledBars],
+            ]),
+        );
+        expect(clogOut.plots[0]!.values[39]).toBeCloseTo(1, 10);
+
+        // ClassicIndicator async lifecycle: fetches secondary symbol, subscribes live ticks, and cleans up on stop.
+        const fetched: string[] = [];
+        let liveTick: ((b: OHLCV) => void) | null = null;
+        let unsubscribed = false;
+        const emissions: NativeIndicatorOutput[] = [];
+        const statuses: string[] = [];
+        const inst = classicDescriptor(ccSpec).create();
+        const ctx: NativeIndicatorContext = {
+            id: 'cc1',
+            symbol: 'BTCUSDT',
+            timeframe: '1',
+            live: true,
+            bars: () => bars,
+            data: { canonicalSymbol: (s: string) => s } as NativeIndicatorContext['data'],
+            fetchSeries: async (sym) => {
+                fetched.push(sym);
+                return scaledBars;
+            },
+            subscribeSeries: (_sym, _tf, onBar) => {
+                liveTick = onBar;
+                return () => { unsubscribed = true; };
+            },
+            emit: (o) => emissions.push(o),
+            pushData: () => {},
+            setStatus: (s) => statuses.push(s),
+        };
+        inst.start(ctx, { ...classicDescriptor(ccSpec).defaultInputs(), symbol: 'ETHUSDT', length: 10 });
+        expect(statuses[0]).toBe('loading');
+        await new Promise((r) => setTimeout(r, 0));
+        expect(fetched).toEqual(['ETHUSDT']);
+        expect(statuses[statuses.length - 1]).toBe('idle');
+        const lastEmission = emissions[emissions.length - 1]!;
+        const lastSeries = lastEmission.series![0]!;
+        expect(isLineLikeSeries(lastSeries) && lastSeries.points[39]!.value).toBeCloseTo(1, 10);
+        // Correlation Coefficient renders a uniform semi-transparent area fill against zero.
+        const areaFill = lastEmission.fills![0]!;
+        expect(areaFill.gradient).toBeUndefined();
+        expect(areaFill.colors?.[39]).toMatch(/^#[0-9a-f]{6}33$/i);
+
+        // Pushing a live tick on the external symbol recomputes immediately.
+        const prevCount = emissions.length;
+        liveTick!({ ...scaledBars[39]!, close: scaledBars[39]!.close * 0.5 });
+        expect(emissions.length).toBe(prevCount + 1);
+        inst.stop();
+        expect(unsubscribed).toBe(true);
     });
 });

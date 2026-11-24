@@ -124,6 +124,9 @@ export interface InputSchema {
     /** A help mark beside this input's `group` heading (see {@link InputGroupHelp}). The first
      *  input of a group that carries one sets it; an input without a `group` shows none. */
     groupHelp?: InputGroupHelp;
+    /** Prompt the user to configure this input on add when its value is empty (for example a
+     *  required secondary symbol on a multi-symbol study). */
+    confirm?: boolean;
 }
 
 /** The distinct options of an input, as strings (an engine may hand over other scalars). */

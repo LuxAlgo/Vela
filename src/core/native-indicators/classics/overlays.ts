@@ -6,8 +6,8 @@ import type { DrawingPolyline } from '../../model/drawings';
 import { BULLISH, BEARISH, INFO, NEUTRAL, WARNING } from '../../palette';
 import type { ClassicBand, ClassicIndicatorSpec, ClassicPlot } from './define';
 import { bool, num, str } from './define';
-import { SETTINGS, STYLE, boolInput, colorInput, floatInput, intInput, optionInput, sourceInput, transp } from './shared';
-import { sourceValues, type SourceName } from './math';
+import { SETTINGS, STYLE, boolInput, colorInput, floatInput, intInput, lengthInput, optionInput, sourceInput, symbolInput, transp } from './shared';
+import { alignBars, closes, highest, highs, lowest, lows, sourceValues, zip, type SourceName } from './math';
 
 /** Price-anchored specials: stops, anchored averages, levels, pivots, patterns. */
 
@@ -470,4 +470,72 @@ const averagePrice = priceStudy('average-price', 'OHLC4', {
     colorTooltip: msg('indicator.averagePrice.color.tooltip', 'Color of the line through the average of each bar’s open, high, low and close.'),
 });
 
-export const overlaySpecs: ClassicIndicatorSpec[] = [parabolicSar, vwap, pivotPoints, fiftyTwoWeek, zigzag, williamsFractal, medianPrice, typicalPrice, averagePrice];
+const ichimokuCloud: ClassicIndicatorSpec = {
+    type: 'ichimoku-cloud',
+    title: msg('indicator.ichimokuCloud.title', 'Ichimoku Cloud'),
+    shortTitle: msg('indicator.ichimokuCloud.shortTitle', 'Ichimoku'),
+    overlay: true,
+    inputs: [
+        symbolInput('symbol', msg('indicator.ichimokuCloud.symbol', 'Another Symbol'), '', {
+            tooltip: msg('indicator.ichimokuCloud.symbol.tooltip', 'Optional secondary symbol to compute the cloud on. Leave empty to use the chart symbol.'),
+        }),
+        lengthInput(9, 'conversionLength', msg('indicator.ichimokuCloud.conversionLength', 'Conversion Line Length'), 5000, msg('indicator.ichimokuCloud.conversionLength.tooltip', 'Lookback period for the Conversion Line (Tenkan-sen) high-low midpoint.')),
+        lengthInput(26, 'baseLength', msg('indicator.ichimokuCloud.baseLength', 'Base Line Length'), 5000, msg('indicator.ichimokuCloud.baseLength.tooltip', 'Lookback period for the Base Line (Kijun-sen) high-low midpoint.')),
+        lengthInput(52, 'spanBLength', msg('indicator.ichimokuCloud.spanBLength', 'Leading Span B Length'), 5000, msg('indicator.ichimokuCloud.spanBLength.tooltip', 'Lookback period for Leading Span B (Senkou Span B) high-low midpoint.')),
+        lengthInput(26, 'laggingLength', msg('indicator.ichimokuCloud.laggingLength', 'Lagging Span'), 5000, msg('indicator.ichimokuCloud.laggingLength.tooltip', 'Backward shift period for the Lagging Span (Chikou Span); plots close shifted back by period − 1 bars.')),
+        lengthInput(26, 'displacement', msg('indicator.ichimokuCloud.displacement', 'Displacement'), 5000, msg('indicator.ichimokuCloud.displacement.tooltip', 'Forward shift period for Leading Span A and B; projects the cloud ahead by displacement − 1 bars.')),
+        colorInput(INFO, msg('indicator.ichimokuCloud.conversionColor', 'Conversion Line'), 'conversionColor', msg('indicator.ichimokuCloud.conversionColor.tooltip', 'Color of the Conversion Line.')),
+        colorInput(BEARISH, msg('indicator.ichimokuCloud.baseColor', 'Base Line'), 'baseColor', msg('indicator.ichimokuCloud.baseColor.tooltip', 'Color of the Base Line.')),
+        colorInput(BULLISH, msg('indicator.ichimokuCloud.laggingColor', 'Lagging Span'), 'laggingColor', msg('indicator.ichimokuCloud.laggingColor.tooltip', 'Color of the Lagging Span.')),
+        colorInput(BULLISH, msg('indicator.ichimokuCloud.spanAColor', 'Leading Span A'), 'spanAColor', msg('indicator.ichimokuCloud.spanAColor.tooltip', 'Color of Leading Span A.')),
+        colorInput(BEARISH, msg('indicator.ichimokuCloud.spanBColor', 'Leading Span B'), 'spanBColor', msg('indicator.ichimokuCloud.spanBColor.tooltip', 'Color of Leading Span B.')),
+        colorInput(transp(BULLISH, 90), msg('indicator.ichimokuCloud.bullCloudColor', 'Bullish Cloud'), 'bullCloudColor', msg('indicator.ichimokuCloud.bullCloudColor.tooltip', 'Cloud fill color while Leading Span A sits at or above Leading Span B.')),
+        colorInput(transp(BEARISH, 90), msg('indicator.ichimokuCloud.bearCloudColor', 'Bearish Cloud'), 'bearCloudColor', msg('indicator.ichimokuCloud.bearCloudColor.tooltip', 'Cloud fill color while Leading Span A sits below Leading Span B.')),
+    ],
+    externalSymbols: (inputs) => {
+        const sym = str(inputs, 'symbol', '').trim();
+        return sym ? [sym] : [];
+    },
+    compute: (bars, inputs, external) => {
+        const sym = str(inputs, 'symbol', '').trim();
+        let h: number[];
+        let l: number[];
+        let c: number[];
+        if (sym) {
+            const aligned = alignBars(bars, external?.get(sym) ?? []);
+            h = aligned.map((b) => (b ? b.high : Number.NaN));
+            l = aligned.map((b) => (b ? b.low : Number.NaN));
+            c = aligned.map((b) => (b ? b.close : Number.NaN));
+        } else {
+            h = highs(bars);
+            l = lows(bars);
+            c = closes(bars);
+        }
+        const donchian = (len: number): number[] => zip(highest(h, len), lowest(l, len), (hi, lo) => (hi + lo) / 2);
+        const conversion = donchian(num(inputs, 'conversionLength', 9));
+        const base = donchian(num(inputs, 'baseLength', 26));
+        const spanA = zip(conversion, base, (a, b) => (a + b) / 2);
+        const spanB = donchian(num(inputs, 'spanBLength', 52));
+        const lagShift = -(Math.max(1, Math.trunc(num(inputs, 'laggingLength', 26))) - 1);
+        const leadShift = Math.max(1, Math.trunc(num(inputs, 'displacement', 26))) - 1;
+        const bullCloud = str(inputs, 'bullCloudColor', transp(BULLISH, 90));
+        const bearCloud = str(inputs, 'bearCloudColor', transp(BEARISH, 90));
+        const cloudColors = spanA.map((a, i) => {
+            const b = spanB[i]!;
+            if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+            return a >= b ? bullCloud : bearCloud;
+        });
+        return {
+            plots: [
+                { key: 'conversion', title: msg('indicator.ichimokuCloud.plot.conversion', 'Conversion Line'), values: conversion, color: str(inputs, 'conversionColor', INFO) },
+                { key: 'base', title: msg('indicator.ichimokuCloud.plot.base', 'Base Line'), values: base, color: str(inputs, 'baseColor', BEARISH) },
+                { key: 'lagging', title: msg('indicator.ichimokuCloud.plot.lagging', 'Lagging Span'), values: c, color: str(inputs, 'laggingColor', BULLISH), offset: lagShift },
+                { key: 'spanA', title: msg('indicator.ichimokuCloud.plot.spanA', 'Leading Span A'), values: spanA, color: str(inputs, 'spanAColor', BULLISH), offset: leadShift },
+                { key: 'spanB', title: msg('indicator.ichimokuCloud.plot.spanB', 'Leading Span B'), values: spanB, color: str(inputs, 'spanBColor', BEARISH), offset: leadShift },
+            ],
+            bands: [{ key: 'cloud', from: 'spanA', to: 'spanB', color: bullCloud, colors: cloudColors }],
+        };
+    },
+};
+
+export const overlaySpecs: ClassicIndicatorSpec[] = [ichimokuCloud, parabolicSar, vwap, pivotPoints, fiftyTwoWeek, zigzag, williamsFractal, medianPrice, typicalPrice, averagePrice];

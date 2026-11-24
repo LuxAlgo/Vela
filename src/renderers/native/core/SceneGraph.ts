@@ -165,6 +165,10 @@ export class SceneGraph {
      *  also shown, the two merge into one stacked block (countdown under the label);
      *  when either shows alone it's centered on the latest price level. */
     showCountdown = true;
+    /** True while the active series has variable bar durations (tick charts, etc.):
+     *  suppresses the wall-clock bar countdown, preserves same-millisecond bars, and
+     *  formats crosshair stamps with seconds. */
+    variableDuration = false;
     /** Logarithmic price scale on the price pane. */
     logScale = false;
     /** Inverted price axis on the price pane (high at the bottom). Study panes carry their own. */

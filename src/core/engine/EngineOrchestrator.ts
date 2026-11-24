@@ -2,12 +2,12 @@ import type { IChartRenderer, VisibleRange } from '../ports/IChartRenderer';
 import type { MarketDataFeed, BarRange, SymbolFacts, SymbolInfo } from '../ports/MarketDataFeed';
 import type { ScriptingEngine, ExecutionMarket, VisibleBarRange, BarsChangeReason, PreparedScript } from '../ports/ScriptingEngine';
 import type { Unsubscribe } from '../util/types';
-import type { OHLCV } from '../model/ohlcv';
+import { isSameBar, isNewerBar, type OHLCV } from '../model/ohlcv';
 import type { IndicatorModel } from '../model/indicator';
 import type { ValuePatch, SeriesValueDelta } from '../model/patch';
 import { isLineLikeSeries } from '../model/series';
 import type { InputSchema, InputValue } from '../model/inputs';
-import type { VelaTheme, MarketConfig, MarketSwitch, MarketSnapshot, AddIndicatorOptions, PriceStyle, MoveTarget, PaneInfo } from '../options';
+import { normalizeSession, type VelaTheme, type MarketConfig, type MarketSwitch, type MarketSnapshot, type AddIndicatorOptions, type PriceStyle, type MoveTarget, type PaneInfo } from '../options';
 import type { PaneController } from '../PanesControl';
 import type { PaneAction } from '../ports/IChartRenderer';
 import type { CodeUpdateResult, IndicatorHandle } from '../IndicatorHandle';
@@ -34,7 +34,7 @@ import { MarksController } from '../marks/MarksController';
 import { DrawingSeriesService } from './DrawingSeriesService';
 import type { DrawingsOption } from '../drawings/toolbar';
 import type { DataControl } from '../DataControl';
-import { timeframeToMs } from '../../data/timeframe';
+import { isVariableDurationTimeframe, timeframeToMs } from '../../data/timeframe';
 import { parseSymbol } from '../../data/ProviderRegistry';
 import { isDataUnavailableError, type DataUnavailableError } from '../data-unavailable';
 import { barTransformFor, parseExtendedTicker, type BarTransform } from '../price-styles/BarTransform';
@@ -386,7 +386,8 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
      */
     private async fetchSeries(symbol: string, timeframe: string, range: BarRange): Promise<OHLCV[]> {
         const parsed = parseExtendedTicker(symbol);
-        const cfg: MarketConfig = { symbol: parsed.symbol, timeframe };
+        const session = normalizeSession(range.session);
+        const cfg: MarketConfig = { symbol: parsed.symbol, timeframe, ...(session ? { session } : {}) };
         const bars = await (this.feed.loadRange ? this.feed.loadRange(cfg, range) : this.feed.load({ ...cfg, bars: range.limit }));
         return parsed.transform ? parsed.transform.full(bars) : bars;
     }
@@ -687,7 +688,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
             timeframe: m.timeframe,
             bars: m.bars,
             session: m.session,
-            offline: Boolean(m.data?.length),
+            offline: m.data !== undefined,
         };
     }
 
@@ -710,6 +711,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
     async setMarket(next: MarketSwitch): Promise<void> {
         const m = this.config.market;
         const identityChanged =
+            next.force === true ||
             (next.symbol !== undefined && next.symbol !== m.symbol) ||
             (next.timeframe !== undefined && next.timeframe !== m.timeframe) ||
             // A session switch changes WHICH bars exist (RTH vs ETH) — a full reload,
@@ -1054,7 +1056,8 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
                     return;
                 }
                 for (let i = 1; i < head.length; i += 1) {
-                    if (head[i]!.time <= head[i - 1]!.time) {
+                    // Ordered as live bars are: by time, then by `seq` within one millisecond.
+                    if (!isNewerBar(head[i]!, head[i - 1]!)) {
                         console.warn('[vela] non-monotonic history chunk — stopping the backfill');
                         this.completeHistory('aborted');
                         return;
@@ -1773,7 +1776,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
     private setBarSeries(raw: OHLCV[], opts?: { preserveView?: boolean; clearing?: boolean }): void {
         this.rawBars = raw;
         this.bars = this.barTransform ? this.barTransform.full(raw) : raw;
-        this.renderer.setBars(this.bars, { preserveView: opts?.preserveView });
+        this.renderer.setBars(this.bars, {
+            preserveView: opts?.preserveView,
+            variableDuration: isVariableDurationTimeframe(this.config.market.timeframe ?? ''),
+        });
         // The first PAINTED batch ends the loading state — on a deep history that is the quick
         // preview, well before the load pipeline completes. Only a non-empty series counts: the
         // switch-time CLEARING call says so explicitly, and an empty COMPLETED load is closed
@@ -1794,7 +1800,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
     private applyBar(bar: OHLCV, notify = true): void {
         const last = this.rawBars[this.rawBars.length - 1];
         let viewBar = bar;
-        if (last && bar.time === last.time) {
+        if (last && isSameBar(last, bar)) {
             this.rawBars[this.rawBars.length - 1] = bar;
             // The forming candle refined — its values are still provisional.
             this.barCause = 'tick';
@@ -1803,7 +1809,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
                 viewBar = this.barTransform.next(bar, this.bars[this.bars.length - 2]);
                 this.bars[this.bars.length - 1] = viewBar;
             }
-        } else if (!last || bar.time > last.time) {
+        } else if (!last || isNewerBar(bar, last)) {
             this.rawBars.push(bar);
             // A new bar opened, so the one before it is now FINAL — the distinction
             // `script:run` carries as `cause: 'bar'`.
@@ -1873,9 +1879,11 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         }
     }
 
-    /** Gap healing needs a ranged feed and a provider-backed series (offline `data` has no source). */
+    /** Gap healing needs a ranged feed, a provider-backed series (offline `data` has no
+     *  source), and a fixed-duration timeframe (variable-duration series have no fixed
+     *  bar interval to detect missed bars against). */
     private canHeal(): boolean {
-        return !!this.feed.loadRange && !this.config.market.data?.length;
+        return !!this.feed.loadRange && !this.config.market.data?.length && !isVariableDurationTimeframe(this.config.market.timeframe ?? '');
     }
 
     /** Duration of one chart bar in ms (for live-bar continuity checks). */
@@ -2556,8 +2564,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
             // One context per start: once the instance is stopped, nothing it left in flight
             // may reach the scene (a stopped market's payload, or a removed indicator's).
             let alive = true;
+            const secondaryUnsubs: Unsubscribe[] = [];
             native.revokeContext = () => {
                 alive = false;
+                for (const off of secondaryUnsubs.splice(0)) off();
             };
             const ctx: NativeIndicatorContext = {
                 id,
@@ -2567,6 +2577,27 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
                 session: this.config.market.session,
                 bars: () => this.bars,
                 data: this.dataControl,
+                fetchSeries: (symbol, timeframe, range) =>
+                    this.fetchSeries(symbol, timeframe, { ...(this.config.market.session ? { session: this.config.market.session } : {}), ...range }),
+                subscribeSeries: (symbol, timeframe, onBar) => {
+                    if (!alive || !this.config.live || this.replayQueue !== null) return () => {};
+                    const parsed = parseExtendedTicker(symbol);
+                    const cfg: MarketConfig = {
+                        symbol: parsed.symbol,
+                        timeframe,
+                        ...(this.config.market.session ? { session: this.config.market.session } : {}),
+                    };
+                    const rawOff = this.feed.subscribe(cfg, (bar) => {
+                        if (alive) onBar(bar);
+                    });
+                    const off: Unsubscribe = () => {
+                        const idx = secondaryUnsubs.indexOf(off);
+                        if (idx >= 0) secondaryUnsubs.splice(idx, 1);
+                        rawOff();
+                    };
+                    secondaryUnsubs.push(off);
+                    return off;
+                },
                 emit: (out) => {
                     if (alive) this.applyModel(id, this.buildNativeModel(record, out, this.bars[0]?.time));
                 },

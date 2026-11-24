@@ -33,8 +33,8 @@ export interface SymbolInfo {
     /**
      * The timeframes the source serves for this symbol. Timeframe strings use the uppercase
      * canonical form: `'1D'` (or `'D'`), `'W'`, `'1M'` (or `'M'`), `'3M'`, `'12M'`, or bare
-     * minutes such as `'60'`. Keep these strings canonical. When absent, the workspace
-     * offers its usual timeframe choices. `info().supportedTimeframes` is informational.
+     * minutes such as `'60'`. Never lowercase: `'1m'` is one minute, not one month. Absent ⇒
+     * the provider's `info().supportedTimeframes`, if any.
      */
     timeframes?: {
         /** The finest timeframe served. Every coarser one is served too, unless `list` is present. */
@@ -43,6 +43,8 @@ export interface SymbolInfo {
         default?: string;
         /** When present, the EXHAUSTIVE list of timeframes served. */
         list?: readonly string[];
+        /** True when the source serves tick-based timeframes (`nT`) for this symbol. */
+        ticks?: boolean;
     };
     /**
      * `false` when the source has no volume data for this symbol: the chart then does not

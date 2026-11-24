@@ -152,6 +152,11 @@ a pane). Tapping the lit stop restores the view.
 
 ### A timeframe the source never serves
 
+Timeframe menus dim choices the active symbol cannot serve. Favorite shortcuts hide
+those choices while keeping them saved for other symbols. Quick entry stays open with
+an explanation when the active symbol cannot serve a typed timeframe, including one
+outside the configured presets.
+
 When a cell's data source refuses the requested timeframe for good — a monthly economic
 series asked for hourly bars, which a provider signals with a `DataUnavailableError` (see
 [Adding a data provider](../contributing/adding-a-data-provider.md#failures-transient-or-permanent))
@@ -571,14 +576,6 @@ it there). For a page where the chart is the main content, set `autofocus: true`
 they work from the very first keystroke, before any click.
 
 ## The chrome
-
-The active symbol's `timeframes` list or its `finest` timeframe determines which periods
-you can select. The desktop menu and mobile drawer dim unavailable presets. Favorite chips
-hide while unavailable and return on a market that supports them. Quick entry shows a message
-for an unavailable timeframe. Provider-wide `supportedTimeframes` is informational. All presets
-and valid quick entries remain available when capabilities are unknown, such as for offline data
-or a bare ticker shared by multiple providers. A source can still refuse a load and suggest a
-[fallback timeframe](#a-timeframe-the-source-never-serves).
 
 - **Topbar** — symbol button (opens the search), timeframe dropdown (hover a row to
   star a favorite: starred timeframes sit as duration-sorted chips, the current one

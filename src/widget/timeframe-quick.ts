@@ -6,7 +6,7 @@ import { textOf } from '../core/i18n/text';
 import type { MessageLike, Translator } from '../core/i18n/types';
 import { Dialog } from '@luxalgo/vela-ui/dialog';
 import { injectChromeStyles } from '../ui/chromeStyles';
-import { parseTimeframe, TIMEFRAME_UNAVAILABLE, type TimeframeChoiceResolver } from './timeframe';
+import { parseTimeframe } from './timeframe';
 import { css } from '@luxalgo/vela-ui/css';
 import { t } from '@luxalgo/vela-ui/t';
 
@@ -39,6 +39,7 @@ const TEXT = {
     // The codes are what the field accepts, typed as is in every language.
     example: msg('widget.timeframeQuick.example', 'e.g. 15, 4H, D, 3M'),
     invalid: msg('widget.timeframeQuick.invalid', 'Not a timeframe'),
+    unavailable: msg('widget.topbar.timeframeUnavailable', 'Not available for this symbol'),
 };
 
 export interface TimeframeQuickOptions {
@@ -49,17 +50,18 @@ export interface TimeframeQuickOptions {
     i18n?: Translator;
 }
 
-class TimeframeQuickControl {
+export class TimeframeQuick {
     private readonly dialog: Dialog;
     private readonly input: HTMLInputElement;
     private readonly hint: HTMLElement;
     private readonly i18n: Translator | null;
+    private submission = 0;
 
     private t(text: MessageLike): string {
         return textOf(this.i18n, text);
     }
 
-    constructor(opts: TimeframeQuickOptions, private readonly resolveChoice?: TimeframeChoiceResolver) {
+    constructor(opts: TimeframeQuickOptions, isAvailable?: (canonical: string) => Promise<boolean | undefined>) {
         this.i18n = opts.i18n ?? null;
         const doc = (opts.host ?? document.body).ownerDocument;
         injectChromeStyles(STYLE_ID, CSS, doc);
@@ -84,16 +86,23 @@ class TimeframeQuickControl {
             this.input.setSelectionRange(selectionStart, selectionEnd);
             this.renderHint();
         });
-        this.input.addEventListener('keydown', (e) => {
+        this.input.addEventListener('keydown', async (e) => {
             if (e.key !== 'Enter') return;
             const parsed = parseTimeframe(this.input.value);
-            const choice = parsed.canonical === undefined ? null : this.resolveTimeframe(parsed.canonical);
-            if (choice === null) {
-                this.renderHint();
-                return;
+            if (parsed.valid && parsed.canonical !== undefined) {
+                if (isAvailable) {
+                    const submission = ++this.submission;
+                    const available = await isAvailable(parsed.canonical);
+                    if (submission !== this.submission || !this.isOpen || available === undefined) return;
+                    if (!available) {
+                        this.hint.textContent = this.t(TEXT.unavailable);
+                        this.hint.dataset.invalid = '1';
+                        return;
+                    }
+                }
+                this.close();
+                opts.onApply(parsed.canonical);
             }
-            this.close();
-            opts.onApply(choice);
         });
     }
 
@@ -101,7 +110,6 @@ class TimeframeQuickControl {
     relabel(): void {
         this.dialog.titleEl.textContent = this.t(TEXT.title);
         this.dialog.setI18n(this.i18n);
-        if (this.isOpen) this.renderHint();
     }
 
     open(seed = ''): void {
@@ -136,36 +144,23 @@ class TimeframeQuickControl {
     }
 
     destroy(): void {
+        ++this.submission;
         this.dialog.destroy();
     }
 
-    private resolveTimeframe(canonical: string): string | null {
-        return this.resolveChoice ? this.resolveChoice(this.input.value.trim(), canonical) : canonical;
-    }
-
     private renderHint(): void {
+        ++this.submission;
         const raw = this.input.value.trim();
         const parsed = parseTimeframe(raw, this.i18n);
         if (!raw) {
             this.hint.textContent = this.t(TEXT.example);
             delete this.hint.dataset.invalid;
-        } else if (parsed.canonical === undefined || this.resolveTimeframe(parsed.canonical) === null) {
-            this.hint.textContent = this.t(parsed.valid ? TIMEFRAME_UNAVAILABLE : TEXT.invalid);
-            this.hint.dataset.invalid = '1';
-        } else {
+        } else if (parsed.valid) {
             this.hint.textContent = parsed.label ?? '';
             delete this.hint.dataset.invalid;
+        } else {
+            this.hint.textContent = this.t(TEXT.invalid);
+            this.hint.dataset.invalid = '1';
         }
     }
-}
-
-export class TimeframeQuick extends TimeframeQuickControl {
-    constructor(opts: TimeframeQuickOptions) {
-        super(opts);
-    }
-}
-
-/** @internal Connect workspace timeframe choices without changing standalone options. */
-export function createWorkspaceTimeframeQuick(opts: TimeframeQuickOptions, resolve: TimeframeChoiceResolver): TimeframeQuickControl {
-    return new TimeframeQuickControl(opts, resolve);
 }

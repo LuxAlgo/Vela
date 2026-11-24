@@ -4,11 +4,43 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Timeframe shortcuts respect the active symbol.** Unavailable favorites stay saved
+  and reappear on symbols that support them. Quick entry explains when a valid
+  timeframe is unavailable and stays open so you can choose another.
+
+## [0.10.17]
+
+### Fixed
+
+- **Pressing Escape closes indicator settings even when focus is on the chart.** A chart key handler clearing the crosshair used to prevent Escape from dismissing an open indicator settings dialog, while nested dialogs (such as a symbol picker opened from a symbol input) now reliably keep Escape to themselves until closed.
+
+## [0.10.16]
+
+### Added
+
+- **Tick timeframes (`nT`) and pluggable series adapters.** Vela now recognizes tick-count timeframes (`1T`, `10T`, `100T`, `1000T`, or bare `T`) across timeframe parsing, picker sorting, and per-symbol availability gating, and exposes `registerSeriesAdapter` on the plugin SDK so extensions can supply custom or variable-duration bar series. On variable-duration series, bars carry an optional monotonic `seq` identity for same-millisecond updates, sub-minute time-axis ticks and crosshair stamps show seconds, the bar-close countdown hides automatically, and fixed-interval gap healing stands down.
+
+## [0.10.15]
+
+### Added
+
+- **Ichimoku Cloud, Correlation Coefficient, Correlation - Log, and Volatility Close-to-Close built-in indicators.**
+  Ichimoku Cloud plots Conversion Line, Base Line, backward-shifted Lagging Span, and the
+  forward-projected bullish/bearish cloud into the chart's right whitespace, with an optional
+  secondary symbol input. Correlation Coefficient and Correlation - Log compute rolling Pearson
+  correlation across instruments (prices or log returns) in their own pane and open their
+  settings dialog automatically when added from the indicator picker so you can pick the
+  symbol(s) immediately. Volatility Close-to-Close computes annualized sample standard deviation
+  of bar-to-bar close log returns.
+- **Built-in symbol picker inside indicator settings and multi-symbol support for native indicators.**
+  Symbol inputs in indicator settings now open the workspace's symbol search dialog by default
+  without dismissing the settings dialog behind it, and custom native indicators can request
+  and subscribe to secondary symbol series through `fetchSeries` and `subscribeSeries`.
+
 ### Changed
 
-- **Timeframe controls follow the active market.** The menu and mobile drawer dim presets
-  excluded by the symbol's timeframe declaration. Unavailable favorites return when you switch
-  back to a market that offers them. Quick entry explains when a timeframe is unavailable.
 - **Indicators from a script list appear sooner.** When the `indicators` option lists
   scripts by URL, the workspace now downloads them all at once instead of one after
   another. The indicators that start switched on no longer wait for every other script
@@ -38,6 +70,9 @@ All notable changes to Vela, newest first.
   registered, closing the search before its results finished ranking still rebuilt the
   hidden list and loaded about a hundred icons nobody could see. The list now rebuilds
   the next time the search opens.
+- **Crossing band fills render cleanly under WebGL2.** Where two filled series cross between
+  adjacent bars (such as an Ichimoku Cloud twist), the fill now splits cleanly at the
+  intersection instead of drawing an overlapping bow-tie quad.
 
 ## [0.10.14]
 
@@ -103,6 +138,9 @@ All notable changes to Vela, newest first.
   spot on screen, over another bar and price, and the label measured from there. The
   start now stays on the time and price you clicked, through a pan, a zoom, a new bar
   or a price-scale change.
+- **Crossing band fills render cleanly under WebGL2.** Where two filled series cross between
+  adjacent bars (such as an Ichimoku Cloud twist), the fill now splits cleanly at the
+  intersection instead of drawing an overlapping bow-tie quad.
 
 ## [0.10.13]
 
