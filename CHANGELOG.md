@@ -2,6 +2,14 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Timeframe shortcuts respect the active symbol.** Unavailable favorites stay saved
+  and reappear on symbols that support them. Quick entry explains when a valid
+  timeframe is unavailable and stays open so you can choose another.
+
 ## [0.10.17]
 
 ### Fixed
