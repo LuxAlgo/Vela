@@ -165,6 +165,10 @@ export class SceneGraph {
      *  also shown, the two merge into one stacked block (countdown under the label);
      *  when either shows alone it's centered on the latest price level. */
     showCountdown = true;
+    /** Draw each indicator plot's latest value as a chip on its pane's price scale. */
+    showIndicatorValueLabels = true;
+    /** Draw each tagged plot's name in a tinted chip just inside the plot, beside its value chip. */
+    showIndicatorNameLabels = false;
     /** True while the active series has variable bar durations (tick charts, etc.):
      *  suppresses the wall-clock bar countdown, preserves same-millisecond bars, and
      *  formats crosshair stamps with seconds. */
