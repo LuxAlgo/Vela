@@ -24,6 +24,7 @@ import { DARK_THEME } from '../src/core/theme';
 import { MultiProviderFeed } from '../src/data/MultiProviderFeed';
 import { BarStore } from '../src/data/BarStore';
 import type { DataProvider } from '../src/core/ports/DataProvider';
+import { decodeState, encodeState, type CellState } from '../src/state/document';
 
 /**
  * The ChartCell persistence round-trip — the layer the unit suite never covered
@@ -573,6 +574,217 @@ describe('ChartCell status line parts are saved with the chart', () => {
         expect(statusLineRow('ohlc').get!()).toBe(false);
         expect(statusLineRow('change').get!()).toBe(false);
         expect(statusLineRow('market').get!()).toBe(true);
+        cell.destroy();
+    });
+});
+
+describe('ChartCell price scale around a shared-scale comparison survives a saved document', () => {
+    /** A renderer with a price scale: the mode and the log switch are features, and the
+     *  config document carries both (the real renderer's `priceScale` slice). */
+    class ScaleRenderer extends TrackedRenderer {
+        override readonly features: readonly string[] = ['scaleMode', 'logScale'];
+        mode = 'price';
+        log = false;
+        override applyFeature(key: string, value: unknown): void {
+            if (key === 'scaleMode') this.mode = String(value);
+            else if (key === 'logScale') this.log = Boolean(value);
+            else super.applyFeature(key, value);
+        }
+        override readFeature(key: string): unknown {
+            if (key === 'scaleMode') return this.mode;
+            if (key === 'logScale') return this.log;
+            return super.readFeature(key);
+        }
+        getConfig(): unknown {
+            return { priceScale: { mode: this.mode, log: this.log } };
+        }
+        override applyConfig(config: unknown): void {
+            const scale = (config as { priceScale?: { mode?: string; log?: boolean } } | null)?.priceScale;
+            if (typeof scale?.mode === 'string') this.mode = scale.mode;
+            if (typeof scale?.log === 'boolean') this.log = scale.log;
+            super.applyConfig(config);
+        }
+    }
+
+    const scaleCell = (seed: Partial<CellBoot> = {}): ChartCell =>
+        makeCell({ indicators: { natives: [], manifest: [] }, ...seed } as Partial<CellBoot>, {
+            chartDefaults: { renderer: ScaleRenderer, drawings: false } as CellDeps['chartDefaults'],
+        });
+    const scaleOf = (cell: ChartCell) => ({ mode: cell.chart.renderer.get('scaleMode'), log: cell.chart.renderer.get('logScale') });
+    const REGULAR = { mode: 'price', log: false };
+    const PERCENT = { mode: 'percent', log: false };
+
+    /** The cell's state as a storage adapter hands it back: through the document codec. */
+    const saved = (cell: ChartCell): CellState => {
+        const { id: _id, ...state } = decodeState(encodeState({ version: 1, layout: '1', charts: [{ id: 'c1', ...cell.dehydrate() }] }))!.charts[0]!;
+        return state;
+    };
+    /** A page reload: the cell is torn down and a new one boots from its saved state. */
+    const reload = async (cell: ChartCell): Promise<ChartCell> => {
+        const state = saved(cell);
+        cell.destroy();
+        const next = scaleCell(state as Partial<CellBoot>);
+        await settle();
+        return next;
+    };
+
+    it('removing the last comparison after a reload returns the axis to the scale it had before', async () => {
+        let cell = scaleCell();
+        await settle();
+        cell.addCompare('BINANCE:ETHUSDT');
+        expect(scaleOf(cell)).toEqual(PERCENT);
+
+        cell = await reload(cell);
+        expect(cell.compareItems()).toHaveLength(1);
+        expect(scaleOf(cell)).toEqual(PERCENT);
+        cell.removeCompare(cell.compareItems()[0]!.id);
+        expect(scaleOf(cell)).toEqual(REGULAR);
+        cell.destroy();
+    });
+
+    it('returns to a logarithmic scale too', async () => {
+        let cell = scaleCell();
+        await settle();
+        cell.chart.renderer.set('logScale', true);
+        cell.addCompare('BINANCE:ETHUSDT');
+        expect(scaleOf(cell)).toEqual(PERCENT);
+
+        cell = await reload(cell);
+        cell.removeCompare(cell.compareItems()[0]!.id);
+        expect(scaleOf(cell)).toEqual({ mode: 'price', log: true });
+        cell.destroy();
+    });
+
+    it('a saved document applied to an open chart carries the earlier scale as well', async () => {
+        const cell = scaleCell();
+        await settle();
+        cell.addCompare('BINANCE:ETHUSDT');
+        const state = saved(cell);
+
+        cell.rehydrate(state);
+        await settle();
+        expect(scaleOf(cell)).toEqual(PERCENT);
+        cell.removeCompare(cell.compareItems()[0]!.id);
+        expect(scaleOf(cell)).toEqual(REGULAR);
+
+        // …and onto a chart that holds no comparison yet (a saved workspace or tab switched in).
+        cell.rehydrate(state);
+        await settle();
+        expect(cell.compareItems()).toHaveLength(1);
+        expect(scaleOf(cell)).toEqual(PERCENT);
+        cell.removeCompare(cell.compareItems()[0]!.id);
+        expect(scaleOf(cell)).toEqual(REGULAR);
+        cell.destroy();
+    });
+
+    it('a chart that was on Percent before the comparison stays on Percent, reload or not', async () => {
+        let cell = scaleCell();
+        await settle();
+        cell.chart.renderer.set('scaleMode', 'percent');
+        cell.addCompare('BINANCE:ETHUSDT');
+        cell.removeCompare(cell.compareItems()[0]!.id);
+        expect(scaleOf(cell)).toEqual(PERCENT);
+
+        cell.addCompare('BINANCE:ETHUSDT');
+        expect(cell.dehydrate().scaleBeforeCompare).toBeUndefined();
+        cell = await reload(cell);
+        cell.removeCompare(cell.compareItems()[0]!.id);
+        expect(scaleOf(cell)).toEqual(PERCENT);
+        cell.destroy();
+    });
+
+    it('with two shared comparisons the axis waits for the last one to leave', async () => {
+        let cell = scaleCell();
+        await settle();
+        cell.addCompare('BINANCE:ETHUSDT');
+        cell.addCompare('BINANCE:SOLUSDT');
+
+        cell = await reload(cell);
+        expect(cell.compareItems()).toHaveLength(2);
+        cell.removeCompare(cell.compareItems()[0]!.id);
+        expect(scaleOf(cell)).toEqual(PERCENT);
+        cell.removeCompare(cell.compareItems()[0]!.id);
+        expect(scaleOf(cell)).toEqual(REGULAR);
+        cell.destroy();
+    });
+
+    it('moving the only shared comparison to its own price scale after a reload restores the axis', async () => {
+        let cell = scaleCell();
+        await settle();
+        cell.addCompare('BINANCE:ETHUSDT');
+
+        cell = await reload(cell);
+        cell.chart.indicators().find((h) => h.nativeType === 'compare')!.setInputs({ scale: 'new-scale' });
+        expect(scaleOf(cell)).toEqual(REGULAR);
+        cell.destroy();
+    });
+
+    it('undo and redo of a removal made after a reload follow the comparison', async () => {
+        let cell = scaleCell();
+        await settle();
+        cell.addCompare('BINANCE:ETHUSDT');
+
+        cell = await reload(cell);
+        cell.removeCompare(cell.compareItems()[0]!.id);
+        expect(scaleOf(cell)).toEqual(REGULAR);
+        cell.history.undo();
+        expect(cell.compareItems()).toHaveLength(1);
+        expect(scaleOf(cell)).toEqual(PERCENT);
+        cell.history.redo();
+        expect(cell.compareItems()).toHaveLength(0);
+        expect(scaleOf(cell)).toEqual(REGULAR);
+        cell.destroy();
+    });
+
+    it('the earlier scale is saved only while a comparison holds the axis on Percent', async () => {
+        const cell = scaleCell();
+        await settle();
+        expect(cell.dehydrate().scaleBeforeCompare).toBeUndefined();
+        cell.addCompare('BINANCE:ETHUSDT');
+        expect(cell.dehydrate().scaleBeforeCompare).toEqual(REGULAR);
+        cell.removeCompare(cell.compareItems()[0]!.id);
+        expect(cell.dehydrate().scaleBeforeCompare).toBeUndefined();
+        // A comparison on its own scale never touches the axis: nothing to return to.
+        cell.addCompare('BINANCE:ETHUSDT', 'new-scale');
+        expect(scaleOf(cell)).toEqual(REGULAR);
+        expect(cell.dehydrate().scaleBeforeCompare).toBeUndefined();
+        cell.destroy();
+    });
+
+    it('a document without the earlier scale, or naming one with no shared comparison, leaves the axis alone', async () => {
+        // Saved before the earlier scale was written: nothing says the trader was not on Percent.
+        let cell = scaleCell();
+        await settle();
+        cell.addCompare('BINANCE:ETHUSDT');
+        const { scaleBeforeCompare: _dropped, ...legacy } = saved(cell);
+        cell.destroy();
+        cell = scaleCell(legacy as Partial<CellBoot>);
+        await settle();
+        cell.removeCompare(cell.compareItems()[0]!.id);
+        expect(scaleOf(cell)).toEqual(PERCENT);
+        cell.destroy();
+
+        // A stray earlier scale on a chart with no shared comparison must not wait for a later one.
+        cell = scaleCell({ scaleBeforeCompare: REGULAR, rendererConfig: { priceScale: PERCENT } } as Partial<CellBoot>);
+        await settle();
+        expect(cell.dehydrate().scaleBeforeCompare).toBeUndefined();
+        cell.addCompare('BINANCE:ETHUSDT');
+        cell.removeCompare(cell.compareItems()[0]!.id);
+        expect(scaleOf(cell)).toEqual(PERCENT);
+        cell.destroy();
+    });
+
+    it('applying a document replaces the earlier scale the open chart remembered', async () => {
+        const cell = scaleCell();
+        await settle();
+        cell.addCompare('BINANCE:ETHUSDT');
+        // The incoming chart is on Percent by the trader's own choice and compares nothing:
+        // dropping the open chart's comparison must not pull it back to Regular.
+        cell.rehydrate({ ...SEED, rendererConfig: { priceScale: PERCENT }, indicators: { natives: [], manifest: [] } });
+        await settle();
+        expect(cell.compareItems()).toHaveLength(0);
+        expect(scaleOf(cell)).toEqual(PERCENT);
+        expect(cell.dehydrate().scaleBeforeCompare).toBeUndefined();
         cell.destroy();
     });
 });
