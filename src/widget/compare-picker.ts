@@ -97,7 +97,7 @@ const CSS = css`@layer vela.chrome {
     padding: 0 12px;
     background: ${t.surface.elev};
     border: 1px solid ${t.border};
-    border-radius: 8px;
+    border-radius: ${t.radius.md};
 }
 .vela-cp-searchrow:focus-within { border-color: ${t.border.strong}; }
 .vela-cp-searchrow .vela-icon { color: ${t.fg.muted}; }
@@ -107,7 +107,7 @@ const CSS = css`@layer vela.chrome {
     color: ${t.fg};
     border: none;
     font-size: 14px;
-    outline: none;
+    outline: 2px solid transparent;
     text-transform: uppercase;
 }
 .vela-cp-input::placeholder { text-transform: none; }
@@ -142,7 +142,7 @@ const CSS = css`@layer vela.chrome {
     box-sizing: border-box;
     width: 18px;
     height: 18px;
-    border-radius: 4px;
+    border-radius: ${t.radius.sm};
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -152,22 +152,22 @@ const CSS = css`@layer vela.chrome {
 .vela-cp-chip-x:hover { background: ${t.hover}; color: ${t.fg.bright}; }
 .vela-cp-chip-x .vela-icon { width: 12px; height: 12px; font-size: 12px; }
 .vela-cp-tabs { display: flex; gap: 14px; margin: 12px 2px 0; border-block-end: 1px solid ${t.border}; padding-block-end: 8px; }
-[data-layout='mobile'] .vela-cp-tabs { overflow-x: auto; scrollbar-width: none; gap: 6px; }
-[data-layout='mobile'] .vela-cp-tabs::-webkit-scrollbar { display: none; }
-[data-layout='mobile'] .vela-cp-tabs > .vela-tab { flex: none; padding: 7px 10px; }
-[data-layout='mobile'] .vela-cp-list { flex: 1 1 auto; max-height: none; margin-block-end: 0; }
 .vela-cp-list {
     min-height: 0;
     margin: ${t.space[2]} ${t.space[4]} ${t.space[4]};
     max-height: 46vh;
     overflow: auto;
 }
+[data-layout='mobile'] .vela-cp-tabs { overflow-x: auto; scrollbar-width: none; gap: 6px; }
+[data-layout='mobile'] .vela-cp-tabs::-webkit-scrollbar { display: none; }
+[data-layout='mobile'] .vela-cp-tabs > .vela-tab { flex: none; padding: 7px 10px; }
+[data-layout='mobile'] .vela-cp-list { flex: 1 1 auto; max-height: none; margin-block-end: 0; }
 .vela-cp-row {
     display: flex;
     align-items: center;
     gap: 12px;
     padding: 7px 10px;
-    border-radius: 8px;
+    border-radius: ${t.radius.md};
     cursor: pointer;
 }
 .vela-cp-row:hover, .vela-cp-row[data-highlighted] { background: ${t.hover}; }
@@ -198,8 +198,6 @@ const CSS = css`@layer vela.chrome {
     letter-spacing: 0.06em;
     text-transform: uppercase;
 }
-.vela-cp-badge[data-p='binance'] { color: #f0b90b; } /* palette-exempt: venue brand mark */
-.vela-cp-badge[data-p='hyperliquid'] { color: #50d2c1; } /* palette-exempt: venue brand mark */
 .vela-cp-actions {
     display: none;
     flex: none;
@@ -241,7 +239,7 @@ const CSS = css`@layer vela.chrome {
     justify-content: center;
     width: 22px;
     height: 22px;
-    border-radius: 5px;
+    border-radius: ${t.radius.sm};
     cursor: pointer;
     color: ${t.fg.muted};
 }

@@ -454,7 +454,7 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     readonly name = 'native';
-    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'animScroll', 'animAutoscale', 'animLiveBar', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'freePan', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'sessionZones', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'scalePriceOnly', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'shownPriceStyle', 'priceBaseline', 'baselinePrice', 'previousClose', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'marks', 'indicatorTitles', 'indicatorValues', 'crosshairOverride', 'drawingsInteractive', 'priceAxisTicks'];
+    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'indicatorValueLabels', 'indicatorNameLabels', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'animScroll', 'animAutoscale', 'animLiveBar', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'freePan', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'sessionZones', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'scalePriceOnly', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'shownPriceStyle', 'priceBaseline', 'baselinePrice', 'previousClose', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'marks', 'indicatorTitles', 'indicatorValues', 'crosshairOverride', 'drawingsInteractive', 'priceAxisTicks'];
 
     /** Apply a render feature live — mutate the field + invalidate, no engine re-run. */
     applyFeature(key: string, value: unknown): void {
@@ -477,6 +477,12 @@ export class NativeRenderer implements IChartRenderer {
             case 'countdown':
                 this.scene.showCountdown = Boolean(value);
                 this.syncCountdownTimer();
+                break;
+            case 'indicatorValueLabels':
+                this.scene.showIndicatorValueLabels = Boolean(value);
+                break;
+            case 'indicatorNameLabels':
+                this.scene.showIndicatorNameLabels = Boolean(value);
                 break;
             case 'upColor':
                 this.candleUp = String(value);
@@ -671,6 +677,8 @@ export class NativeRenderer implements IChartRenderer {
             case 'currentPriceLine': return this.scene.showPriceLine;
             case 'priceLabel': return this.scene.showPriceLabel;
             case 'countdown': return this.scene.showCountdown;
+            case 'indicatorValueLabels': return this.scene.showIndicatorValueLabels;
+            case 'indicatorNameLabels': return this.scene.showIndicatorNameLabels;
             case 'upColor': return this.candleUp;
             case 'downColor': return this.candleDown;
             case 'glow': return this.glowAmount;
@@ -878,6 +886,8 @@ export class NativeRenderer implements IChartRenderer {
                 currentPriceLine: this.scene.showPriceLine,
                 priceLabel: this.scene.showPriceLabel,
                 countdown: this.scene.showCountdown,
+                indicatorValueLabels: this.scene.showIndicatorValueLabels,
+                indicatorNameLabels: this.scene.showIndicatorNameLabels,
                 animateLastPrice: this.animLiveBar.on,
             },
             animations: {
@@ -1023,6 +1033,8 @@ export class NativeRenderer implements IChartRenderer {
         this.scene.showPriceLine = next.priceScale.currentPriceLine;
         this.scene.showPriceLabel = next.priceScale.priceLabel;
         this.scene.showCountdown = next.priceScale.countdown;
+        this.scene.showIndicatorValueLabels = next.priceScale.indicatorValueLabels;
+        this.scene.showIndicatorNameLabels = next.priceScale.indicatorNameLabels;
         this.syncCountdownTimer();
         // animations: on/off only — the durations are the host's (EaseSetting remembers them)
         this.animLiveBar.toggle(next.priceScale.animateLastPrice);
@@ -1987,6 +1999,7 @@ export class NativeRenderer implements IChartRenderer {
      *  repaints. */
     setLocalization(i18n: Translator, root: RendererRootAttributes): void {
         this.i18n = i18n;
+        this.chrome.i18n = i18n;
         this.rootAttrs = { lang: root.lang, dir: root.dir };
         this.scene.format = i18n.format;
         this.inputsUI?.setI18n(i18n);

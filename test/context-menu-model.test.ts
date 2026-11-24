@@ -31,6 +31,8 @@ const AXIS_STATE: PriceAxisState = {
     axisLabels: true,
     priceLabel: true,
     countdown: false,
+    indicatorValueLabels: true,
+    indicatorNameLabels: false,
     priceLine: true,
 };
 
@@ -102,7 +104,7 @@ describe('price-axis menu', () => {
             'More settings…',
         ]);
         expect(items.filter((i) => i.separatorBefore).map((i) => i.label)).toEqual(['Regular', 'Labels', 'More settings…']);
-        expect(items.find((i) => i.label === 'Labels')?.submenu?.map((i) => i.label)).toEqual(['Price axis labels', 'Last price label', 'Countdown to bar close']);
+        expect(items.find((i) => i.label === 'Labels')?.submenu?.map((i) => i.label)).toEqual(['Price axis labels', 'Last price label', 'Countdown to bar close', 'Indicator value labels', 'Indicator name labels']);
         expect(items.find((i) => i.label === 'Levels')?.submenu?.map((i) => i.id)).toEqual(['toggle:currentPriceLine']);
     });
 
@@ -134,6 +136,8 @@ describe('price-axis menu', () => {
         expect(labels.find((i) => i.id === 'toggle:axisLabels')?.checked).toBe(false);
         expect(labels.find((i) => i.id === 'toggle:priceLabel')?.checked).toBe(true);
         expect(labels.find((i) => i.id === 'toggle:countdown')?.checked).toBe(true);
+        expect(labels.find((i) => i.id === 'toggle:indicatorValueLabels')?.checked).toBe(true);
+        expect(labels.find((i) => i.id === 'toggle:indicatorNameLabels')?.checked).toBe(false);
         expect(items.find((i) => i.id === 'levels')!.submenu![0]!.checked).toBe(false);
     });
 });
