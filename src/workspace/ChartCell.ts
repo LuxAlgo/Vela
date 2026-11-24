@@ -346,7 +346,9 @@ export class ChartCell {
      *  handler looks the removed id up here to learn which type and inputs an undo must re-add. */
     private presentNatives: Array<{ id: string; type: string; inputs?: Record<string, InputValue> }> = [];
     /** Scale state before adding a `'same'` comparison auto-switched the price pane to `'percent'`.
-     *  Restored when the last `'same'` comparison leaves and the pane is still on `'percent'`. */
+     *  Restored when the last `'same'` comparison leaves and the pane is still on `'percent'`.
+     *  Rides the state document as `scaleBeforeCompare`: the document's `rendererConfig`
+     *  already says `'percent'`, so nothing else could tell it from the user's own choice. */
     private autoPercentPrev: { mode: string; log: boolean } | null = null;
     private rangeBars = 0;
     private pendingRange: RangePreset | null = null;
@@ -493,6 +495,7 @@ export class ChartCell {
             }
             this.pendingManifestNames = [...seed.indicators.manifest] as LedgerManifestEntry[];
         }
+        this.adoptScaleBeforeCompare(seed.scaleBeforeCompare);
         this.volumeIntent = seed.indicators ? seed.indicators.natives.some((e) => ledgerNativeType(e as LedgerNativeEntry) === 'volume') : deps.volume;
         // Third-party state rides in verbatim; the workspace triggers the handlers'
         // `restore` AFTER wiring the cell (restorePersistedExt) — a restore that adds
@@ -1682,13 +1685,26 @@ export class ChartCell {
         chart.renderer.set('scaleMode', 'percent');
     }
 
+    /** Whether a comparison sharing the main percent scale is on the chart. */
+    private hasSharedScaleCompare(): boolean {
+        return this.nativeHandles().some((h) => h.nativeType === 'compare' && (h.inputValues().scale ?? 'same') === 'same');
+    }
+
+    /** Take the prior price scale a state document carries, once its natives are on the
+     *  chart. Only a shared-scale comparison can release it: without one it would outlive
+     *  the document and overwrite the scale when some later comparison leaves. A document
+     *  that carries none keeps whatever converging to it recorded. */
+    private adoptScaleBeforeCompare(prev: CellState['scaleBeforeCompare']): void {
+        if (!this.hasSharedScaleCompare()) this.autoPercentPrev = null;
+        else if (prev) this.autoPercentPrev = { mode: prev.mode, log: prev.log };
+    }
+
     /** Restore the prior price scale once the last shared-scale comparison is removed. */
     private maybeRestoreScaleAfterCompare(): void {
         const chart = this.inner;
         const prev = this.autoPercentPrev;
         if (!chart || !prev) return;
-        const stillSame = this.nativeHandles().some((h) => h.nativeType === 'compare' && (h.inputValues().scale ?? 'same') === 'same');
-        if (stillSame) return;
+        if (this.hasSharedScaleCompare()) return;
         this.autoPercentPrev = null;
         if (chart.renderer.get('scaleMode') === 'percent') {
             chart.renderer.set('scaleMode', prev.mode);
@@ -1818,10 +1834,12 @@ export class ChartCell {
         }
         // Cosmetics round-trip (validates untrusted input); the drawings follow the market below.
         // Drop any prior auto-percent restore bookmark before converging indicators so removing
-        // an old comparison cannot overwrite the incoming document's own scaleMode.
+        // an old comparison cannot overwrite the incoming document's own scaleMode; the
+        // document's own bookmark is taken once its comparisons are on the chart.
         this.autoPercentPrev = null;
         if (cs.rendererConfig != null) this.inner.renderer.applyConfig(cs.rendererConfig);
         if (cs.indicators) this.applyIndicatorLedger(cs.indicators as { manifest: LedgerManifestEntry[]; natives: LedgerNativeEntry[] });
+        this.adoptScaleBeforeCompare(cs.scaleBeforeCompare);
         // Third-party state converges to the document too: the restored bag REPLACES
         // the baseline (absent in the document = the document carries none), then the
         // registered handlers re-apply. After the ledger — a handler re-adding external
@@ -1879,6 +1897,7 @@ export class ChartCell {
             indicatorTitles: this.indicatorTitlesOn,
             indicatorValues: this.indicatorValuesOn,
             ...(statuslineParts ? { statuslineParts } : {}),
+            ...(this.autoPercentPrev ? { scaleBeforeCompare: { ...this.autoPercentPrev } } : {}),
             rendererConfig: this.inner?.renderer.getConfig() ?? undefined,
             drawings: this.inner ? this.inner.drawings.toJSON() : undefined,
             // Natives from the chart's SYNC registry read — an async catalog mirror here

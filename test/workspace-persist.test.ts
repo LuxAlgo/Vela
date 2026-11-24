@@ -30,6 +30,7 @@ const fullDoc: WorkspaceState = {
             indicatorTitles: false,
             indicatorValues: false,
             statuslineParts: { logo: true, name: true, market: false, ohlc: false, change: true },
+            scaleBeforeCompare: { mode: 'price', log: false },
             rendererConfig: { theme: 'dark', nested: { any: ['shape'] } },
             drawings: { version: 1, items: [{ type: 'trendline' }] },
             indicators: { manifest: ['EMA 20'], natives: ['volume'] },
@@ -276,6 +277,21 @@ describe('sanitizeState (the applyState gate)', () => {
         expect(doc!.charts[0]).toEqual({ id: 'c1', statuslineParts: { ohlc: false, change: false } });
         expect(doc!.charts[1]).toEqual({ id: 'c2' });
         expect(doc!.charts[2]).toEqual({ id: 'c3' });
+    });
+
+    it('keeps the scale a chart returns to after its comparisons, dropping one that is not a mode and a log flag', () => {
+        const doc = sanitizeState({
+            version: 1,
+            layout: '1',
+            charts: [
+                { id: 'c1', scaleBeforeCompare: { mode: 'price', log: true, extra: 1 } },
+                { id: 'c2', scaleBeforeCompare: { mode: 'price' } },
+                { id: 'c3', scaleBeforeCompare: { mode: '', log: false } },
+                { id: 'c4', scaleBeforeCompare: 'price' },
+            ],
+        });
+        expect(doc!.charts[0]).toEqual({ id: 'c1', scaleBeforeCompare: { mode: 'price', log: true } });
+        expect(doc!.charts.slice(1)).toEqual([{ id: 'c2' }, { id: 'c3' }, { id: 'c4' }]);
     });
 
     it('filters shared favorites and per-chart display toggles by type', () => {

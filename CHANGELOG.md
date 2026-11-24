@@ -2,6 +2,12 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Removing the last comparison after a reload returns the price axis to its earlier scale.** A comparison on the **Same % scale** switches the main axis to percentage mode and switches it back when the last one leaves. That way back was lost as soon as the chart was reloaded or a saved state was applied, so the axis stayed in percentage mode until you changed it by hand. The saved chart state now remembers the scale the axis was on, regular or logarithmic, and the axis returns to it after a reload, a switch between saved workspaces, or `applyState`. A chart that was already in percentage mode before the comparison stays there, as before. Charts saved by an earlier version carry no earlier scale: removing their comparisons leaves the axis in percentage mode one last time.
+
 ## [0.10.18]
 
 ### Added
