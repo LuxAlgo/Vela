@@ -131,7 +131,9 @@ export interface DrawingPanelEnv {
 }
 
 /** The tools whose label can slide along the line and sit under it. */
-const LINE_LABEL_TYPES = new Set(['trendline', 'ray', 'extendedline', 'infoline', 'trendangle']);
+const LINE_LABEL_TYPES = new Set(['trendline', 'ray', 'extendedline', 'infoline', 'trendangle', 'hline', 'hray']);
+/** Of those, the level lines, whose label positions read as left, middle and right. */
+const LEVEL_LINE_TYPES = new Set(['hline', 'hray']);
 /** Tools whose points are not worth listing: a free-hand stroke, a line with no price, or a
  *  position (its own section edits entry, stop and target). */
 const NO_POINTS = new Set(['freehand', 'highlighter', 'vline', 'position']);
@@ -759,13 +761,17 @@ export class DrawingSettingsPanel {
             if (has('text.value')) rows.push(this.textArea(b, this.t(TEXT.addALabel), 1));
             rows.push(row(this.t(TEXT.style), ...this.textStyling(b, has)));
             if (LINE_LABEL_TYPES.has(type) && has('text.value')) {
+                const level = LEVEL_LINE_TYPES.has(type);
+                // A ray's label starts at its anchor; a horizontal line's, until a position is
+                // picked, stays beside its handle (none of the three is pressed).
+                const defaultPlace = type === 'hline' ? undefined : type === 'hray' ? 'start' : 'middle';
                 const place = row(
                     this.t(TEXT.place),
                     this.seg(b, this.t(TEXT.positionAlongTheLine), [
-                        { value: 'start', html: this.t(TEXT.start) },
+                        { value: 'start', html: this.t(level ? TEXT.left : TEXT.start) },
                         { value: 'middle', html: this.t(TEXT.middle) },
-                        { value: 'end', html: this.t(TEXT.end) },
-                    ], () => b.live().text?.place ?? 'middle', (v) => b.edit({ 'text.place': v }), true),
+                        { value: 'end', html: this.t(level ? TEXT.right : TEXT.end) },
+                    ], () => b.live().text?.place ?? defaultPlace, (v) => b.edit({ 'text.place': v }), true),
                 );
                 const side = row(
                     this.t(TEXT.side),

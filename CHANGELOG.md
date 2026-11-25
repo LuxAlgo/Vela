@@ -6,6 +6,22 @@ All notable changes to Vela, newest first.
 
 ### Added
 
+- **Place a horizontal line's or ray's label left, in the middle or on the right, above or below the line.** The **Label** section of a Horizontal Line's and a Horizontal Ray's settings now has the **Position** (Left, Middle, Right) and **Side** (Above, Below) choices the trend line already had. A line's label sits at the left edge, the middle or the right edge of the chart; a ray's runs from its anchor to the right edge. A ray's label used to start right on its anchor, under the line; it now starts just past the anchor, above the line, like a horizontal line's. A horizontal line's existing label stays beside its handle until you pick a position. Either label stays whole on the chart: one that would run past the chart's side slides back in (a line's label follows its handle only as far as the edge), one that would be cut off at the top or bottom of its pane moves to the other side of the line, and a ray that starts past the chart's right edge shows no label until it comes into view.
+
+### Fixed
+
+- **Object tree groups are saved with the chart.** Groups you make in the object tree used to live only as long as the page: a reload, a switch between saved workspaces or `applyState` brought the drawings back ungrouped. The groups now travel in the drawings document (`drawings.toJSON().groups`), so they're saved and restored wherever the drawings are, including a workspace's saved state. `chart.drawings.groups()` and `setGroups()` read and replace them, and the new `drawing:groups` event says when they change. Undo and redo leave the groups as they are.
+
+## [0.10.19]
+
+### Fixed
+
+- **Removing the last comparison after a reload returns the price axis to its earlier scale.** A comparison on the **Same % scale** switches the main axis to percentage mode and switches it back when the last one leaves. That way back was lost as soon as the chart was reloaded or a saved state was applied, so the axis stayed in percentage mode until you changed it by hand. The saved chart state now remembers the scale the axis was on, regular or logarithmic, and the axis returns to it after a reload, a switch between saved workspaces, or `applyState`. A chart that was already in percentage mode before the comparison stays there, as before. Charts saved by an earlier version carry no earlier scale: removing their comparisons leaves the axis in percentage mode one last time.
+
+## [0.10.18]
+
+### Added
+
 - **Compare symbols on the main chart.** A circular `+` button beside the symbol picker in the top bar (and a Compare symbol row in the mobile menu) opens a dedicated comparison picker to overlay one or more secondary symbols as colored lines. You can place each comparison on the **Same % scale** (switching the main axis to percentage mode automatically so every series rebases to 0% at the left edge of the visible window, and restoring the previous scale when the last shared comparison is removed), on a **New price scale**, or in a **New pane**. Compared symbols display colored name and last-value badges on the price axis, per-symbol percentage readouts in the legend and data window, customizable symbol/source/scale/line settings, and full undo/redo and workspace persistence.
 - **Percentage scale quick toggle on the price axis.** A `%` button now sits beside the `L` (logarithmic) and `A` (auto) buttons at the bottom of each pane's price scale for one-click toggling between absolute prices and percentage change.
 - **Indicator value and name labels on the price scale.** Each indicator plot's value on the last bar now shows as a chip in the plot's color on the scale it draws against: the price scale, an indicator pane's scale, or a merged indicator's own column. Two new toggles under the price scale's **Labels** menu (and in Chart settings → Scales and lines) control them: **Indicator value labels** (on by default) and **Indicator name labels** (off by default), which puts the indicator's name, and the plot's name when the indicator labels more than one, in a tinted chip at the plot's edge, level with the value and readable on any chart background. Labels that would overlap are moved apart (with names on, all of a pane's labels share one set of rows), the last price label always keeps its place, and a label with no room left in its pane is left off. A plot a script keeps off the price scale (`display.priceScale: false`) gets no label. Both choices are saved with the chart settings.

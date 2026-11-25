@@ -70,6 +70,7 @@ export type {
     DrawingStyle,
     DrawingText,
     DrawingsDocument,
+    DrawingGroup,
     DrawingsOption,
     DrawingTypeMeta,
     ToolbarDefinition,

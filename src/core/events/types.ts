@@ -6,6 +6,7 @@ import type { VelaTheme } from "../options";
 import type { LocaleChangedEvent } from "../i18n/types";
 import type { SnapMode } from "../drawings/geometry";
 import type { DrawingMode } from "../drawings/port";
+import type { DrawingGroup } from "../drawings/document";
 import type { MarkClickEvent } from "../marks/types";
 import type { ReplayEndReason } from "../ReplayControl";
 import type { DataUnavailableReason } from "../data-unavailable";
@@ -154,6 +155,12 @@ export interface VelaEventMap extends Record<string, unknown> {
    *  chart's own, and leaves the empty chart of a symbol change alone: the new symbol's
    *  drawings are still to come. */
   "drawing:replaced": { cause: "load" | "symbol" };
+  /** The groups were set (`drawings.setGroups`, the object tree) or cleared (`drawings.clear`) and changed. They persist in
+   *  `drawings.toJSON()`: a host that stores the drawings stores them again. A group change
+   *  that comes with the drawings is announced by their event, not this one: a deletion
+   *  (`drawing:removed`), a document put in place (`drawing:replaced`), an undo or a redo
+   *  (`drawing:history`). */
+  "drawing:groups": { groups: DrawingGroup[] };
   /** The user requested a drawing's settings popup. */
   "drawing:settings": { id: string };
   /** A timeline-mark glyph was clicked — `ids` lists every mark under it (a cluster). Fires

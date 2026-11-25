@@ -479,6 +479,7 @@ can't paint drawings — `chart.drawings.supported` reports this), while the **m
 | `clone(id)` · `duplicate(ids)` | yes | Copy in place; the copies become the selection. |
 | `copyToClipboard(ids)` · `paste()` | yes | In-memory, per-chart clipboard. |
 | `all()` | no | Every drawing as plain JSON, in paint order. |
+| `groups()` / `setGroups(groups)` | no | Read / replace the drawings' groups (the object tree's bundles): `{ id, name, ids, pane? }`, one group per drawing at most. They persist in `toJSON()` (`groups`, absent when there is none) and come back with `fromJSON`. `setGroups` leaves out members that are not drawings on the chart and raises `drawing:groups` when the groups changed; it is not an undo step. |
 | `toJSON()` / `fromJSON(doc)` | no | Snapshot / restore a versioned `DrawingsDocument` (untrusted-safe). `fromJSON` replaces every drawing, keeps their ids, clears the undo history and raises `drawing:replaced` in place of a `drawing:created` / `edited` / `removed` per drawing; a missing or invalid document restores an empty chart. |
 | `getConfig()` / `applyConfig(doc)` | no | Aliases of `toJSON` / `fromJSON`, mirroring `chart.renderer`. |
 | `toolDefaults()` · `setToolDefaults(map)` · `resetToolDefaults(type?)` | no | Each tool's remembered settings, by type: the style, text styling and per-type settings (fib levels, position sizing…) its next drawing starts from. Plain JSON — save `toolDefaults()` and hand it back to `setToolDefaults` on the next load (malformed entries and unknown types are dropped). Changes land on `drawing:defaults`. The workspace and widget keep them in their state document for you. |
@@ -493,6 +494,12 @@ created / edited / removed events, so a host that stores the drawings saves on i
 `drawing:replaced` (`{ cause: 'load' | 'symbol' }`) fires when the drawings change as a whole:
 a document was put in place (`fromJSON`, a restored state), or the chart dropped them on a
 symbol change (`clearOnSymbolChange`). Whatever lists or counts drawings reads them again.
+`drawing:groups` (`{ groups }`) fires when `setGroups` changes the groups (the object tree uses
+it), so a host that stores the drawings saves on it too. It does not fire for the group changes
+that come with the drawings: deleting a drawing takes it out of its group (and a group whose last
+member is deleted goes with it) under `drawing:removed`, `fromJSON` under `drawing:replaced`, and
+an undo or a redo under `drawing:history`. `clear()` removes the groups with the drawings, empty
+ones included (raising `drawing:groups`), and a symbol change with `clearOnSymbolChange` on drops them too.
 `drawing:defaults` fires when a tool's remembered settings change (the user styled a drawing of
 that type, or a restore or reset replaced them), and `drawing:templates` when its saved styles do.
 A drawing's `showOn` (a list of timeframe bands, unset for every timeframe) limits the charts it
