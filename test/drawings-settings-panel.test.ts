@@ -146,6 +146,27 @@ describe('the drawing settings panel', () => {
         s.popup.destroy();
     });
 
+    it("a horizontal line's or ray's label can be put left, in the middle or right, above or below", async () => {
+        for (const kind of ['hline', 'hray'] as const) {
+            const s = setup(make(kind, { anchors: ANCHORS.slice(0, 1) }));
+            await s.openPanel();
+            s.openFold('Label');
+            type(s.$<HTMLTextAreaElement>('.vela-dsp textarea')!, 'Weekly support');
+            const pressed = (): string[] =>
+                s.$$<HTMLButtonElement>('.vela-dsp-seg[aria-label="Position along the line"] button')
+                    .filter((b) => b.getAttribute('aria-pressed') === 'true')
+                    .map((b) => b.textContent ?? '');
+            // A ray's label starts at its anchor; a line's stays by its handle until one is picked.
+            expect(pressed(), kind).toEqual(kind === 'hray' ? ['Left'] : []);
+            s.segButton('Position along the line', 'Right').click();
+            s.segButton('Side of the line', 'Below').click();
+            expect(s.live().text, kind).toMatchObject({ place: 'end', side: 'below' });
+            expect(pressed(), kind).toEqual(['Right']);
+            s.popup.destroy();
+            document.body.replaceChildren();
+        }
+    });
+
     it('the timeframe list appears only for a custom choice, and All shows the drawing everywhere again', async () => {
         const s = setup(make('hline', { anchors: ANCHORS.slice(0, 1) }));
         await s.openPanel();

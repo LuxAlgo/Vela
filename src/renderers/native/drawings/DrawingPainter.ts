@@ -1984,7 +1984,27 @@ function labelLayout(d: Drawing, proj: Projector): {
         case 'text':
             return pts[0] ? { x: pts[0][0] + 2, top: pts[0][1] + 2, align: 'left' } : null;
         case 'hline':
-            return pts[0] ? { x: pts[0][0] + 8, top: pts[0][1] - 4 - lh * lines, align: 'left' } : null; // above the line
+        case 'hray': {
+            if (!pts[0]) return null;
+            const [ax, y] = pts[0];
+            // `side` puts the label under the line instead of over it. `place` pins it to the
+            // left end, the middle or the right end of what shows of the line: a line spans the
+            // whole chart, a ray runs from its anchor (or the chart's left edge) to the right
+            // edge. A line's label without a `place` stays beside its handle, as it always has.
+            const top = text.side === 'below' ? y + 4 : y - 4 - lh * lines;
+            const left = d.type === 'hline' ? 0 : Math.max(0, ax);
+            const right = proj.width;
+            switch (text.place ?? (d.type === 'hray' ? 'start' : undefined)) {
+                case 'start':
+                    return { x: left + 8, top, align: 'left' };
+                case 'middle':
+                    return { x: (left + right) / 2, top, align: 'center' };
+                case 'end':
+                    return { x: right - 8, top, align: 'right' };
+                default:
+                    return { x: ax + 8, top, align: 'left' };
+            }
+        }
         case 'trendline':
         case 'ray':
         case 'extendedline':

@@ -2,6 +2,12 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Place a horizontal line's or ray's label left, in the middle or on the right, above or below the line.** The **Label** section of a Horizontal Line's and a Horizontal Ray's settings now has the **Position** (Left, Middle, Right) and **Side** (Above, Below) choices the trend line already had. A line's label sits at the left edge, the middle or the right edge of the chart; a ray's runs from its anchor to the right edge. A ray's label used to start right on its anchor, under the line; it now starts just past the anchor, above the line, like a horizontal line's. A horizontal line's existing label stays beside its handle until you pick a position.
+
 ## [0.10.19]
 
 ### Fixed
