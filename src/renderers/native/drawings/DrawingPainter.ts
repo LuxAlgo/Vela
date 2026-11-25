@@ -555,6 +555,9 @@ export class DrawingPainter {
         ctx.textAlign = layout.align;
         const lh = labelLineHeight(fs);
         const lines = text.value.split('\n');
+        // A horizontal line's or ray's label stays whole on the chart: one beside a handle that
+        // scrolled off, or near an edge, slides back in rather than being cut off.
+        if (d.type === 'hline' || d.type === 'hray') layout.x = keepLabelInside(layout.x, layout.align, Math.max(...lines.map((l) => ctx.measureText(l).width)), proj.width);
         // A halo in the chart background keeps the words readable where a line (its own, or
         // another drawing's) runs through them. Free text and a box's centered label sit clear
         // of any line and keep their plain look.
@@ -1959,6 +1962,18 @@ function formatMachRatio(ratio: number): string {
     return Number.isInteger(rounded) ? String(rounded) : String(rounded);
 }
 
+/** Space a horizontal line's or ray's label keeps from the chart's sides, in px. */
+const LEVEL_LABEL_INSET = 8;
+
+/** Move a label's `x` (read with `align`) so a block `width` wide sits inside `[inset, plotWidth
+ *  − inset]`; when it is wider than that, it starts at the left inset. */
+export function keepLabelInside(x: number, align: CanvasTextAlign, width: number, plotWidth: number): number {
+    const start = align === 'center' ? x - width / 2 : align === 'right' || align === 'end' ? x - width : x;
+    const lo = LEVEL_LABEL_INSET;
+    const hi = Math.max(lo, plotWidth - LEVEL_LABEL_INSET - width);
+    return x + (Math.min(Math.max(start, lo), hi) - start);
+}
+
 /** Where a drawing's label paints. With `rotate`, the canvas is rotated by `angle`
  *  around `(cx, cy)` first, and `x`/`top` are in that rotated frame. */
 function labelLayout(d: Drawing, proj: Projector): {
@@ -1984,7 +1999,37 @@ function labelLayout(d: Drawing, proj: Projector): {
         case 'text':
             return pts[0] ? { x: pts[0][0] + 2, top: pts[0][1] + 2, align: 'left' } : null;
         case 'hline':
-            return pts[0] ? { x: pts[0][0] + 8, top: pts[0][1] - 4 - lh * lines, align: 'left' } : null; // above the line
+        case 'hray': {
+            if (!pts[0]) return null;
+            const [ax, y] = pts[0];
+            // A ray that starts past the right edge shows nothing yet, so neither does its label.
+            if (d.type === 'hray' && ax >= proj.width) return null;
+            // `side` puts the label under the line instead of over it. `place` pins it to the
+            // left end, the middle or the right end of what shows of the line: a line spans the
+            // whole chart, a ray runs from its anchor (or the chart's left edge) to the right
+            // edge. A line's label without a `place` stays beside its handle, as it always has.
+            // The label flips to the other side when its own would cut it off at the pane's top
+            // or bottom and the other side has the room.
+            const blockH = lh * lines;
+            const above = y - 4 - blockH;
+            const below = y + 4;
+            const pane = proj.paneRect?.(d.paneId);
+            const fitsAbove = !pane || above >= pane.top;
+            const fitsBelow = !pane || below + blockH <= pane.top + pane.height;
+            const top = text.side === 'below' ? (fitsBelow || !fitsAbove ? below : above) : fitsAbove || !fitsBelow ? above : below;
+            const left = d.type === 'hline' ? 0 : Math.max(0, ax);
+            const right = proj.width;
+            switch (text.place ?? (d.type === 'hray' ? 'start' : undefined)) {
+                case 'start':
+                    return { x: left + LEVEL_LABEL_INSET, top, align: 'left' };
+                case 'middle':
+                    return { x: (left + right) / 2, top, align: 'center' };
+                case 'end':
+                    return { x: right - LEVEL_LABEL_INSET, top, align: 'right' };
+                default:
+                    return { x: ax + LEVEL_LABEL_INSET, top, align: 'left' };
+            }
+        }
         case 'trendline':
         case 'ray':
         case 'extendedline':
