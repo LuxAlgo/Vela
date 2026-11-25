@@ -364,9 +364,11 @@ export class DrawingController {
         this.deleteMany(ids);
     }
 
-    /** Delete every drawing as ONE undo step. */
+    /** Delete every drawing as ONE undo step, and every group with them: a group that was
+     *  empty all along would otherwise outlive the drawings. */
     clear(): void {
         this.deleteMany(this.store.serialize().drawings.map((d) => d.id));
+        this.setGroups([]);
     }
 
     /** Whether a symbol change empties the chart of its drawings (see {@link onSymbolChange}). */
@@ -384,7 +386,10 @@ export class DrawingController {
      * with the undo history and no `drawing:removed`, since the user removed nothing.
      */
     onSymbolChange(): void {
-        if (this.clearOnSymbolChange && this.store.serialize().drawings.length > 0) this.replace(null, 'symbol');
+        if (!this.clearOnSymbolChange) return;
+        // An empty group belongs to the symbol too: a chart with one and no drawings is not empty.
+        const doc = this.store.serialize();
+        if (doc.drawings.length > 0 || (doc.groups?.length ?? 0) > 0) this.replace(null, 'symbol');
     }
 
     setLocked(id: string, v: boolean): void {

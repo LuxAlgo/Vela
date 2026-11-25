@@ -118,10 +118,11 @@ export class DrawingStore {
         }
     }
 
+    /** Remove every drawing and every group, the empty ones included. */
     clear(): void {
-        if (this.byId.size === 0) return;
+        if (this.byId.size === 0 && this.groupList.length === 0) return;
         this.byId.clear();
-        this.pruneGroups();
+        this.groupList = [];
         this.emit();
     }
 

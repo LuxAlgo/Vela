@@ -14,6 +14,7 @@ import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
 
 import { VelaWorkspace } from '../src/workspace/VelaWorkspace';
 import { migrate } from '../src/core/drawings/document';
+import { DrawingStore } from '../src/core/drawings/DrawingStore';
 import { nextGroupId } from '../src/widget/object-tree-model';
 
 beforeAll(() => {
@@ -26,10 +27,10 @@ afterEach(() => {
     vi.useRealTimers();
 });
 
-function mountWorkspace(): VelaWorkspace {
+function mountWorkspace(opts: Record<string, unknown> = {}): VelaWorkspace {
     const host = document.createElement('div');
     document.body.append(host);
-    const ws = new VelaWorkspace(host, { layout: false, symbol: 'AAA', timeframe: '60' } as never);
+    const ws = new VelaWorkspace(host, { layout: false, symbol: 'AAA', timeframe: '60', ...opts } as never);
     live.push(ws);
     return ws;
 }
@@ -137,5 +138,38 @@ describe('drawing groups', () => {
     it('get an id no restored group already has', () => {
         expect(nextGroupId([])).toBe('grp-1');
         expect(nextGroupId([{ id: 'grp-4', name: 'A', ids: [] }, { id: 'custom', name: 'B', ids: [] }])).toBe('grp-5');
+    });
+
+    it('all go when every drawing is removed, an empty one included', () => {
+        const { ws, chart } = grouped();
+        chart.drawings.setGroups([...chart.drawings.groups(), { id: 'grp-2', name: 'Group 2', ids: [], pane: 'price' }]);
+        chart.drawings.clear();
+        expect(chart.drawings.groups()).toEqual([]);
+
+        const bare = mountWorkspace();
+        const empty = bare.cell('c1')!.chart;
+        empty.drawings.setGroups([{ id: 'grp-1', name: 'Group 1', ids: [] }]);
+        let told = 0;
+        empty.on('drawing:groups', () => void told++);
+        empty.drawings.clear();
+        expect(empty.drawings.groups()).toEqual([]);
+        expect(told).toBe(1);
+        void ws;
+    });
+
+    it('belong to the symbol the chart leaves when drawings belong to their symbol, an empty one too', () => {
+        const ws = mountWorkspace({ drawings: { clearOnSymbolChange: true } });
+        const chart = ws.cell('c1')!.chart;
+        chart.drawings.setGroups([{ id: 'grp-1', name: 'Group 1', ids: [], pane: 'price' }]);
+        void chart.setMarket({ symbol: 'BBB' });
+        expect(chart.drawings.groups()).toEqual([]);
+    });
+
+    it('leave nothing behind when the store is cleared', () => {
+        const store = new DrawingStore();
+        store.setGroups([{ id: 'grp-1', name: 'Group 1', ids: [] }]);
+        store.clear();
+        expect(store.groups()).toEqual([]);
+        expect(store.serialize().groups).toBeUndefined();
     });
 });

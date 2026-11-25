@@ -494,9 +494,12 @@ created / edited / removed events, so a host that stores the drawings saves on i
 `drawing:replaced` (`{ cause: 'load' | 'symbol' }`) fires when the drawings change as a whole:
 a document was put in place (`fromJSON`, a restored state), or the chart dropped them on a
 symbol change (`clearOnSymbolChange`). Whatever lists or counts drawings reads them again.
-`drawing:groups` (`{ groups }`) fires when the drawings' groups change, so a host that stores the
-drawings saves on it too. Deleting a drawing takes it out of its group, and a group whose last
-member is deleted goes with it.
+`drawing:groups` (`{ groups }`) fires when `setGroups` changes the groups (the object tree uses
+it), so a host that stores the drawings saves on it too. It does not fire for the group changes
+that come with the drawings: deleting a drawing takes it out of its group (and a group whose last
+member is deleted goes with it) under `drawing:removed`, `fromJSON` under `drawing:replaced`, and
+an undo or a redo under `drawing:history`. `clear()` removes the groups with the drawings, empty
+ones included (raising `drawing:groups`), and a symbol change with `clearOnSymbolChange` on drops them too.
 `drawing:defaults` fires when a tool's remembered settings change (the user styled a drawing of
 that type, or a restore or reset replaced them), and `drawing:templates` when its saved styles do.
 A drawing's `showOn` (a list of timeframe bands, unset for every timeframe) limits the charts it
