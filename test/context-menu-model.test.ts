@@ -4,6 +4,8 @@
 import { describe, it, expect } from 'vitest';
 import {
     bodyItems,
+    composeMenu,
+    CONTEXT_MENU_BUILTIN_ORDER,
     invertWrite,
     paneScaleAt,
     priceAxisItems,
@@ -154,6 +156,85 @@ describe('chart-body menu', () => {
 
         const full = bodyItems({ drawings: 2, indicators: 1 });
         expect(full.some((i) => i.disabled)).toBe(false);
+    });
+
+    it('every row carries an icon; the axis menus stay text-only beside their check marks', () => {
+        expect(bodyItems({ drawings: 0, indicators: 0 }).map((i) => [i.id, i.icon])).toEqual([
+            ['reset-view', 'reset'],
+            ['remove-drawings', 'eraser'],
+            ['remove-indicators', 'indicators'],
+            ['settings:Canvas', 'gear'],
+        ]);
+        expect(priceAxisItems(AXIS_STATE).some((i) => i.icon)).toBe(false);
+        expect(timeAxisItems('Etc/UTC').some((i) => i.icon)).toBe(false);
+    });
+});
+
+describe('contributed rows sort together with the built-in ones', () => {
+    const BODY = bodyItems({ drawings: 1, indicators: 1 });
+    const row = (id: string, order?: number): { item: MenuItemDescriptor; order?: number } => ({ item: { id, label: id }, ...(order !== undefined ? { order } : {}) });
+    const ids = (items: MenuItemDescriptor[]): string[] => items.map((i) => i.id);
+    /** Ids with a `|` where a separator is drawn. */
+    const shape = (items: MenuItemDescriptor[]): string => items.map((i) => (i.separatorBefore ? `| ${i.id}` : i.id)).join(' ');
+
+    it('every built-in row has a documented rank', () => {
+        const zones = {
+            body: BODY,
+            'price-axis': priceAxisItems(AXIS_STATE),
+            'time-axis': timeAxisItems('Etc/UTC'),
+        } as const;
+        for (const [zone, items] of Object.entries(zones) as Array<[keyof typeof zones, MenuItemDescriptor[]]>) {
+            const ranks: Record<string, number> = CONTEXT_MENU_BUILTIN_ORDER[zone];
+            for (const item of items) expect(ranks[item.id.startsWith('settings') ? 'settings' : item.id], `${zone} ${item.id}`).toBeTypeOf('number');
+            expect(Object.keys(ranks)).toHaveLength(items.length);
+        }
+    });
+
+    it('with nothing contributed, every menu keeps its rows and separators', () => {
+        expect(composeMenu('body', BODY, [])).toEqual(BODY.map((i) => ({ ...i, separatorBefore: Boolean(i.separatorBefore) })));
+        expect(shape(composeMenu('price-axis', priceAxisItems(AXIS_STATE), []))).toBe(shape(priceAxisItems(AXIS_STATE)));
+        expect(shape(composeMenu('time-axis', timeAxisItems('Etc/UTC'), []))).toBe('timezone | settings:Scales and lines');
+    });
+
+    it('an action without order lands after the built-in actions and before Settings…', () => {
+        expect(shape(composeMenu('body', BODY, [row('a')]))).toBe('reset-view | remove-drawings remove-indicators | a | settings:Canvas');
+    });
+
+    it('a negative order leads the menu, separated from the built-in rows', () => {
+        expect(shape(composeMenu('body', BODY, [row('copy', -100)]))).toBe('copy | reset-view | remove-drawings remove-indicators | settings:Canvas');
+    });
+
+    it('an order between two built-in ranks lands between those rows', () => {
+        expect(ids(composeMenu('body', BODY, [row('x', -25), row('y', 1001)]))).toEqual(['reset-view', 'x', 'remove-drawings', 'remove-indicators', 'settings:Canvas', 'y']);
+        // Splitting a built-in group separates the action from both halves.
+        expect(shape(composeMenu('body', BODY, [row('x', -15)]))).toBe('reset-view | remove-drawings | x | remove-indicators | settings:Canvas');
+    });
+
+    it('ties keep registration order, the built-in row first', () => {
+        expect(ids(composeMenu('body', BODY, [row('b'), row('a'), row('c', 0)])).slice(3, 6)).toEqual(['b', 'a', 'c']);
+        expect(ids(composeMenu('body', BODY, [row('tie', -30)])).slice(0, 2)).toEqual(['reset-view', 'tie']);
+        expect(ids(composeMenu('body', BODY, [row('last', 1000)])).slice(-2)).toEqual(['settings:Canvas', 'last']);
+    });
+
+    it('consecutive contributed rows form one group, and no separator opens or closes the menu', () => {
+        const items = composeMenu('body', BODY, [row('a', -200), row('b', -100), row('c'), row('d')]);
+        expect(shape(items)).toBe('a b | reset-view | remove-drawings remove-indicators | c d | settings:Canvas');
+        expect(items[0]!.separatorBefore).toBe(false);
+        expect(composeMenu('body', [], [row('a'), row('b')]).some((i) => i.separatorBefore)).toBe(false);
+    });
+
+    it('the axis menus keep their built-in order and groups, with More settings… at the end', () => {
+        const price = composeMenu('price-axis', priceAxisItems(AXIS_STATE), [row('p')]);
+        expect(shape(price)).toBe('auto invert | scale:regular scale:percent scale:indexed scale:log | labels levels | p | settings:Scales and lines');
+        expect(shape(composeMenu('price-axis', priceAxisItems(AXIS_STATE), [row('lead', -100)]))).toMatch(/^lead \| auto invert \|/);
+        expect(shape(composeMenu('time-axis', timeAxisItems('Etc/UTC'), [row('t')]))).toBe('timezone | t | settings:Scales and lines');
+    });
+
+    it('rows pass through untouched apart from their separator', () => {
+        const item: MenuItemDescriptor = { id: 'action:x', label: 'Copy price', icon: 'clone', separatorBefore: true };
+        const [first] = composeMenu('body', BODY, [{ item, order: -100 }]);
+        expect(first).toEqual({ id: 'action:x', label: 'Copy price', icon: 'clone', separatorBefore: false });
+        expect(composeMenu('body', BODY, [])[3]).toMatchObject({ id: 'settings:Canvas', icon: 'gear', separatorBefore: true });
     });
 });
 

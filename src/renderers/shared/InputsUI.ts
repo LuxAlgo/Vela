@@ -101,8 +101,14 @@ const LEGEND_ICON_PX = 16;
 const LEGEND_CTL_PX = 18;
 const LEGEND_ROW_PAD_Y = 2;
 const LEGEND_ROW_PAD_X = 6;
+/** Inset of the legend column from the plot's left edge. */
+const LEGEND_LEFT_PX = 10;
+/** Air the legend column keeps before the price scale — rows never run under it. */
+const LEGEND_SCALE_GAP_PX = 6;
 /** Space between the indicator title and the plot-values readout to its right. */
 const LEGEND_TITLE_VALUES_GAP_PX = 6;
+/** Space between neighbouring plot values. */
+const LEGEND_VALUES_GAP_PX = 5;
 /** Space between the title and the loading/live status (the values gap plus a little
  *  air — 4px dots flush against 12px type read as glued on). */
 const LEGEND_TITLE_STATUS_GAP_PX = 8;
@@ -214,7 +220,8 @@ export class InputsUI {
     constructor(
         private readonly container: HTMLElement,
         private theme: VelaTheme,
-        private readonly paneBoundsOf?: (paneId: string) => { top: number; height: number },
+        /** `rightAxis` is the full price-scale width (merged scale columns included) — the legend never extends under it. */
+        private readonly paneBoundsOf?: (paneId: string) => { top: number; height: number; rightAxis?: number },
     ) {
         if (!container.style.position) container.style.position = 'relative';
         if (typeof document !== 'undefined') document.addEventListener('click', this.onDocClick);
@@ -444,14 +451,17 @@ export class InputsUI {
             row.valuesEl.replaceChildren();
             return;
         }
-        row.valuesEl.style.display = 'inline-flex';
+        // Inline values in a block (not flex items), so a readout cut at the plot edge ends in
+        // an ellipsis rather than a clipped number that reads as a different value.
+        row.valuesEl.style.display = 'block';
         row.valuesEl.replaceChildren();
-        for (const v of row.plotValues) {
+        row.plotValues.forEach((v, i) => {
             const span = document.createElement('span');
             span.textContent = v.value;
             span.style.color = v.color;
+            if (i > 0) span.style.marginLeft = `${LEGEND_VALUES_GAP_PX}px`;
             row.valuesEl.appendChild(span);
-        }
+        });
     }
 
     // ── legend move/merge (menu + drag) ─────────────────────────────────────
@@ -565,7 +575,7 @@ export class InputsUI {
             // its on-screen bounds) — e.g. to re-anchor its own per-pane overlays.
             lg.dataset.velaPane = paneId;
             lg.style.cssText =
-                'position:absolute;left:10px;z-index:5;display:flex;flex-direction:column;align-items:flex-start;gap:0;pointer-events:none;font:12px -apple-system,Segoe UI,sans-serif;';
+                `position:absolute;left:${LEGEND_LEFT_PX}px;z-index:5;display:flex;flex-direction:column;align-items:flex-start;gap:0;pointer-events:none;font:12px -apple-system,Segoe UI,sans-serif;`;
             // Chart-theme tokens so action-button hovers wash against the plot surface the
             // rows sit on (the wrapper beneath may carry the host's stable chrome surface).
             applyChromeTokens(lg, this.theme);
@@ -587,6 +597,9 @@ export class InputsUI {
         // (the container's intended layout — set in its cssText), NOT '' which would revert it
         // to block: block children stretch to the widest row, fusing the chips into one slab.
         lg.style.display = bounds.height < 4 || !this.titlesVisible ? 'none' : 'flex';
+        // The container spans the price scale too: cap the column at the data area so a long
+        // row (a narrow chart, many plot values) gives way inside the row instead.
+        lg.style.maxWidth = `calc(100% - ${(bounds.rightAxis ?? 0) + LEGEND_LEFT_PX + LEGEND_SCALE_GAP_PX}px)`;
         // A collapsed pane is a legend-only strip: show just its master indicator's row. Restore
         // hidden rows to 'flex' (their intended layout — set in the row's cssText), NOT '' which
         // would revert them to block and break the inline button row (hide/show, settings, …).
@@ -716,12 +729,13 @@ export class InputsUI {
         // negative left margin cancels the left padding so the title's left edge still shares
         // the statusline avatar's left edge (both sit at the legend column's left:10px).
         // min-height matches the action hit targets so revealing them never grows the chip
-        // vertically (which would shove the rows below).
+        // vertically (which would shove the rows below). max-width gives back the negative
+        // margin, so the chip may reach the legend column's right edge and no further.
         el.style.cssText =
             `pointer-events:auto;display:flex;align-items:center;` +
             `background:${this.idleRowFill()};border-radius:4px;` +
             `padding:${LEGEND_ROW_PAD_Y}px ${LEGEND_ROW_PAD_X}px;margin-left:-${LEGEND_ROW_PAD_X}px;` +
-            `min-height:${LEGEND_ROW_MIN_H}px;box-sizing:border-box;` +
+            `max-width:calc(100% + ${LEGEND_ROW_PAD_X}px);min-height:${LEGEND_ROW_MIN_H}px;box-sizing:border-box;` +
             `color:${this.theme.textColor};user-select:none;-webkit-user-select:none;`;
         // Reveal actions only from the TITLE (not the plot-values readout). Leave still
         // closes on the whole row so the pointer can move title → buttons without flicker.
@@ -763,9 +777,10 @@ export class InputsUI {
         const statusEl = document.createElement('span');
         statusEl.style.cssText = 'display:none;box-sizing:border-box;flex:none;';
         // Title (+ optional "beta" exponent) wrapped so the superscript stays glued to the label and
-        // survives title-text updates (which only touch the inner span).
+        // survives title-text updates (which only touch the inner span). It shrinks — ellipsized —
+        // only once the values readout has given up all its room (see valuesEl).
         const titleWrap = document.createElement('span');
-        titleWrap.style.cssText = 'white-space:nowrap;';
+        titleWrap.style.cssText = 'white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis;';
         titleWrap.addEventListener('mouseenter', () => this.setRowHighlighted(id, true));
         const titleEl = document.createElement('span');
         titleEl.textContent = title;
@@ -787,11 +802,12 @@ export class InputsUI {
         el.appendChild(calloutsEl);
         el.appendChild(statusEl);
         // Plot values readout, right of the title — filled by setPlotValues, hidden until
-        // values arrive (or while the values toggle is off for this row).
+        // values arrive (or while the values toggle is off for this row). A zero flex basis
+        // takes only the room the title leaves, so a bounded row cuts its values first.
         const valuesEl = document.createElement('span');
         valuesEl.style.cssText =
-            `display:none;align-items:center;gap:5px;margin-left:${LEGEND_TITLE_VALUES_GAP_PX}px;` +
-            `white-space:nowrap;font-variant-numeric:tabular-nums;`;
+            `display:none;flex:1 1 0%;min-width:0;overflow:hidden;text-overflow:ellipsis;` +
+            `margin-left:${LEGEND_TITLE_VALUES_GAP_PX}px;white-space:nowrap;font-variant-numeric:tabular-nums;`;
         el.appendChild(valuesEl);
         // Action cluster (eye / gear / move / extras / ✕) — one tight row of equal hit targets.
         // Revealed on hover/selection; a hidden indicator keeps its eye reachable without hover.

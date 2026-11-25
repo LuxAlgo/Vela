@@ -105,6 +105,9 @@ const CSS = `
 .vela-statusline .vela-sl-market { align-self: center; display: inline-flex; }
 .vela-statusline .vela-sl-market > [hidden] { display: none !important; }
 .vela-statusline .vela-sl-replay-badge, .vela-statusline .vela-sl-replay-badge svg { display: block; width: 16px; height: 16px; }
+/* Tabular figures: every digit has one advance, so a readout whose text changes only in
+ * its digits keeps its width — render() skips the ladder for those (see widthKey). */
+.vela-statusline .vela-sl-values { font-variant-numeric: tabular-nums; }
 .vela-statusline .vela-sl-ohlc { display: flex; gap: var(--vela-space-1); color: var(--vela-fg-muted); }
 .vela-statusline .vela-sl-ohlc b { color: var(--vela-fg); font-weight: 500; }
 /* The change value wears the SAME ink as the OHLC values (set inline per render) —
@@ -313,6 +316,10 @@ export class Statusline {
     private readonly valuesRow: HTMLElement;
     /** The ladder rung currently applied — see {@link fit}. */
     private layout: StatuslineLayout = { stacked: false, level: 'full' };
+    /** The readout {@link widthKey} the applied rung was fitted to. */
+    private fitKey: string | null = null;
+    /** Web fonts landing after the last fit change every width without a resize. */
+    private readonly onFontsLoaded = (): void => this.fit();
 
     constructor(
         private readonly host: HTMLElement,
@@ -384,6 +391,7 @@ export class Statusline {
             this.fitRO = new ResizeObserver(() => this.fit());
             this.fitRO.observe(host);
         }
+        doc.fonts?.addEventListener('loadingdone', this.onFontsLoaded);
         // The tooltips portal to the nearest `.vela-ui` ancestor for theme tokens — resolve
         // them AFTER the statusline is in the DOM. The badge's content follows setMarketStatus.
         this.marketTip = new Tooltip(this.marketEl, { content: MARKET_LABELS.open, placement: 'bottom' });
@@ -444,6 +452,7 @@ export class Statusline {
      * (detached host, node tests) nothing overflows, so the widest rung stays.
      */
     private fit(): void {
+        this.fitKey = this.widthKey();
         this.syncParts(); // start from the full (parts-allowed) row, then descend
         const seg = segmentVisibility(this.parts, this.chartHidden);
         const overflows = (): boolean => this.el.scrollWidth > this.el.clientWidth;
@@ -626,6 +635,7 @@ export class Statusline {
         this.detach();
         this.fitRO?.disconnect();
         this.fitRO = null;
+        this.el.ownerDocument.fonts?.removeEventListener('loadingdone', this.onFontsLoaded);
         this.el.removeEventListener('contextmenu', this.onContextMenu);
         this.menu?.destroy();
         this.menu = null;
@@ -646,7 +656,25 @@ export class Statusline {
         // renderer on every readout refresh (bar ticks, crosshair moves), so a toggle
         // made anywhere (the object tree's eye) reaches the status line.
         if (this.menuHooks) this.setChartHidden(!this.menuHooks.chartVisible());
-        this.fit(); // re-walks the ladder — the readout's width follows the bar
+        // Crosshair moves land here at pointer rate. Walking the ladder forces a layout per
+        // rung, so only re-walk it when the readout's width can have changed.
+        if (this.widthKey() === this.fitKey) this.renderValues();
+        else this.fit();
+    }
+
+    /** Everything the readout's width depends on, at every rung: its shape, and each
+     *  value's sign, digit count and decimals (the digits themselves are tabular — see
+     *  the CSS; the grouping commas follow from the digit count). `toFixed` carries all
+     *  three at a fraction of the locale formatter's cost — this runs per pointer move.
+     *  The parts, the host's size and the fonts re-fit through their own paths. */
+    private widthKey(): string {
+        const bar = this.hoverBar ?? this.lastBar;
+        if (!bar) return this.readout;
+        const dp = decimalsFor(bar.close);
+        const diff = bar.close - bar.open;
+        const text = [bar.open, bar.high, bar.low, bar.close, diff].map((v) => v.toFixed(dp));
+        text.push(((diff / bar.open) * 100).toFixed(2));
+        return `${this.readout} ${text.join(' ')}`.replace(/\d/g, '0');
     }
 
     /** Write the value readout for the current bar at the current ladder level. */

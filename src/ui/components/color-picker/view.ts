@@ -122,14 +122,53 @@ export function buildColorPicker(color: string, theme: VelaTheme, onChange: (v: 
     const knob = document.createElement('div');
     knob.style.cssText = 'position:absolute;top:50%;width:15px;height:15px;border-radius:50%;background:var(--vela-selected-bg);box-shadow:0 1px 3px rgba(0,0,0,0.55);transform:translate(-50%,-50%);pointer-events:none;';
     track.appendChild(knob);
-    const pctBox = document.createElement('div');
-    pctBox.style.cssText = `min-width:42px;text-align:center;font:var(--vela-font-size-md) ${theme.fontFamily};color:var(--vela-fg);border:1px solid var(--vela-border);border-radius:5px;padding:3px 4px;`;
+    const pctBox = document.createElement('input');
+    pctBox.type = 'text';
+    pctBox.inputMode = 'numeric';
+    pctBox.title = 'Opacity (%)';
+    pctBox.style.cssText = `width:46px;box-sizing:border-box;text-align:center;font:var(--vela-font-size-md) ${theme.fontFamily};color:var(--vela-fg);background:transparent;border:1px solid var(--vela-border);border-radius:5px;padding:3px 4px;outline:none;`;
+    pctBox.addEventListener('focus', () => {
+        pctBox.style.borderColor = 'var(--vela-border-strong)';
+        pctBox.select();
+    });
     opRow.append(track, pctBox);
     const paintOpacity = (): void => {
         track.style.background = `linear-gradient(to right, ${curHex}00, ${curHex}ff), ${CHECKER}`;
         knob.style.left = `${curAlpha * 100}%`;
-        pctBox.textContent = `${Math.round(curAlpha * 100)}%`;
+        pctBox.value = `${Math.round(curAlpha * 100)}%`;
     };
+    // A typed value is one discrete edit, so it commits once under either `commit` policy.
+    // Unparseable input snaps back to the current opacity.
+    const commitTyped = (): void => {
+        pctBox.style.borderColor = 'var(--vela-border)';
+        const n = parseFloat(pctBox.value.replace('%', ''));
+        if (Number.isFinite(n)) {
+            const next = Math.max(0, Math.min(100, n)) / 100;
+            if (Math.round(next * 100) !== Math.round(curAlpha * 100)) {
+                curAlpha = next;
+                paintOpacity();
+                emit();
+                return;
+            }
+        }
+        paintOpacity();
+    };
+    pctBox.addEventListener('change', commitTyped);
+    pctBox.addEventListener('blur', () => {
+        // `change` does not fire when the text is unchanged; still restore the "%" readout.
+        pctBox.style.borderColor = 'var(--vela-border)';
+        paintOpacity();
+    });
+    pctBox.addEventListener('keydown', (e) => {
+        // Typing must not reach chart/dialog shortcuts; Escape stays with the popover.
+        if (e.key === 'Escape') return;
+        e.stopPropagation();
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            commitTyped();
+            pctBox.blur();
+        }
+    });
     // The drag always previews (knob, readout, gradient); whether each move also COMMITS is
     // the `commit` option — see {@link ColorCommit}.
     let dragging = false;

@@ -131,6 +131,16 @@ function touchHarness() {
     return { deps, el, tap, wobbleTap, outAndBackTap, touchDrag, mouseDrag };
 }
 
+describe('drag-release fling', () => {
+    it('a touch flick flings, a mouse release stops dead', () => {
+        const { deps, touchDrag, mouseDrag } = touchHarness();
+        touchDrag(400, 100, 0, 100); // 100px in 20ms — well above the fling threshold
+        expect(deps.fling).toHaveBeenCalledTimes(1);
+        mouseDrag(400, 100, 1000, 100);
+        expect(deps.fling).toHaveBeenCalledTimes(1); // the mouse never flings
+    });
+});
+
 describe('touch double-tap (the touch dblclick)', () => {
     it('data area: a quick tap pair toggles pane maximize (dataDblClick), one tap does not', () => {
         const { deps, tap } = touchHarness();

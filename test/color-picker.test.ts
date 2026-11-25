@@ -147,7 +147,7 @@ describe('color picker opacity slider', () => {
         track.dispatchEvent(pointer('pointerdown', 120)); // 10 %
         track.dispatchEvent(pointer('pointermove', 200)); // 50 %
         track.dispatchEvent(pointer('pointermove', 260)); // 80 %
-        expect(pct.textContent).toBe('80%');
+        expect(pct.value).toBe('80%');
         expect(emitted).toEqual([combineColor('#089981', 0.1), combineColor('#089981', 0.5), combineColor('#089981', 0.8)]);
         // Release adds nothing: the last move already committed the final value.
         track.dispatchEvent(pointer('pointerup', 260));
@@ -163,7 +163,7 @@ describe('color picker opacity slider', () => {
         track.dispatchEvent(pointer('pointermove', 260)); // 80 %
         // The readout follows the pointer; nothing has been committed yet — a commit
         // re-executes the script over its whole history, and a drag fires a move per frame.
-        expect(pct.textContent).toBe('80%');
+        expect(pct.value).toBe('80%');
         expect(emitted).toEqual([]);
 
         track.dispatchEvent(pointer('pointerup', 260));
@@ -171,7 +171,7 @@ describe('color picker opacity slider', () => {
 
         // Moves after release are not a drag.
         track.dispatchEvent(pointer('pointermove', 300));
-        expect(pct.textContent).toBe('80%');
+        expect(pct.value).toBe('80%');
         expect(emitted).toHaveLength(1);
     });
 
@@ -182,6 +182,46 @@ describe('color picker opacity slider', () => {
             track.dispatchEvent(pointer('pointerup', 150));
             expect(emitted).toEqual([combineColor('#089981', 0.25)]);
         }
+    });
+
+    it('the percentage readout is a text input that sets the opacity when a value is typed', () => {
+        for (const commit of ['live', 'release'] as const) {
+            const { pct, emitted } = mount(commit);
+            expect(pct.tag).toBe('input');
+            expect(pct.value).toBe('100%');
+            pct.value = '35';
+            pct.dispatchEvent({ type: 'change' });
+            expect(emitted).toEqual([combineColor('#089981', 0.35)]);
+            expect(pct.value).toBe('35%');
+            // "%" suffix accepted; out-of-range values clamp.
+            pct.value = '250%';
+            pct.dispatchEvent({ type: 'change' });
+            expect(emitted).toHaveLength(2);
+            expect(emitted[1]).toBe('#089981');
+            expect(pct.value).toBe('100%');
+        }
+    });
+
+    it('typed garbage or an unchanged value restores the readout without committing', () => {
+        const { pct, emitted } = mount();
+        pct.value = 'abc';
+        pct.dispatchEvent({ type: 'change' });
+        expect(pct.value).toBe('100%');
+        pct.value = '100';
+        pct.dispatchEvent({ type: 'change' });
+        expect(emitted).toEqual([]);
+    });
+
+    it('Enter commits the typed value and keeps the keystroke away from outer shortcuts', () => {
+        const { pct, emitted } = mount();
+        let stopped = 0;
+        let blurred = 0;
+        (pct as unknown as { blur(): void }).blur = () => { blurred++; };
+        pct.value = '20';
+        pct.dispatchEvent({ type: 'keydown', key: 'Enter', preventDefault: () => {}, stopPropagation: () => { stopped++; } } as never);
+        expect(emitted).toEqual([combineColor('#089981', 0.2)]);
+        expect(stopped).toBe(1);
+        expect(blurred).toBe(1);
     });
 
     it("'release': a cancelled drag still commits where the pointer was", () => {

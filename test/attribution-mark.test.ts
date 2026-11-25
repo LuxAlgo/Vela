@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { attributionMarkColor, createAttributionMark, createCustomMark } from '../src/renderers/native/chrome/AttributionMark';
-import { LUXALGO_SYMBOL_SVG, LUXALGO_WORDMARK_SVG } from '../src/renderers/native/chrome/luxalgo-logos';
+import { VELA_LETTERS_SVG, VELA_MARK_SVG } from '../src/renderers/native/chrome/vela-logos';
 
 /** The DOM subset the mark builders touch — tests run in a plain node environment. */
 function stubDocument(): Document {
@@ -12,7 +12,10 @@ function stubDocument(): Document {
         style: { setProperty: () => undefined },
         dataset: {},
         setAttribute: () => undefined,
-        append: () => undefined,
+        children: [] as unknown[],
+        append(...nodes: unknown[]) {
+            (this.children as unknown[]).push(...nodes);
+        },
         appendChild: () => undefined,
     });
     return {
@@ -62,13 +65,31 @@ describe('attribution mark screenshot opt-in', () => {
     });
 });
 
-describe('luxalgo logos', () => {
-    it('exports inline SVGs that paint via currentColor (not fixed white PNGs)', () => {
-        expect(LUXALGO_SYMBOL_SVG).toContain('<svg');
-        expect(LUXALGO_SYMBOL_SVG).toContain('currentColor');
-        expect(LUXALGO_SYMBOL_SVG).not.toContain('data:image/png');
-        expect(LUXALGO_WORDMARK_SVG).toContain('<svg');
-        expect(LUXALGO_WORDMARK_SVG).toContain('currentColor');
-        expect(LUXALGO_WORDMARK_SVG).not.toContain('data:image/png');
+describe('the built-in mark is Vela\'s', () => {
+    it('shows the Morning Star V and reveals the rest of the wordmark beside it, linking to the project', () => {
+        const mark = createAttributionMark(stubDocument(), '#151619') as unknown as {
+            href: string;
+            title: string;
+            children: Array<{ className: string; innerHTML: string }>;
+        };
+        const [symbol, letters] = mark.children;
+        expect(symbol?.className).toBe('vela-attr-symbol');
+        expect(symbol?.innerHTML).toBe(VELA_MARK_SVG);
+        expect(letters?.className).toBe('vela-attr-wordmark');
+        expect(letters?.innerHTML).toBe(VELA_LETTERS_SVG);
+        expect(mark.href).toContain('https://velacharts.dev/');
+        expect(mark.title).toBe('Charting by Vela');
+    });
+
+    it('both halves are inline SVGs that paint via currentColor, on one shared height and baseline', () => {
+        for (const svg of [VELA_MARK_SVG, VELA_LETTERS_SVG]) {
+            expect(svg).toContain('<svg');
+            expect(svg).toContain('currentColor');
+            expect(svg).not.toContain('data:image/png');
+        }
+        // Same viewBox y-range: drawn at one CSS height, the letters land on the V's baseline.
+        const yRange = (svg: string) => svg.match(/viewBox="[\d.]+ (-?[\d.]+) [\d.]+ ([\d.]+)"/)?.slice(1);
+        expect(yRange(VELA_MARK_SVG)).toEqual(['-142', '148']);
+        expect(yRange(VELA_LETTERS_SVG)).toEqual(yRange(VELA_MARK_SVG));
     });
 });

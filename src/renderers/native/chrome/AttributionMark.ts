@@ -1,14 +1,14 @@
-// The in-chart ATTRIBUTION mark — the LuxAlgo logomark at the bottom-left of the plot,
-// expanding its wordmark on hover and linking to the project. Rendered by DEFAULT on every
+// The in-chart ATTRIBUTION mark — Vela's Morning Star V at the bottom-left of the plot,
+// completing its wordmark ("ela™") on hover and linking to the project. Rendered by DEFAULT on every
 // chart. Per the NOTICE file, products may disable it (`renderer.set('attribution', false)`)
 // ONLY if they display an equivalent visible attribution elsewhere in their UI, which the
 // same file also allows them to restyle or reposition to fit their design.
 
 import { isDarkColor } from '../../../core/color';
-import { LUXALGO_SYMBOL_SVG, LUXALGO_WORDMARK_SVG } from './luxalgo-logos';
+import { VELA_LETTERS_SVG, VELA_MARK_SVG } from './vela-logos';
 
 /** Where the mark links — the canonical project page. */
-export const ATTRIBUTION_URL = 'https://luxalgo.com/vela';
+export const ATTRIBUTION_URL = 'https://velacharts.dev/?utm_source=vela&utm_medium=attribution';
 
 const STYLE_ID = 'vela-attribution-styles';
 const CSS = `
@@ -16,11 +16,9 @@ const CSS = `
     text-decoration: none;
     display: flex;
     align-items: center;
-    /* Gutter, wordmark size and offset below are the brand lockup's own ratios,
-       measured off the official horizontal logo: gutter 0.157, wordmark height
-       0.966, and wordmark 0.109 LOWER than the symbol — box-centering the two
-       reads wrong because the symbol's ink hangs low and the wordmark descends. */
-    gap: 4px;
+    /* No gutter: the V is the wordmark's first letter, and the letters' viewBox starts
+       where the V's ends, so the kit's own letter spacing comes with them. */
+    gap: 0;
 }
 .vela-attribution .vela-attr-symbol {
     flex: none;
@@ -28,7 +26,7 @@ const CSS = `
     line-height: 0;
 }
 .vela-attribution .vela-attr-symbol svg {
-    height: 28px;
+    height: 24px;
     width: auto;
     display: block;
     filter: drop-shadow(0 1px 2px var(--vela-attr-shadow, rgba(0,0,0,0.45)));
@@ -39,15 +37,13 @@ const CSS = `
     opacity: 0;
     display: flex;
     align-items: center;
-    /* Offset here, not on the image: the clip box must not crop the descender. */
-    position: relative;
-    top: 3px;
+    /* Same height and baseline as the V (one viewBox height), so no vertical offset. */
     transform: translateX(-8px);
     transition: max-width 0.3s ease, opacity 0.25s ease, transform 0.3s ease;
     flex: none;
 }
 .vela-attribution .vela-attr-wordmark svg {
-    height: 27px;
+    height: 24px;
     width: auto;
     display: block;
     filter: drop-shadow(0 1px 2px var(--vela-attr-shadow, rgba(0,0,0,0.45)));
@@ -62,14 +58,11 @@ const CSS = `
    (data-layout): the workspace's single grid-wide mark lives OUTSIDE any renderer
    container, so only the shell attribute reaches it. */
 [data-vela-layout='mobile'] .vela-attribution .vela-attr-symbol svg,
-[data-layout='mobile'] .vela-attribution .vela-attr-symbol svg { height: 22px; }
+[data-layout='mobile'] .vela-attribution .vela-attr-symbol svg { height: 20px; }
 [data-vela-layout='mobile'] .vela-attribution .vela-attr-wordmark,
-[data-layout='mobile'] .vela-attribution .vela-attr-wordmark {
-    top: 2px;
-    transform: translateX(-6px);
-}
+[data-layout='mobile'] .vela-attribution .vela-attr-wordmark { transform: translateX(-6px); }
 [data-vela-layout='mobile'] .vela-attribution .vela-attr-wordmark svg,
-[data-layout='mobile'] .vela-attribution .vela-attr-wordmark svg { height: 21px; }
+[data-layout='mobile'] .vela-attribution .vela-attr-wordmark svg { height: 20px; }
 [data-vela-layout='mobile'] .vela-attribution:hover .vela-attr-wordmark,
 [data-layout='mobile'] .vela-attribution:hover .vela-attr-wordmark { transform: translateX(0); }
 `;
@@ -151,10 +144,10 @@ export function createAttributionMark(doc: Document, background: string): HTMLAn
     const symbol = doc.createElement('span');
     symbol.className = 'vela-attr-symbol';
     symbol.setAttribute('aria-hidden', 'true');
-    symbol.innerHTML = LUXALGO_SYMBOL_SVG;
+    symbol.innerHTML = VELA_MARK_SVG;
     const wordmark = doc.createElement('span');
     wordmark.className = 'vela-attr-wordmark';
-    wordmark.innerHTML = LUXALGO_WORDMARK_SVG;
+    wordmark.innerHTML = VELA_LETTERS_SVG;
     a.append(symbol, wordmark);
     return a;
 }

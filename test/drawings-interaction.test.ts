@@ -272,6 +272,24 @@ describe('DrawingInteraction: Shift angle snap (45° steps)', () => {
         expect(edit?.kind === 'edit' && edit.doc.anchors[1]!.price).toBeCloseTo(10, 6);
     });
 
+    it('movingIds names the dragged drawing and its riders, only past the slop, never Ctrl-drag sources', () => {
+        const a = createDrawing('hline', { id: 'a', paneId: 'price', anchors: [{ time: 10, price: 30 }] })!;
+        const b = createDrawing('hline', { id: 'b', paneId: 'price', anchors: [{ time: 10, price: 50 }] })!;
+        const h = harness(null, [a, b]);
+        h.setSelected(['a', 'b']);
+        h.it.down(40, 70); // a's body (y = 100 − 30)
+        expect([...h.it.movingIds()]).toEqual([]); // pressed, not yet moved
+        h.it.move(60, 80);
+        expect([...h.it.movingIds()].sort()).toEqual(['a', 'b']); // the selection rides along
+        h.it.up(60, 80);
+        expect([...h.it.movingIds()]).toEqual([]);
+        // A Ctrl-drag moves copies: the store drawings stay put, so nothing is "moving".
+        h.it.down(40, 70, 'off', false, true);
+        h.it.move(60, 80);
+        expect([...h.it.movingIds()]).toEqual([]);
+        h.it.up(60, 80);
+    });
+
     it('shift leaves non-line tools alone (raw cursor)', () => {
         const h = harness('datepricerange');
         h.it.down(10, 90);

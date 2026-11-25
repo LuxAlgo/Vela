@@ -107,7 +107,7 @@ export class ShortcutsHelp {
         // The two type-to-act routes live outside the keymap (any-printable routing).
         const s = doc.createElement('div');
         s.className = 'vela-sh-static';
-        s.textContent = 'Typing a letter opens the symbol search; typing a digit opens the timeframe entry.';
+        s.textContent = 'Typing a letter or 0 opens the symbol search; typing a digit from 1 to 9 opens the timeframe entry.';
         this.list.appendChild(s);
     }
 }

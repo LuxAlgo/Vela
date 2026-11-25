@@ -2,9 +2,17 @@
 
 <div align="center">
 
-  <img src=".github/banner.png" alt="Vela™ — fast, extensible financial charts for the web" width="100%">
+  <a href="https://velacharts.dev">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset=".github/banner.png">
+      <source media="(prefers-color-scheme: light)" srcset=".github/banner-light.png">
+      <img src=".github/banner.png" alt="Vela™ by LuxAlgo" width="100%">
+    </picture>
+  </a>
 
-  <p><strong>Fast, extensible financial charts for the web.</strong><br>
+# Vela™
+
+  <p><strong>Fast, extensible financial charts for the web: the open-source core of <a href="https://vela.luxalgo.com/chart">Vela</a> by LuxAlgo.</strong><br>
   Headless core · native WebGL2 renderer · batteries-included workspace · plugin SDK</p>
 
   [![npm version][npm-version-img]][npm-link]
@@ -12,9 +20,9 @@
   [![License][license-img]][license-link]
 
   <p>
-    <a href="https://luxalgo.com/vela">Homepage</a> ·
+    <a href="https://velacharts.dev">Homepage</a> ·
     <a href="#quick-start">Quick start</a> ·
-    <a href="docs/index.md">Documentation</a> ·
+    <a href="https://docs.luxalgo.com/vela">Documentation</a> ·
     <a href="#extending-plugin-sdk">Plugin SDK</a> ·
     <a href="CHANGELOG.md">Changelog</a> ·
     <a href="#license-and-attribution">License</a>
@@ -41,7 +49,7 @@ touching the rest.
 - **`@luxalgo/vela/workspace`**: the full chart app. One chart or a grid of them under
   one shared topbar (symbol / timeframe / style / indicators), status line, symbol
   watermark, bottom bar (ranges, clock, timezone), object tree, keyboard-first UX
-  (type a letter for symbol search, a digit for timeframe entry, `?` for the shortcuts
+  (type a letter or `0` for symbol search, a digit 1–9 for timeframe entry, `?` for the shortcuts
   panel), named cells, sync groups, and one persisted state document.
 - **`@luxalgo/vela/ui`**: the component kit the app is built on. Design tokens, overlay
   chrome ([Zag.js](https://zagjs.com) menu/dialog/drawer/tooltip), form primitives, and
@@ -108,7 +116,7 @@ alongside them.
 
 Custom scripts still run through pluggable engines. Vela™ **ships none**: install the
 addon for the language you want, or write one against the public `ScriptingEngine` port.
-Pine Script lives in [`@luxalgo/vela-pinets`](https://github.com/LuxAlgo/Vela-pinets)
+Pine Script® lives in [`@luxalgo/vela-pinets`](https://github.com/LuxAlgo/Vela-pinets)
 (`npm i @luxalgo/vela-pinets pinets`), which is **AGPL-3.0** because the PineTS runtime it
 executes is. Vela™ itself stays Apache-2.0 and carries no Pine code:
 
@@ -198,10 +206,10 @@ include it per Apache-2.0 §4(d):
 This is the same licensing model used by other popular charting libraries, and we're
 grateful when the watermark stays in a visible spot.
 
-No scripting engine ships with this package; the Pine Script addon
+No scripting engine ships with this package; the Pine Script® addon
 (`@luxalgo/vela-pinets`) is AGPL-3.0 and licensed separately (see *Indicators*).
 
-[homepage]: https://luxalgo.com/vela
+[homepage]: https://velacharts.dev
 
 [npm-version-img]: https://img.shields.io/npm/v/%40luxalgo%2Fvela.svg
 [npm-downloads-img]: https://img.shields.io/npm/dm/%40luxalgo%2Fvela.svg

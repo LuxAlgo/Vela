@@ -49,3 +49,16 @@ describe('autoscale — configurable margins', () => {
         expect(s.log).toBe(true);
     });
 });
+
+describe('autoscale — rounding-error slivers', () => {
+    it('treats a one-ulp range like a flat series', () => {
+        const v = 24.43;
+        const sliver: OHLCV[] = [{ time: 0, open: v, high: v + 2 * Number.EPSILON * v, low: v, close: v, volume: 1 }];
+        const flat: OHLCV[] = [{ time: 0, open: v, high: v, low: v, close: v, volume: 1 }];
+        const s = computePaneScale([], sliver, true, 0, 0);
+        const f = computePaneScale([], flat, true, 0, 0);
+        expect(s.min).toBeCloseTo(f.min, 9);
+        expect(s.max).toBeCloseTo(f.max, 9);
+        expect(s.max - s.min).toBeGreaterThan(1);
+    });
+});

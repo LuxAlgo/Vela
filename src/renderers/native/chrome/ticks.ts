@@ -14,10 +14,15 @@ export function priceTicks(min: number, max: number, target = 6): number[] {
     const norm = raw / mag;
     const step = (norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10) * mag;
     const decimals = Math.max(0, -Math.floor(Math.log10(step)) + 1);
-    const out: number[] = [];
     const start = Math.ceil(min / step) * step;
-    for (let v = start; v <= max + step * 1e-6; v += step) {
-        out.push(Number(v.toFixed(decimals)));
+    if (!(step > 0) || start + step === start) return [];
+    // Count the ticks up front and index them: accumulating `v += step` can stall
+    // when the float spacing changes inside the range (e.g. across a power of two).
+    const count = Math.floor((max - start) / step + 1e-6) + 1;
+    if (!(count > 0) || count > 1000) return [];
+    const out: number[] = [];
+    for (let i = 0; i < count; i += 1) {
+        out.push(Number((start + i * step).toFixed(decimals)));
     }
     return out;
 }
@@ -342,6 +347,7 @@ export function timeTicks(fromMs: number, toMs: number, target = 8, offsetMs = 0
     // shift on each tick's `time` for pixel placement on the real (UTC) axis.
     const zFrom = fromMs + offsetMs;
     const zTo = toMs + offsetMs;
+    if (step >= MONTH) return calendarTicks(zFrom, zTo, step >= YEAR ? 12 : step >= 3 * MONTH ? 3 : 1, offsetMs);
     const first = Math.ceil(zFrom / step) * step;
     const out: TimeTick[] = [];
     for (let zt = first; zt <= zTo; zt += step) {
@@ -369,6 +375,24 @@ export function timeTicks(fromMs: number, toMs: number, target = 8, offsetMs = 0
             major = true;
         }
         out.push({ time: t, label, major });
+    }
+    return out;
+}
+
+/**
+ * Month, quarter and year ticks on real calendar boundaries (the first of the month, in
+ * zoned space). Fixed 30/365-day steps drift off the calendar by a day per leap year,
+ * which puts each year label weeks before the January it names.
+ */
+function calendarTicks(zFrom: number, zTo: number, months: number, offsetMs: number): TimeTick[] {
+    const d0 = new Date(zFrom);
+    let idx = d0.getUTCFullYear() * 12 + d0.getUTCMonth();
+    if (Date.UTC(Math.floor(idx / 12), idx % 12, 1) < zFrom) idx += 1;
+    idx = Math.ceil(idx / months) * months;
+    const out: TimeTick[] = [];
+    for (let zt = Date.UTC(Math.floor(idx / 12), idx % 12, 1); zt <= zTo; idx += months, zt = Date.UTC(Math.floor(idx / 12), idx % 12, 1)) {
+        const label = months === 12 ? String(Math.floor(idx / 12)) : MONTHS[idx % 12]!;
+        out.push({ time: zt - offsetMs, label, major: true });
     }
     return out;
 }

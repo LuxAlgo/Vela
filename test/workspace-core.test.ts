@@ -302,35 +302,66 @@ describe('sync model (pure)', () => {
         expect(rangesWithin(a, a, 0)).toBe(true);
     });
 
-    it('styleConfigSlice keeps exactly the Canvas + Scales-and-lines keys', async () => {
-        const { styleConfigSlice } = await import('../src/workspace/sync');
-        const slice = styleConfigSlice({
-            version: 1,
+    it('styleConfigPatch carries every differing look, and only the looks', async () => {
+        const { styleConfigPatch } = await import('../src/workspace/sync');
+        const looks = {
             layout: { background: '#000' },
             panes: { separatorColor: '#111' },
             grid: { vertLines: { visible: false } },
+            margins: { top: 20 },
             priceScale: { invert: true },
             crosshair: { style: 'dotted' },
-            // Per-style/series cosmetics stay per cell; the timezone is workspace-global.
+            animations: { zoom: false },
             candles: { upColor: '#0f0' },
-            series: { style: 'line' },
-            timeScale: { timezone: 'Europe/Paris' },
-        });
-        expect(slice).toEqual({
-            layout: { background: '#000' },
-            panes: { separatorColor: '#111' },
-            grid: { vertLines: { visible: false } },
-            priceScale: { invert: true },
-            crosshair: { style: 'dotted' },
+            bars: { upColor: '#0a0' },
+            line: { width: 3 },
+            area: { lineColor: '#00f' },
+            baseline: { baselineLevel: 30 },
+            sessions: { premarketColor: '#f001' },
+        };
+        const patch = styleConfigPatch(
+            {
+                version: 1,
+                ...looks,
+                // The chart type, the market's baseline price, draw order, marks, trade
+                // markers and the (workspace-global) timezone stay per cell.
+                series: { style: 'line', baseline: 101, spacing: 2 },
+                stacking: { candles: 5, series: {} },
+                marks: { visible: false, groups: {} },
+                trades: { visible: false },
+                timeScale: { timezone: 'Europe/Paris' },
+            },
+            { series: { style: 'candles', baseline: null, spacing: 1 } },
+        );
+        expect(patch).toEqual({ ...looks, series: { spacing: 2 } });
+    });
+
+    it('styleConfigPatch leaves converged blocks out and is null once the looks agree', async () => {
+        const { styleConfigPatch } = await import('../src/workspace/sync');
+        const doc = { layout: { background: '#000' }, candles: { upColor: '#0f0' }, series: { style: 'line', spacing: 1 } };
+        expect(styleConfigPatch(doc, { ...doc, series: { style: 'candles', spacing: 1 } })).toBeNull();
+        expect(styleConfigPatch(doc, { ...doc, candles: { upColor: '#f00' } })).toEqual({ candles: { upColor: '#0f0' } });
+    });
+
+    it("styleConfigPatch mirrors a plugin style's candle keys (null = inherit) but none of its own settings", async () => {
+        const { styleConfigPatch } = await import('../src/workspace/sync');
+        const patch = styleConfigPatch(
+            { chartTypes: { flow: { candleUpColor: '#0f0', rowTicks: 2 } } },
+            { chartTypes: { flow: { candleWickUpColor: '#f00', rowTicks: 8 }, other: { candleDownColor: '#00f' } } },
+        );
+        expect(patch).toEqual({
+            chartTypes: {
+                flow: { candleUpColor: '#0f0', candleWickUpColor: null },
+                other: { candleDownColor: null },
+            },
         });
     });
 
-    it('styleConfigSlice is null on shapeless or sliceless documents', async () => {
-        const { styleConfigSlice } = await import('../src/workspace/sync');
-        expect(styleConfigSlice(null)).toBeNull();
-        expect(styleConfigSlice('nope')).toBeNull();
-        expect(styleConfigSlice({ candles: { upColor: '#0f0' } })).toBeNull();
-        expect(styleConfigSlice({ layout: 'not-an-object' })).toBeNull();
+    it('styleConfigPatch is null on shapeless documents', async () => {
+        const { styleConfigPatch } = await import('../src/workspace/sync');
+        expect(styleConfigPatch(null, {})).toBeNull();
+        expect(styleConfigPatch({ candles: { upColor: '#0f0' } }, 'nope')).toBeNull();
+        expect(styleConfigPatch({ layout: 'not-an-object' }, {})).toBeNull();
     });
 });
 
@@ -407,10 +438,12 @@ describe('cell identity ↔ slot position (declaredOrder / nextAutoCellId)', () 
 describe('resolveTyping — bare keystrokes on the workspace root', () => {
     const idle = { dialogs: 0, symbolSearch: false, timeframeEntry: false };
 
-    it('with nothing open: a letter seeds symbol search, a digit the timeframe entry', () => {
+    it('with nothing open: a letter or 0 seeds symbol search, a digit 1–9 the timeframe entry', () => {
         expect(resolveTyping('n', idle)).toEqual({ target: 'symbol', text: 'N' });
         expect(resolveTyping('Q', idle)).toEqual({ target: 'symbol', text: 'Q' });
+        expect(resolveTyping('0', idle)).toEqual({ target: 'symbol', text: '0' });
         expect(resolveTyping('1', idle)).toEqual({ target: 'timeframe', text: '1' });
+        expect(resolveTyping('9', idle)).toEqual({ target: 'timeframe', text: '9' });
         expect(resolveTyping('Escape', idle)).toBeNull();
         expect(resolveTyping(' ', idle)).toBeNull();
     });
@@ -421,7 +454,8 @@ describe('resolveTyping — bare keystrokes on the workspace root', () => {
         expect(resolveTyping('q', { dialogs: 1, symbolSearch: true, timeframeEntry: false })).toEqual({ target: 'symbol', text: 'Q' });
         expect(resolveTyping('2', { dialogs: 1, symbolSearch: true, timeframeEntry: false })).toEqual({ target: 'symbol', text: '2' });
         expect(resolveTyping('5', { dialogs: 1, symbolSearch: false, timeframeEntry: true })).toEqual({ target: 'timeframe', text: '5' });
-        expect(resolveTyping('m', { dialogs: 1, symbolSearch: false, timeframeEntry: true })).toEqual({ target: 'timeframe', text: 'm' });
+        expect(resolveTyping('0', { dialogs: 1, symbolSearch: false, timeframeEntry: true })).toEqual({ target: 'timeframe', text: '0' });
+        expect(resolveTyping('m', { dialogs: 1, symbolSearch: false, timeframeEntry: true })).toEqual({ target: 'timeframe', text: 'M' });
         expect(resolveTyping('Enter', { dialogs: 1, symbolSearch: true, timeframeEntry: false })).toBeNull();
     });
 

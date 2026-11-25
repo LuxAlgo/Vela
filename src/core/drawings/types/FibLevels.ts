@@ -19,6 +19,11 @@ export interface FibLevelLine {
  * fill bands between consecutive levels. Subclasses just declare the default ratio set.
  */
 export abstract class FibLevels extends FibRatios {
+    /** Price of a level for the two anchor prices; subclasses override to change which anchor ratio 0 sits on. */
+    protected levelPrice(ratio: number, p1: number, p2: number): number {
+        return p1 + ratio * (p2 - p1);
+    }
+
     /** Per-level pixel line + price for the ENABLED levels, spanning the anchors' time range. */
     levelLines(proj: Projector): FibLevelLine[] | null {
         const a = this.anchors[0];
@@ -28,11 +33,10 @@ export abstract class FibLevels extends FibRatios {
         const xb = proj.xOf(b.time);
         const x1 = Math.min(xa, xb);
         const x2 = Math.max(xa, xb);
-        const delta = b.price - a.price;
         const out: FibLevelLine[] = [];
         for (const lv of this.levels) {
             if (!lv.enabled) continue;
-            const price = a.price + lv.ratio * delta;
+            const price = this.levelPrice(lv.ratio, a.price, b.price);
             const y = proj.yOf(price, this.paneId);
             if (y == null) continue;
             out.push({ ratio: lv.ratio, color: lv.color, label: lv.label, price, x1, x2, y });
@@ -75,8 +79,7 @@ export abstract class FibLevels extends FibRatios {
         const a = this.anchors[0];
         const b = this.anchors[1];
         if (!a || !b) return null;
-        const delta = b.price - a.price;
-        const prices = this.levels.filter((l) => l.enabled).map((l) => a.price + l.ratio * delta);
+        const prices = this.levels.filter((l) => l.enabled).map((l) => this.levelPrice(l.ratio, a.price, b.price));
         if (prices.length === 0) return null;
         return { min: Math.min(...prices), max: Math.max(...prices) };
     }
