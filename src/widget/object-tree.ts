@@ -30,11 +30,11 @@ import {
     groupOf,
     groupState,
     groupTokenIndex,
+    nextGroupId,
     nextGroupName,
     paneRows,
     paneTokens,
     placeTokens,
-    pruneGroups,
     removeFromGroups,
     stackWrites,
     tokenIndexOfSlot,
@@ -423,10 +423,6 @@ export class ObjectTree extends SidePanel {
     private symbolName = '';
     /** The raw (possibly venue-prefixed) symbol — what icon resolution routes on. */
     private symbolRaw = '';
-    /** Drawing bundles — a view-side grouping, held for the panel's lifetime and never persisted.
-     *  Kept per chart because a workspace points this one panel at whichever chart is active, and
-     *  each chart's bundles have to survive the switch. */
-    private readonly groupsPerChart = new WeakMap<Vela, DrawGroup[]>();
     /** Group ids currently folded shut. Ids are never reused, so entries left behind by a group
      *  that is gone are inert and can outlive it. */
     private collapsed = new Set<string>();
@@ -437,16 +433,24 @@ export class ObjectTree extends SidePanel {
     /** Set while the panel pushes its pick to the chart, so the `drawing:selected` that comes
      *  back is recognised as our own echo instead of a fresh chart-side selection. */
     private syncingSelection = false;
-    private groupSeq = 0;
     private unsubs: Array<() => void> = [];
 
+    /** Drawing bundles. The chart keeps them with its drawings (`drawings.groups()`), so they
+     *  persist where the drawings do and each chart of a workspace has its own. */
     private get groups(): DrawGroup[] {
-        return (this.chart === null ? undefined : this.groupsPerChart.get(this.chart)) ?? [];
+        return this.chart?.drawings.groups() ?? [];
     }
 
     private set groups(next: DrawGroup[]) {
-        if (this.chart) this.groupsPerChart.set(this.chart, next);
+        // Our own write: the `drawing:groups` it raises is no news to the panel.
+        this.writingGroups = true;
+        try {
+            this.chart?.drawings.setGroups(next);
+        } finally {
+            this.writingGroups = false;
+        }
     }
+    private writingGroups = false;
     /** The last render's model, kept so a right-click reads the same state the rows show. */
     private pass: Pass | null = null;
     private readonly menu: ContextMenu;
@@ -488,6 +492,12 @@ export class ObjectTree extends SidePanel {
         for (const ev of REFRESH_EVENTS) {
             this.unsubs.push(chart.on(ev, () => this.refresh()));
         }
+        // Groups set from outside the panel (a host, a restored state) repaint it.
+        this.unsubs.push(
+            chart.on('drawing:groups', () => {
+                if (!this.writingGroups) this.refresh();
+            }),
+        );
         // The stacking rides the renderer config: a reorder made on the chart (the legend's
         // "Bring in front of …") reaches the tree through it.
         this.unsubs.push(chart.renderer.onConfigChanged(() => this.refresh()));
@@ -961,14 +971,14 @@ export class ObjectTree extends SidePanel {
     }
 
     // ── groups ─────────────────────────────────────────────────────────────
-    // A group is the panel's own idea, not the chart's: it bundles drawings so they hide, lock,
-    // delete and move as one. It lives as long as the panel does.
+    // A group bundles drawings so they hide, lock, delete and move as one. The chart keeps the
+    // groups with its drawings, so they are saved and restored along with them.
 
     /** Bundle drawings into a fresh group, which takes over the pick. */
     private makeGroup(ids: readonly string[]): void {
-        if (!canGroup(ids, this.groups)) return;
-        this.groupSeq += 1;
-        this.groups = [...this.groups, { id: `grp-${this.groupSeq}`, name: nextGroupName(this.groups, this.i18n), ids: [...ids] }];
+        const groups = this.groups;
+        if (!canGroup(ids, groups)) return;
+        this.groups = [...groups, { id: nextGroupId(groups), name: nextGroupName(groups, this.i18n), ids: [...ids] }];
         this.picked.clear();
         this.render();
     }
@@ -976,9 +986,9 @@ export class ObjectTree extends SidePanel {
     /** Start an empty group at the top of the main chart, named and ready to rename, for
      *  drawings to be dragged into. */
     private makeEmptyGroup(): void {
-        this.groupSeq += 1;
-        const id = `grp-${this.groupSeq}`;
-        this.groups = [...this.groups, { id, name: nextGroupName(this.groups, this.i18n), ids: [], pane: PRICE_PANE_ID }];
+        const groups = this.groups;
+        const id = nextGroupId(groups);
+        this.groups = [...groups, { id, name: nextGroupName(groups, this.i18n), ids: [], pane: PRICE_PANE_ID }];
         this.picked.clear();
         this.renaming = id;
         this.render();
@@ -1012,8 +1022,8 @@ export class ObjectTree extends SidePanel {
         this.render();
     }
 
-    /** Duplicate a drawing, keeping the copy in the same group as its original — the chart has
-     *  no notion of our groups, so the new id has to be spotted and filed here. */
+    /** Duplicate a drawing, keeping the copy in the same group as its original — a clone joins
+     *  no group by itself, so the new id has to be spotted and filed here. */
     private cloneInto(pass: Pass, id: string): void {
         const { chart } = pass;
         if (!chart.drawings.supported) return;
@@ -1568,15 +1578,11 @@ export class ObjectTree extends SidePanel {
     }
 
     /** Forget everything that refers to a drawing or group the chart no longer has — otherwise a
-     *  deleted drawing would keep a group alive, or stay counted in the selection bar. */
+     *  deleted drawing would stay counted in the selection bar. The chart drops a deleted
+     *  drawing from its group itself. */
     private prune(chart: Vela): void {
         const live = new Set((chart.drawings.supported ? chart.drawings.all() : []).map((d) => d.id));
         for (const id of [...this.picked]) if (!live.has(id)) this.picked.delete(id);
-        if (this.groups.length === 0) {
-            this.renaming = null;
-            return;
-        }
-        this.groups = pruneGroups(this.groups, live);
         if (this.renaming !== null && !this.groups.some((g) => g.id === this.renaming)) this.renaming = null;
     }
 }

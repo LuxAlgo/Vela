@@ -2,6 +2,12 @@
 
 All notable changes to Vela, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **Object tree groups are saved with the chart.** Groups you make in the object tree used to live only as long as the page: a reload, a switch between saved workspaces or `applyState` brought the drawings back ungrouped. The groups now travel in the drawings document (`drawings.toJSON().groups`), so they're saved and restored wherever the drawings are, including a workspace's saved state. `chart.drawings.groups()` and `setGroups()` read and replace them, and the new `drawing:groups` event says when they change. Undo and redo leave the groups as they are.
+
 ## [0.10.19]
 
 ### Fixed
