@@ -2288,6 +2288,8 @@ export class VelaWorkspace {
         // of the three above: unreported, the saved state keeps the drawings as they were.
         chart.on('drawing:history', () => this.markStateDirty());
         chart.on('drawing:replaced', () => this.markStateDirty());
+        // Groups ride the drawings document: a new grouping is a new saved state.
+        chart.on('drawing:groups', () => this.markStateDirty());
         // A chart that lands on another symbol joins the charts already on it, and is out
         // of the link from the start of the switch until then.
         this.drawingsSettled.set(cell.id, this.chartSymbolOf(cell));

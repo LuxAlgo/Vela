@@ -1,6 +1,6 @@
 import type { DrawingController, AddInit } from './drawings/DrawingController';
 import type { Drawing, DrawingTypeKey, SerializedDrawing } from './drawings/Drawing';
-import type { DrawingsDocument } from './drawings/document';
+import type { DrawingGroup, DrawingsDocument } from './drawings/document';
 import type { SnapMode } from './drawings/geometry';
 import type { DrawingMode } from './drawings/port';
 import type { DrawingsOption } from './drawings/toolbar';
@@ -232,6 +232,18 @@ export class DrawingsControl {
         return this.ctrl.all();
     }
 
+    /** The drawings' groups (the object tree's bundles), as copies. They persist with the
+     *  drawings in {@link toJSON}. */
+    groups(): DrawingGroup[] {
+        return this.ctrl.groups();
+    }
+    /** Replace the drawings' groups — for a host-side tree or list. Members that are not
+     *  drawings on this chart, or that an earlier group already holds, are left out.
+     *  Fires `drawing:groups` when the groups changed; not an undo step. */
+    setGroups(groups: readonly DrawingGroup[]): this {
+        this.ctrl.setGroups(groups);
+        return this;
+    }
     /** Snapshot all drawings as a versioned document (persistence). */
     toJSON(): DrawingsDocument {
         return this.ctrl.toJSON();

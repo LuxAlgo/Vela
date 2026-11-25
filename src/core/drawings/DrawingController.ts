@@ -13,7 +13,7 @@ import { DrawingHistory } from './DrawingHistory';
 import { createDrawing, deserializeDrawing } from './registry';
 import type { Drawing, DrawingTypeKey, SerializedDrawing } from './Drawing';
 import type { SnapMode } from './geometry';
-import { clonePlain, type DrawingsDocument } from './document';
+import { clonePlain, type DrawingGroup, type DrawingsDocument } from './document';
 import {
     applyToolDefaults,
     captureToolDefaults,
@@ -502,6 +502,17 @@ export class DrawingController {
         return this.store.serialize().drawings;
     }
 
+    /** The drawings' groups (copies). */
+    groups(): DrawingGroup[] {
+        return this.store.groups();
+    }
+
+    /** Replace the drawings' groups; `drawing:groups` fires when they changed. Groups are not
+     *  an undo step. */
+    setGroups(groups: readonly DrawingGroup[]): void {
+        if (this.store.setGroups(groups)) this.events.emit('drawing:groups', { groups: this.store.groups() });
+    }
+
     // ── persistence (works regardless of renderer support) ──
     toJSON(): DrawingsDocument {
         return this.store.serialize();
@@ -551,7 +562,8 @@ export class DrawingController {
 
     /** Restore a history snapshot, reconciling selection against what survived. */
     private restoreSnapshot(doc: DrawingsDocument): void {
-        this.store.load(doc); // fires onChange → sync() + autoscale
+        // Groups are not undo steps: the current ones stay, over the drawings the step leaves.
+        this.store.load({ ...doc, groups: this.store.groups() }); // fires onChange → sync() + autoscale
         this.selectedIds = this.selectedIds.filter((id) => this.store.has(id));
         this.announceSelection();
     }
