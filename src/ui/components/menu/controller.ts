@@ -30,6 +30,9 @@ export interface MenuItemDescriptor {
     /** Nested entries — the row becomes a submenu trigger opening its own list to the side.
      *  A branch is not selectable itself: `onSelect` only ever reports leaf ids. */
     submenu?: readonly MenuItemDescriptor[];
+    /** Let the label wrap onto several lines instead of the default single-line row.
+     *  For free-text entries (the alerts bell) where the whole message matters. */
+    wrap?: boolean;
 }
 
 export interface MenuControllerOptions {

@@ -178,6 +178,7 @@ class Surface {
             const branch = item.submenu !== undefined && item.submenu.length > 0;
             const li = doc.createElement('li');
             li.className = 'vela-menu-item';
+            if (item.wrap) li.classList.add('vela-menu-item--wrap');
             li.dataset.veiId = item.id;
             if (item.toggle) {
                 // Switch row: the pill carries the state.

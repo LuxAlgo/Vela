@@ -37,6 +37,10 @@ export const MENU_CSS = `
 .vela-menu-item[data-disabled] { opacity: 0.4; cursor: default; }
 .vela-menu-item .vela-icon { width: 16px; height: 16px; font-size: 16px; justify-content: center; color: var(--vela-fg-muted); }
 .vela-menu-item .vela-menu-label { flex: 1 1 auto; }
+/* Free-text row (menu item flagged wrap): the label breaks instead of widening the
+   menu, so a long message stays fully readable. */
+.vela-menu-item--wrap { white-space: normal; align-items: flex-start; }
+.vela-menu-item--wrap .vela-menu-label { max-width: 460px; overflow-wrap: anywhere; line-height: 1.45; }
 .vela-menu-item .vela-menu-hint { color: var(--vela-fg-faint); font-size: var(--vela-font-size-sm); }
 /* Active entry: the row surface carries the selection — a stronger background wash
    than the hover one, plus bright ink. Declared after the hover rule so a selected

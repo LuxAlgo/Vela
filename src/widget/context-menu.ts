@@ -94,7 +94,9 @@ export class ChartContextMenu {
 
     private contributed(zone: Zone): MenuItemDescriptor[] {
         const ctx = this.cbs.getContext?.();
-        return widgetActions(`context:${zone}`, ctx).map((a, i) => ({
+        const raw = widgetActions(`context:${zone}`, ctx);
+        console.log('[vela-diag] contributed', zone, 'ctx?', !!ctx, 'actions', raw.map((a) => a.id));
+        return raw.map((a, i) => ({
             id: `action:${a.id}`,
             label: a.label,
             icon: a.icon,

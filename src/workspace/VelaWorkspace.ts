@@ -152,6 +152,32 @@ const POOL_CAP = 16; // dormant slot states kept across layout shrinks
 const TIME_AXIS_H = 22; // px the renderer reserves for a time axis (mirrors NativeRenderer's)
 const ALERT_CAP = 50;
 
+/** Alert text as the hosts render it: strings pass through, anything else (a script
+ *  can hand the engine a map or a mis-slotted options object) becomes readable text
+ *  instead of `[object Object]`. */
+function alertText(value: unknown): string {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'object') {
+        try {
+            return JSON.stringify(value);
+        } catch {
+            return String(value);
+        }
+    }
+    return String(value);
+}
+
+/** Strings only, first occurrence wins — the star sets are small ordered lists, and a
+ *  duplicate would render twice in the chip row / star row. */
+function dedupeStrings(values: readonly string[]): string[] {
+    const out: string[] = [];
+    for (const v of values) {
+        if (typeof v === 'string' && v.length > 0 && !out.includes(v)) out.push(v);
+    }
+    return out;
+}
+
 const STYLE_ID = 'vela-workspace';
 const CSS = `
 .vela-workspace { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; background: var(--vela-bg); }
@@ -938,6 +964,45 @@ export class VelaWorkspace {
         state: (): SyncOptions => ({ ...this.syncOpts }),
     };
 
+    // ── workspace-level star sets (ONE row for every cell in the grid) ──────────
+    /**
+     * Both star sets as one plain snapshot: favorite DRAWING TOOLS (the floating
+     * toolbar's star row) and favorite TIMEFRAMES (the topbar's quick chips). Both are
+     * WORKSPACE preferences — one set for the whole grid — so a host that wants them
+     * shared ACROSS workspaces (pages, reloads) reads them here and feeds them back
+     * through {@link setFavoriteSets} on the next construction.
+     */
+    getFavoriteSets(): { tools: string[]; timeframes: string[] } {
+        return { tools: [...this.favs], timeframes: [...this.tfFavs] };
+    }
+
+    /**
+     * REPLACE both star sets — the restore end of {@link getFavoriteSets}. Applied to
+     * every live cell, the shared toolbar and the topbar chips, so a grid is coherent
+     * at once. It deliberately OVERRIDES whatever a restored document carried: a host
+     * calling this owns these two preferences. Empty arrays are meaningful (unstar
+     * everything), unlike the document codec which drops empty lists. Unknown and
+     * duplicate entries are dropped quietly. The document dirty mark is raised as a
+     * side effect when the drawing set really changed (the toolbar event path).
+     */
+    setFavoriteSets(prefs: { tools?: readonly string[]; timeframes?: readonly string[] }): void {
+        if (Array.isArray(prefs.tools)) {
+            const tools = dedupeStrings(prefs.tools);
+            if (tools.join('\u0000') !== this.favs.join('\u0000')) {
+                this.favs = tools;
+                for (const cell of this.cellsById.values()) cell.chart.drawings.setFavorites(tools as never[]);
+                this.drawToolbar?.setFavorites(tools as never[]);
+            }
+        }
+        if (Array.isArray(prefs.timeframes)) {
+            const tfs = dedupeStrings(prefs.timeframes);
+            if (tfs.join('\u0000') !== this.tfFavs.join('\u0000')) {
+                this.tfFavs = tfs;
+                this.topbar.setTimeframeFavorites(tfs);
+            }
+        }
+    }
+
     // ── state surface (the SDK's read/restore of the whole grid's config + content) ──
     /**
      * Snapshot the COMPLETE workspace state as a versioned, serializable document:
@@ -1677,9 +1742,15 @@ export class VelaWorkspace {
             const source = [parseSymbol(cell.symbol).ticker || cell.symbol, timeframeLabel(cell.timeframe), alert.indicator]
                 .filter(Boolean)
                 .join(' ');
-            this.alerts.unshift({ cellId: cell.id, source, title: alert.title ?? 'Alert', message: alert.message, time: alert.time });
+            // `EngineAlert` types title/message as text, but a script may hand the engine
+            // an object (`alert(someMap)`, a mis-slotted named-args bag). Coerce once here
+            // so every surface — toast, bell, drawer — reads the content instead of
+            // `[object Object]`.
+            const title = alertText(alert.title) || 'Alert';
+            const message = alertText(alert.message);
+            this.alerts.unshift({ cellId: cell.id, source, title, message, time: alert.time });
             if (this.alerts.length > this.alertCap) this.alerts.pop();
-            this.toastHost.show(`${source} — ${alert.title ? alert.title + ' — ' : ''}${alert.message}`, 'info', 4000);
+            this.toastHost.show(`${source} — ${alert.title ? title + ' — ' : ''}${message}`, 'info', 4000);
             this.topbar.setAlertCount(this.alerts.length);
         });
         // Favorites are a WORKSPACE preference: one shared toolbar, one star set — a star
@@ -2245,7 +2316,11 @@ export class VelaWorkspace {
         const items = this.alerts.length
             ? this.alerts.map((a, i) => ({
                   id: String(i),
-                  label: `${a.source} · ${new Date(a.time).toLocaleTimeString()} · ${a.title}: ${a.message}`.slice(0, 80),
+                  // Wrapped row: an alert carries source + time + title + message and does
+                  // not fit one line — cutting it at N chars is what made the bell read as
+                  // "incomplete", so let the row wrap and show all of it.
+                  label: `${a.source} · ${new Date(a.time).toLocaleTimeString()} · ${a.title}: ${a.message}`,
+                  wrap: true,
               }))
             : [{ id: 'none', label: 'No alerts yet', disabled: true }];
         this.alertsMenu = new Menu({
