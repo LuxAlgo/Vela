@@ -91,6 +91,20 @@ export interface IndicatorModel {
      */
     ownScale?: boolean;
     /**
+     * How this indicator's values normalize when its pane is in `'percent'` or
+     * `'indexed'` scale mode. `'pane'` (the default) uses the pane's master baseline
+     * (appropriate for studies in the main series' own price units, such as a moving
+     * average). `'own'` normalizes against this indicator's OWN first visible value
+     * (appropriate for an independent instrument overlaid for comparison, so both
+     * series start at 0% / 100 at the left edge of the visible window).
+     */
+    percentBaseline?: 'pane' | 'own';
+    /**
+     * When true, the renderer draws a colored last-value chip (with the series name)
+     * on the price axis for this indicator's primary visible price-scale series.
+     */
+    priceAxisLabel?: boolean;
+    /**
      * Chart time (epoch ms) of the execution's FIRST bar. Index-aligned payloads —
      * dense series point/bar arrays and `bar_index` drawing coordinates — count from
      * this bar, so a renderer aligns them to the chart via the offset of this time in

@@ -165,6 +165,10 @@ export class SceneGraph {
      *  also shown, the two merge into one stacked block (countdown under the label);
      *  when either shows alone it's centered on the latest price level. */
     showCountdown = true;
+    /** Draw each indicator plot's latest value as a chip on its pane's price scale. */
+    showIndicatorValueLabels = true;
+    /** Draw each tagged plot's name in a tinted chip just inside the plot, beside its value chip. */
+    showIndicatorNameLabels = false;
     /** True while the active series has variable bar durations (tick charts, etc.):
      *  suppresses the wall-clock bar countdown, preserves same-millisecond bars, and
      *  formats crosshair stamps with seconds. */
@@ -180,11 +184,16 @@ export class SceneGraph {
      *  price-axis decimals — the instrument's true precision instead of the zoom-derived
      *  formula. Undefined until symbol metadata loads (the formula is the fallback). */
     priceMintick: number | undefined = undefined;
+    /** Active symbol's short display name (bare ticker, e.g. `'AAPL'`), shown beside the
+     *  main last-price chip when compared instruments are also labeled on the price axis. */
+    symbolName: string | undefined = undefined;
     /** Price-axis mode on the price pane: `'price'` (absolute) or `'percent'` (change
      *  vs `percentBaseline`). Gridlines, axis labels and crosshair chip all follow it. */
     scaleMode: ScaleMode = 'price';
     /** Reference price for percent mode (first visible bar's close); recomputed per frame. */
     percentBaseline = 0;
+    /** Per-model visible percent baseline for `percentBaseline: 'own'` models (recomputed per frame). */
+    readonly modelPercentBaselines = new Map<string, number>();
     /** IANA time zone for the time axis + crosshair/data-window stamps (`'UTC'` default). */
     timezone = 'UTC';
     /** The chart's formatters (`chart.i18n.format`) for axis labels, chips and readouts;
@@ -295,11 +304,24 @@ export class SceneGraph {
         this.indicatorScales.delete(id);
     }
 
-    /** The price window a model renders on: its own scale when merged (`ownScale`), else the pane's. */
+    /** The price window a model renders on: its own scale when merged (`ownScale`), an
+     *  affine-rebased window when `percentBaseline === 'own'` in percent/indexed mode so its
+     *  first visible bar aligns with the pane's 0% / 100 baseline, else the pane's master scale. */
     scaleFor(model: IndicatorModel, pane: PaneNode): PriceScale {
         if (model.ownScale === true) {
             const s = this.indicatorScales.get(model.id);
             if (s) return s.scale;
+        }
+        if (model.percentBaseline === 'own') {
+            const pct = percentScaleFor(this, pane);
+            const ownBase = this.modelPercentBaselines.get(model.id);
+            if (pct && ownBase != null && Number.isFinite(ownBase) && ownBase !== 0) {
+                const ratio = ownBase / pct.baseline;
+                if (ratio < 0) {
+                    return { ...pane.scale, min: pane.scale.max * ratio, max: pane.scale.min * ratio, invert: !pane.scale.invert };
+                }
+                return { ...pane.scale, min: pane.scale.min * ratio, max: pane.scale.max * ratio };
+            }
         }
         return pane.scale;
     }
@@ -473,4 +495,20 @@ export function percentScaleFor(scene: SceneGraph, pane: PaneNode): PctScale | u
     const baseline = pane.percentBaseline;
     if (!Number.isFinite(baseline) || baseline === 0) return undefined;
     return { baseline, indexed: mode === 'indexed' };
+}
+
+/** Percent/indexed descriptor for ONE model on `pane`: own-scale models keep absolute values;
+ *  `percentBaseline: 'own'` models use their own first visible value; others share the pane's. */
+export function percentScaleForModel(scene: SceneGraph, pane: PaneNode, model: IndicatorModel): PctScale | undefined {
+    if (model.ownScale === true) return undefined;
+    const pct = percentScaleFor(scene, pane);
+    if (!pct) return undefined;
+    if (model.percentBaseline === 'own') {
+        const ownBase = scene.modelPercentBaselines.get(model.id);
+        if (ownBase != null && Number.isFinite(ownBase) && ownBase !== 0) {
+            return { baseline: ownBase, indexed: pct.indexed };
+        }
+        return undefined;
+    }
+    return pct;
 }

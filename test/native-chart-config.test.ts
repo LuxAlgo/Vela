@@ -134,7 +134,7 @@ describe('NativeRenderer.getConfig — defaults resolve to concrete values', () 
         expect(cfg.grid.vertLines).toEqual({ visible: true, color: '#20222c' });
         expect(cfg.grid.horzLines).toEqual({ visible: true, color: '#20222c' });
         expect(cfg.crosshair).toEqual({ color: '#9aa0ad', width: 1, style: 'dashed', opacity: 0.4, labelBackground: '#595959' });
-        expect(cfg.priceScale).toEqual({ mode: 'price', log: false, invert: false, priceOnly: false, freePan: false, borderColor: '#2a2b30', labelsVisible: true, currentPriceLine: true, priceLabel: true, countdown: true, animateLastPrice: false });
+        expect(cfg.priceScale).toEqual({ mode: 'price', log: false, invert: false, priceOnly: false, freePan: false, borderColor: '#2a2b30', labelsVisible: true, currentPriceLine: true, priceLabel: true, countdown: true, indicatorValueLabels: true, indicatorNameLabels: false, animateLastPrice: false });
         expect(cfg.panes).toEqual({ separatorColor: '#2a2b30' }); // inherits the theme border
         expect(cfg.timeScale).toEqual({ timezone: 'UTC' });
         expect(cfg.candles.upColor).toBe('#089981');
@@ -177,6 +177,18 @@ describe('NativeRenderer.applyConfig — applies + syncs the live scene fields',
         expect(cfg.grid.vertLines.visible).toBe(false);
         expect(cfg.grid.horzLines.color).toBe('#222222');
         expect(cfg.crosshair).toMatchObject({ color: '#ff0000', opacity: 0.7, width: 2 });
+    });
+
+    it('keeps the indicator value and name label choices in the saved settings', () => {
+        const r = new NativeRenderer();
+        r.applyFeature('indicatorNameLabels', true);
+        r.applyFeature('indicatorValueLabels', false);
+        const saved = r.getConfig();
+        expect(saved.priceScale).toMatchObject({ indicatorValueLabels: false, indicatorNameLabels: true });
+        const restored = new NativeRenderer();
+        restored.applyConfig(saved);
+        expect(restored.readFeature('indicatorValueLabels')).toBe(false);
+        expect(restored.readFeature('indicatorNameLabels')).toBe(true);
     });
 
     it('applies the series spacing multiplier and reflects it in getConfig (clamped)', () => {
