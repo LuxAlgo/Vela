@@ -146,7 +146,7 @@ export {
     deserializeDrawing,
     type DrawingTypeMeta,
 } from './registry';
-export { migrate, isValidSerialized, clonePlain, DRAWINGS_DOC_VERSION, type DrawingsDocument } from './document';
+export { migrate, isValidSerialized, clonePlain, DRAWINGS_DOC_VERSION, sanitizeGroups, type DrawingsDocument, type DrawingGroup } from './document';
 export { DrawingStore } from './DrawingStore';
 export { DrawingHistory } from './DrawingHistory';
 export * from './hittest';

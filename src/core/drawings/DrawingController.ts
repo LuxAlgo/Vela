@@ -13,7 +13,7 @@ import { DrawingHistory } from './DrawingHistory';
 import { createDrawing, deserializeDrawing } from './registry';
 import type { Drawing, DrawingTypeKey, SerializedDrawing } from './Drawing';
 import type { SnapMode } from './geometry';
-import { clonePlain, type DrawingsDocument } from './document';
+import { clonePlain, type DrawingGroup, type DrawingsDocument } from './document';
 import {
     applyToolDefaults,
     captureToolDefaults,
@@ -364,9 +364,11 @@ export class DrawingController {
         this.deleteMany(ids);
     }
 
-    /** Delete every drawing as ONE undo step. */
+    /** Delete every drawing as ONE undo step, and every group with them: a group that was
+     *  empty all along would otherwise outlive the drawings. */
     clear(): void {
         this.deleteMany(this.store.serialize().drawings.map((d) => d.id));
+        this.setGroups([]);
     }
 
     /** Whether a symbol change empties the chart of its drawings (see {@link onSymbolChange}). */
@@ -384,7 +386,10 @@ export class DrawingController {
      * with the undo history and no `drawing:removed`, since the user removed nothing.
      */
     onSymbolChange(): void {
-        if (this.clearOnSymbolChange && this.store.serialize().drawings.length > 0) this.replace(null, 'symbol');
+        if (!this.clearOnSymbolChange) return;
+        // An empty group belongs to the symbol too: a chart with one and no drawings is not empty.
+        const doc = this.store.serialize();
+        if (doc.drawings.length > 0 || (doc.groups?.length ?? 0) > 0) this.replace(null, 'symbol');
     }
 
     setLocked(id: string, v: boolean): void {
@@ -502,6 +507,17 @@ export class DrawingController {
         return this.store.serialize().drawings;
     }
 
+    /** The drawings' groups (copies). */
+    groups(): DrawingGroup[] {
+        return this.store.groups();
+    }
+
+    /** Replace the drawings' groups; `drawing:groups` fires when they changed. Groups are not
+     *  an undo step. */
+    setGroups(groups: readonly DrawingGroup[]): void {
+        if (this.store.setGroups(groups)) this.events.emit('drawing:groups', { groups: this.store.groups() });
+    }
+
     // ── persistence (works regardless of renderer support) ──
     toJSON(): DrawingsDocument {
         return this.store.serialize();
@@ -551,7 +567,8 @@ export class DrawingController {
 
     /** Restore a history snapshot, reconciling selection against what survived. */
     private restoreSnapshot(doc: DrawingsDocument): void {
-        this.store.load(doc); // fires onChange → sync() + autoscale
+        // Groups are not undo steps: the current ones stay, over the drawings the step leaves.
+        this.store.load({ ...doc, groups: this.store.groups() }); // fires onChange → sync() + autoscale
         this.selectedIds = this.selectedIds.filter((id) => this.store.has(id));
         this.announceSelection();
     }
