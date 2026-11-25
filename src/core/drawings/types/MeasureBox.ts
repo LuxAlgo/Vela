@@ -1,23 +1,11 @@
 import { msg } from '../../i18n/message';
-import { localizeNumberText, textOf } from '../../i18n/text';
-import { englishTranslator } from '../../i18n/translator';
 import type { Translator } from '../../i18n/types';
 import { Drawing, type AnchorSlot, type SerializedDrawing } from '../Drawing';
 import type { Projector } from '../geometry';
+import { measureLines } from '../measureText';
 import type { SettingsSchema } from '../schema';
 import { LINE_FIELDS, TEXT_SIZE_OPTIONS } from '../schema';
 import { pointInBox, handleAt } from '../hittest';
-
-/** The measurement lines; numbers come formatted (`count` picks the plural form). */
-const MEASURE_TEXT = {
-    priceChange: msg('drawing.measure.priceChange', '{change} ({percent}%)'),
-    barsAndDuration: msg('drawing.measure.barsAndDuration', '{count, plural, one {{bars} bar} other {{bars} bars}}, {duration}'),
-};
-
-/** Signed value with 2 decimals (e.g. "+523.45"). */
-function signed(n: number): string {
-    return `${n >= 0 ? '+' : ''}${n.toFixed(2)}`;
-}
 
 /** A compact duration string for a millisecond span (e.g. "2d 4h", "3h 15m"). */
 export function formatDuration(ms: number): string {
@@ -68,12 +56,12 @@ export abstract class MeasureBox extends Drawing {
     // sets the opposite one — consistent with the box/Gann tools.
 
     /** The measurement lines, filtered by the enabled toggles, in `i18n`'s language
-     *  (English without one). */
+     *  (English without one): the headline, then the quieter detail line. */
     measureLabel(proj: Projector, i18n?: Translator): string[] {
-        const lines: string[] = [];
-        if (this.showPrice) lines.push(this.priceLabel(i18n));
-        if (this.showDate) lines.push(this.timeLabel(proj, i18n));
-        return lines;
+        const a = this.anchors[0];
+        const b = this.anchors[1];
+        if (!a || !b) return [];
+        return measureLines(a, b, proj, this.paneId, i18n, { price: this.showPrice, time: this.showDate });
     }
 
     /** Up (later price ≥ earlier) → green; else red. */
@@ -81,26 +69,6 @@ export abstract class MeasureBox extends Drawing {
         const a = this.anchors[0];
         const b = this.anchors[1];
         return a != null && b != null && b.price >= a.price;
-    }
-
-    /** Formatted `Δprice (Δ%)` between the two anchors. */
-    protected priceLabel(i18n?: Translator): string {
-        const a = this.anchors[0];
-        const b = this.anchors[1];
-        if (!a || !b) return '';
-        const delta = b.price - a.price;
-        const percent = a.price !== 0 ? (delta / a.price) * 100 : 0;
-        return textOf(i18n, MEASURE_TEXT.priceChange, { change: localizeNumberText(signed(delta), i18n), percent: localizeNumberText(signed(percent), i18n) });
-    }
-
-    /** Formatted `N bars, duration` between the two anchors (bars only when the projector knows). */
-    protected timeLabel(proj: Projector, i18n?: Translator): string {
-        const a = this.anchors[0];
-        const b = this.anchors[1];
-        if (!a || !b) return '';
-        const duration = (i18n ?? englishTranslator()).format.duration(b.time - a.time, { style: 'span', surface: 'drawing' });
-        const bars = proj.barsBetween ? Math.round(proj.barsBetween(a.time, b.time)) : null;
-        return bars != null ? textOf(i18n, MEASURE_TEXT.barsAndDuration, { count: bars, bars: localizeNumberText(String(bars), i18n), duration }) : duration;
     }
 
     private rect(proj: Projector): { x1: number; y1: number; x2: number; y2: number } | null {

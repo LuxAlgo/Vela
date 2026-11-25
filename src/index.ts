@@ -78,6 +78,7 @@ export type {
     SettingsSchema,
     SettingsField,
     Projector,
+    PriceSteps,
     SnapMode,
     DrawingIntent,
     DrawingMode,

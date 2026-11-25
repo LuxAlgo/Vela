@@ -1,5 +1,6 @@
 import type { IChartRenderer, VisibleRange } from '../ports/IChartRenderer';
 import type { MarketDataFeed, BarRange, SymbolFacts, SymbolInfo } from '../ports/MarketDataFeed';
+import { tickDecimals } from '../format/numbers';
 import type { ScriptingEngine, ExecutionMarket, VisibleBarRange, BarsChangeReason, PreparedScript } from '../ports/ScriptingEngine';
 import type { Unsubscribe } from '../util/types';
 import { isSameBar, isNewerBar, type OHLCV } from '../model/ohlcv';
@@ -1613,7 +1614,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
     private applySymbolFacts(facts: SymbolFacts | null): void {
         const prev = this.facts;
         const mintickChanged = prev?.mintick !== facts?.mintick;
-        if (prev === facts || (prev && facts && prev.ohlc === facts.ohlc && prev.volume === facts.volume && !mintickChanged)) return;
+        if (prev === facts || (prev && facts && prev.ohlc === facts.ohlc && prev.volume === facts.volume && prev.pipsize === facts.pipsize && !mintickChanged)) return;
         this.facts = facts;
         if (mintickChanged) this.renderer.setPricePrecision?.(facts?.mintick);
         this.renderer.setSymbolFacts?.(facts);
@@ -3444,5 +3445,12 @@ function symbolFactsOf(info: SymbolInfo | undefined): SymbolFacts | null {
     if (typeof mintick === 'number' && Number.isFinite(mintick) && mintick > 0) facts.mintick = mintick;
     if (typeof info.ohlc === 'boolean') facts.ohlc = info.ohlc;
     if (typeof info.volume === 'boolean') facts.volume = info.volume;
+    const { pipsize } = info;
+    if (typeof pipsize === 'number' && Number.isFinite(pipsize) && pipsize > 0) facts.pipsize = pipsize;
+    else if (typeof info.type === 'string' && info.type.toLowerCase() === 'forex' && facts.mintick) {
+        // a pair quoted to whole units or one decimal has no standard pip: its moves count in ticks
+        const d = tickDecimals(facts.mintick);
+        if (d >= 2) facts.pipsize = d >= 4 ? 0.0001 : 0.01;
+    }
     return facts;
 }

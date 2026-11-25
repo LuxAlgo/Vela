@@ -826,10 +826,11 @@ export class NativeRenderer implements IChartRenderer {
     /** Port surface: the active symbol's style-deciding facts. A chosen style they rule out
      *  draws as its fallback, and an open settings dialog re-greys its style list. */
     setSymbolFacts(facts: SymbolFacts | null): void {
+        const pipChanged = this.symbolFacts?.pipsize !== facts?.pipsize; // measure labels count in pips
         this.symbolFacts = facts ? { ...facts } : null;
         const before = this.scene.priceStyle;
         this.showPriceStyle();
-        if (this.scene.priceStyle !== before) this.scheduler?.invalidate(InvalidateLevel.Full);
+        if (this.scene.priceStyle !== before || pipChanged) this.scheduler?.invalidate(InvalidateLevel.Full);
         if (this.settingsDialog?.isOpen()) this.settingsDialog.refresh(this.getConfig());
     }
 
@@ -3786,6 +3787,10 @@ export class NativeRenderer implements IChartRenderer {
                 ? (tf, from, to) => this.userDrawings!.seriesGateway!.seriesInRange(tf, from, to)
                 : undefined,
             (paneId) => paneId === PRICE_PANE_ID && this.scene.priceMintick ? tickDecimals(this.scene.priceMintick) || 2 : undefined,
+            (paneId) =>
+                paneId === PRICE_PANE_ID && this.scene.priceMintick
+                    ? { tick: this.scene.priceMintick, pip: this.symbolFacts?.pipsize }
+                    : undefined,
         );
     }
 

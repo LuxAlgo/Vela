@@ -267,6 +267,33 @@ describe('a bare chart on a symbol with one value per bar', () => {
         await until(() => chart.symbolFacts() !== null, 'invalid tick metadata');
         expect(chart.symbolFacts()).toEqual({});
     });
+
+    it('a currency pair counts in pips: 0.0001, 0.01 when quoted to three decimals, none in whole units, or the stated pip size', async () => {
+        const v = venue();
+        const info: Record<string, SymbolInfo> = {
+            EURUSD: { ticker: 'EURUSD', type: 'forex', mintick: 0.00001 },
+            USDJPY: { ticker: 'USDJPY', type: 'forex', mintick: 0.001 },
+            XAUUSD: { ticker: 'XAUUSD', type: 'forex', mintick: 0.01, pipsize: 0.1 },
+            GBPUSD: { ticker: 'GBPUSD', type: 'FOREX', mintick: 0.00001 },
+            USDIDR: { ticker: 'USDIDR', type: 'forex', mintick: 1 },
+            BTC: { ticker: 'BTC', type: 'crypto', mintick: 0.01 },
+        };
+        v.provider.getSymbolInfo = async (ticker) => info[ticker]!;
+        v.provider.listSymbols = () => Promise.resolve(Object.keys(info).map((ticker) => ({ ticker })));
+        const chart = chartOn('EURUSD', v);
+        await chart.ready();
+        await until(() => chart.symbolFacts()?.pipsize === 0.0001, 'EURUSD pip');
+        await chart.setMarket({ symbol: 'USDJPY' });
+        await until(() => chart.symbolFacts()?.pipsize === 0.01, 'USDJPY pip');
+        await chart.setMarket({ symbol: 'XAUUSD' });
+        await until(() => chart.symbolFacts()?.pipsize === 0.1, 'stated pip');
+        await chart.setMarket({ symbol: 'GBPUSD' });
+        await until(() => chart.symbolFacts()?.pipsize === 0.0001, 'a type in capitals');
+        await chart.setMarket({ symbol: 'USDIDR' });
+        await until(() => chart.symbolFacts()?.mintick === 1 && chart.symbolFacts()?.pipsize === undefined, 'no pip on a pair quoted in whole units');
+        await chart.setMarket({ symbol: 'BTC' });
+        await until(() => chart.symbolFacts()?.mintick === 0.01 && chart.symbolFacts()?.pipsize === undefined, 'no pip off forex');
+    });
 });
 
 describe('workspace — the style picker on a symbol with one value per bar', () => {
