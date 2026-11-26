@@ -19,6 +19,15 @@ import { BinanceProvider } from '../src/data/providers/binance';
 import { addSampleMarks } from './marks';
 import { DemoEngine, DEMO_SCRIPTS } from './demo-engine';
 import { playgroundStorage } from './persistence';
+import { registerPlaygroundDrawings } from './custom-drawings';
+import { defineDrawing } from '../src/plugin';
+
+// Custom drawing tools written against the plugin entry: they join the drawing toolbar as
+// its last group ("Custom tools"). See custom-drawings.ts.
+registerPlaygroundDrawings();
+// Try one from the console: `defineDrawing({ type: 'my.tool', label: 'Mine', shapes: (c) =>
+// [{ kind: 'path', points: c.points }] })` — the toolbar lists it at once.
+(window as unknown as { defineDrawing: typeof defineDrawing }).defineDrawing = defineDrawing;
 
 // The playground's CUSTOM persistence (shared with the workspace page): with `persist`
 // on, the shell saves and restores EVERYTHING through this adapter — prefs, renderer

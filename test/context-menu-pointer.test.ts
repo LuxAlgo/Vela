@@ -7,7 +7,8 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { CrosshairEvent } from '../src/core/ports/IChartRenderer';
 import type { MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
 import type { Vela } from '../src/Vela';
-import { registerWidgetAction, type ContextMenuPointer, type WidgetContext } from '../src/widget/contributions';
+import type { SerializedDrawing } from '../src/core/drawings';
+import { registerDrawingAction, registerWidgetAction, type ContextMenuPointer, type WidgetContext } from '../src/widget/contributions';
 import { ChartContextMenu } from '../src/widget/context-menu';
 
 const menus = vi.hoisted(() => [] as Array<{ items: readonly MenuItemDescriptor[]; select: (id: string) => void; opened: number }>);
@@ -43,7 +44,8 @@ function fakeHost(): HTMLElement & { fire(type: string, e: Record<string, unknow
     } as unknown as HTMLElement & { fire(type: string, e: Record<string, unknown>): void };
 }
 
-function fakeChart(): { chart: Vela; move(e: Partial<CrosshairEvent>): void; subscribers(): number } {
+/** `drawings` stands in for the chart's drawings surface (default: a chart without drawings). */
+function fakeChart(drawings: object = { supported: false, all: () => [] }): { chart: Vela; move(e: Partial<CrosshairEvent>): void; subscribers(): number } {
     const cbs = new Set<(e: CrosshairEvent) => void>();
     const chart = {
         renderer: {
@@ -55,7 +57,7 @@ function fakeChart(): { chart: Vela; move(e: Partial<CrosshairEvent>): void; sub
             set: () => undefined,
             openSettings: () => undefined,
         },
-        drawings: { supported: false, all: () => [] },
+        drawings,
         indicators: () => [],
     } as unknown as Vela;
     return {
@@ -200,5 +202,99 @@ describe('ChartContextMenu — the pointer on the action context', () => {
 
         host.fire('contextmenu', { clientX: 300, clientY: 200 });
         expect(menus[0]!.items.find((i) => i.id === 'action:test.copy-price')).toMatchObject({ icon: 'clone' });
+    });
+});
+
+describe('ChartContextMenu: the actions of the drawing under the pointer', () => {
+    const doc = (id: string, type: string, price = 100): SerializedDrawing => ({ id, type, paneId: 'price', anchors: [{ time: 0, price }] }) as unknown as SerializedDrawing;
+
+    /** A chart with two drawings, the pointer over `hovered` (an id, or null for none). */
+    function onDrawings(hovered: string | null) {
+        const state = { hovered, drawings: [doc('h1', 'hline'), doc('b1', 'box')] };
+        const fake = fakeChart({
+            supported: true,
+            all: () => state.drawings.map((d) => ({ ...d })),
+            hovered: () => (state.hovered ? { id: state.hovered, part: null } : null),
+        });
+        const host = fakeHost();
+        const live = liveContext();
+        const menu = new ChartContextMenu(host, { resetView: () => undefined, getContext: () => live.ctx });
+        menu.onChart(fake.chart);
+        const open = (x = 300, y = 200): string[] => {
+            host.fire('contextmenu', { clientX: x, clientY: y });
+            return menus[menus.length - 1]!.items.map((i) => i.id);
+        };
+        return { state, live, open, menu: () => menus[menus.length - 1]! };
+    }
+
+    const BUILTIN = ['reset-view', 'remove-drawings', 'remove-indicators', 'settings:Canvas'];
+    const ran: Array<{ id: string; drawing: SerializedDrawing; ctx: WidgetContext }> = [];
+    function register(): void {
+        ran.length = 0;
+        const run = (id: string) => (ctx: WidgetContext, drawing: SerializedDrawing) => void ran.push({ id, drawing, ctx });
+        disposers.push(
+            registerDrawingAction({ id: 'test.export', icon: 'clone', label: 'Export', surfaces: ['menu'], run: run('test.export') }),
+            registerDrawingAction({ id: 'test.alert', icon: 'alert', label: 'Add alert', surfaces: ['toolbar', 'menu'], when: (d) => d.type === 'hline', run: run('test.alert') }),
+            registerDrawingAction({ id: 'test.default', icon: 'clone', label: 'Default surfaces', run: run('test.default') }),
+            registerDrawingAction({ id: 'test.bar', icon: 'clone', label: 'Toolbar only', surfaces: ['toolbar'], run: run('test.bar') }),
+        );
+    }
+
+    it('lead the body menu over a drawing, before the built-in rows and an order -100 action', () => {
+        register();
+        disposers.push(registerWidgetAction({ id: 'test.copy-price', target: 'context:body', label: 'Copy price', icon: 'clone', order: -100, run: () => undefined }));
+        const s = onDrawings('h1');
+        expect(s.open()).toEqual(['drawing-action:test.export', 'drawing-action:test.alert', 'action:test.copy-price', ...BUILTIN]);
+        const items = s.menu().items;
+        expect(items[0]).toMatchObject({ label: 'Export', icon: 'clone', separatorBefore: false });
+        expect(items[1]).toMatchObject({ label: 'Add alert', icon: 'alert', separatorBefore: false });
+        // Their own group: a separator closes it.
+        expect(items[2]!.separatorBefore).toBe(true);
+    });
+
+    it('run on the drawing that was under the pointer, as it is at the click, with a fresh context', () => {
+        register();
+        const s = onDrawings('h1');
+        s.open();
+        // The pointer travels into the menu, and the drawing is edited meanwhile.
+        s.state.hovered = null;
+        s.state.drawings[0] = doc('h1', 'hline', 150);
+        s.menu().select('drawing-action:test.alert');
+        expect(ran).toHaveLength(1);
+        expect(ran[0]).toMatchObject({ id: 'test.alert', drawing: { id: 'h1', anchors: [{ price: 150 }] } });
+        expect(ran[0]!.ctx.symbol).toBe('BTCUSDT');
+        expect(ran[0]!.ctx.pointer).toBeDefined();
+    });
+
+    it('leave out an action its gate refuses, and one that names no menu surface', () => {
+        register();
+        const s = onDrawings('b1');
+        expect(s.open()).toEqual(['drawing-action:test.export', ...BUILTIN]);
+        s.menu().select('drawing-action:test.alert');
+        s.menu().select('drawing-action:test.default');
+        expect(ran).toEqual([]);
+    });
+
+    it('are absent with no drawing under the pointer, on the axis menus, and once the drawing is gone', () => {
+        register();
+        const off = onDrawings(null);
+        expect(off.open()).toEqual(BUILTIN);
+
+        const s = onDrawings('h1');
+        expect(s.open(795, 200).some((id) => id.startsWith('drawing-action:'))).toBe(false);
+        expect(s.open(300, 595).some((id) => id.startsWith('drawing-action:'))).toBe(false);
+        expect(s.open()).toContain('drawing-action:test.export');
+        s.state.drawings = [];
+        s.menu().select('drawing-action:test.export');
+        expect(ran).toEqual([]);
+    });
+
+    it('a chart without drawings is never asked what is hovered', () => {
+        register();
+        const host = fakeHost();
+        const menu = new ChartContextMenu(host, { resetView: () => undefined, getContext: () => liveContext().ctx });
+        menu.onChart(fakeChart().chart);
+        host.fire('contextmenu', { clientX: 300, clientY: 200 });
+        expect(menus[menus.length - 1]!.items.map((i) => i.id)).toEqual(BUILTIN);
     });
 });

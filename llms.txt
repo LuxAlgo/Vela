@@ -18,9 +18,9 @@ height. Themes come from `createTheme` (`@luxalgo/vela`).
 - [adding-vela-indicators](skills/adding-vela-indicators/SKILL.md): built-in studies, Pine
   Script through an engine, native indicators, scripting engines, new built-in studies.
 - [using-vela-drawing-tools](skills/using-vela-drawing-tools/SKILL.md): the drawing toolbar,
-  drawings from code, saving them, and adding a drawing tool to Vela.
+  drawings from code, saving them, and adding a drawing tool of your own with `defineDrawing`.
 - [extending-vela-with-plugins](skills/extending-vela-with-plugins/SKILL.md): buttons, menu
-  rows, panels, overlays, chart types and renderer layers through the plugin SDK.
+  rows, panels, overlays, chart types, renderer layers and drawing tools through the plugin SDK.
 - [upgrading-vela](skills/upgrading-vela/SKILL.md): moving a project from 0.9 to 0.10.
 - The UI kit ships three more in `node_modules/@luxalgo/vela-ui/skills/`: using its components,
   theming, and writing components.
@@ -40,10 +40,11 @@ installed, or install them from the repository with `npx skills add LuxAlgo/Vela
 - [Drawing tools](docs/user/drawing-tools.md), [Timeline marks](docs/user/timeline-marks.md),
   [Localization](docs/user/localization.md), [FAQ](docs/user/faq.md).
 - [Upgrading](docs/user/upgrading.md): breaking changes and deprecated names, release by release.
-- [Plugin SDK](docs/contributing/plugin-sdk.md): every extension hook.
+- [Plugin SDK](docs/contributing/plugin-sdk.md): every extension hook, custom drawing tools
+  (`defineDrawing`) included.
 - [Adding a data provider](docs/contributing/adding-a-data-provider.md),
   [Adding a scripting engine](docs/contributing/adding-an-engine.md),
-  [Adding a drawing tool](docs/contributing/adding-a-drawing-tool.md).
+  [Adding a drawing tool](docs/contributing/adding-a-drawing-tool.md) (to Vela's own source).
 - [Changelog](CHANGELOG.md).
 
 ## The UI kit

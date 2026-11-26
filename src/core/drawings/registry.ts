@@ -81,6 +81,7 @@ import { Magnifier } from './types/Magnifier';
 import { FairValueGap } from './types/FairValueGap';
 import { OrderBlock } from './types/OrderBlock';
 import { Liquidity } from './types/Liquidity';
+import { UnknownDrawing } from './types/UnknownDrawing';
 
 /** What a drawing type contributes to the toolbar + factory (renderer-neutral). */
 export interface DrawingTypeMeta {
@@ -99,16 +100,93 @@ export interface DrawingTypeMeta {
     /** One short sentence prompting the placement gesture, shown by the renderer at the
      *  bottom of the chart while the tool is armed and no placement has started yet. */
     placementHint?: MessageLike;
+    /** The tool stays armed after each placement, whatever stay-in-drawing-mode says (a
+     *  brush: one stroke is rarely the whole drawing). */
+    staysArmed?: boolean;
+    /** `false` keeps the type off the default toolbar: the host arms it from its own
+     *  interface. A toolbar configured with explicit `tools` or `groups` still lists it
+     *  when they name it. */
+    toolbar?: boolean;
     /** Build an instance from a (partial) serialized record. Serves create + deserialize. */
     create(init: Partial<SerializedDrawing> & { paneId: string }): Drawing;
 }
 
+/** A toolbar group a host adds for its own tools. */
+export interface DrawingGroupMeta {
+    /** The id the tools name as their `group`. */
+    id: string;
+    /** The group's name; a message reads in the chart's language. */
+    label: MessageLike;
+    /** Inline SVG markup for the group's toolbar button while the group has no tool. With
+     *  tools, the button shows the last-used tool's icon, like the built-in groups. */
+    icon?: string;
+    /** Keep the group on the toolbar while it has no tool. Default false: a group shows
+     *  once a tool names it. An empty group shows only where its menu has something to
+     *  list (an action a shell contributes to it). */
+    showEmpty?: boolean;
+}
+
 const REGISTRY = new Map<string, DrawingTypeMeta>();
+const GROUPS = new Map<string, DrawingGroupMeta>();
+const listeners = new Set<() => void>();
+
+function changed(): void {
+    for (const cb of [...listeners]) cb();
+}
+
+/**
+ * Follow the registry: `cb` runs after a type or a group is registered, replaced or
+ * unregistered. Charts follow it themselves (their toolbar and their drawings update);
+ * a host needs it only for a tool list of its own. Returns the unsubscribe.
+ */
+export function onDrawingTypesChange(cb: () => void): () => void {
+    listeners.add(cb);
+    return () => {
+        listeners.delete(cb);
+    };
+}
 
 /** Register (or replace) a drawing type. Built-ins register at module load; new
- *  types (fibs/patterns) call this — no base/port/facade change. */
+ *  types (fibs/patterns) call this — no base/port/facade change. Every chart's toolbar
+ *  follows, and drawings of the type that were waiting for it come back as themselves. */
 export function registerDrawingType(meta: DrawingTypeMeta): void {
     REGISTRY.set(meta.type, meta);
+    changed();
+}
+
+/**
+ * Unregister a drawing type. Its tool leaves the toolbars; the drawings of that type stay
+ * in their charts and documents as placeholders, and come back when the type is registered
+ * again. Returns whether a type was removed.
+ */
+export function unregisterDrawingType(type: string): boolean {
+    const ok = REGISTRY.delete(type);
+    if (ok) changed();
+    return ok;
+}
+
+/** Register (or rename) a toolbar group for custom tools. A tool whose `group` names no
+ *  registered group still gets one, labelled with the id. */
+export function registerDrawingGroup(meta: DrawingGroupMeta): void {
+    GROUPS.set(meta.id, meta);
+    changed();
+}
+
+/** Remove a toolbar group's registration (its tools keep the group, labelled with its id). */
+export function unregisterDrawingGroup(id: string): boolean {
+    const ok = GROUPS.delete(id);
+    if (ok) changed();
+    return ok;
+}
+
+/** A registered toolbar group, exactly as registered. */
+export function drawingGroupEntry(id: string): DrawingGroupMeta | undefined {
+    return GROUPS.get(id);
+}
+
+/** Every registered toolbar group, in registration order. */
+export function drawingGroupEntries(): DrawingGroupMeta[] {
+    return [...GROUPS.values()];
 }
 
 /** A registered type as the read APIs hand it out: its label and hint as plain text. */
@@ -179,6 +257,22 @@ export function resetDrawingSettings(drawing: Drawing): void {
 export function deserializeDrawing(doc: SerializedDrawing): Drawing | null {
     const meta = REGISTRY.get(doc.type);
     return meta ? meta.create(doc) : null;
+}
+
+/**
+ * Rebuild a drawing from its saved record, whatever its type: a registered type gives the
+ * real drawing, any other a placeholder that keeps the record whole until the type is
+ * registered. This is how documents load, so a drawing is never dropped for being unknown.
+ */
+export function reviveDrawing(doc: SerializedDrawing): Drawing {
+    return deserializeDrawing(doc) ?? new UnknownDrawing(doc);
+}
+
+const BUILTIN = new Set<string>();
+
+/** Whether `type` is one of the tools Vela ships (as opposed to one a host registered). */
+export function isBuiltinDrawingType(type: string): boolean {
+    return BUILTIN.has(type);
 }
 
 // ── built-in lean-core types ──
@@ -512,6 +606,7 @@ registerDrawingType({
     label: msg('drawing.freehand.label', 'Brush'),
     icon: FREEHAND_ICON,
     defaultStyle: { lineColor: DEFAULT_DRAWING_COLOR, lineWidth: 2, lineStyle: 'solid' },
+    staysArmed: true,
     create: (init) => new Freehand(init),
 });
 
@@ -522,6 +617,7 @@ registerDrawingType({
     icon: HIGHLIGHTER_ICON,
     // A marker: wide + translucent by default (the alpha in the color is the highlight's see-through).
     defaultStyle: { lineColor: `${MARKER}59`, lineWidth: 14, lineStyle: 'solid' },
+    staysArmed: true,
     create: (init) => new Highlighter(init),
 });
 
@@ -1040,3 +1136,6 @@ registerDrawingType({
     placementHint: msg('drawing.liquidity.placementHint', "Click near a candle's high or low"),
     create: (init) => new Liquidity(init),
 });
+
+// Everything registered above ships with Vela; whatever registers later is a host's.
+for (const type of REGISTRY.keys()) BUILTIN.add(type);

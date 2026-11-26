@@ -561,6 +561,11 @@ export interface VelaCoreMessageCatalog {
     'drawing.settings.styles': string;
     'drawing.settings.text': string;
     'drawing.settings.textColor': string;
+    'drawing.settings.unit': string;
+    'drawing.settings.unitPercent': string;
+    'drawing.settings.unitPoints': string;
+    'drawing.settings.unitPrice': string;
+    'drawing.settings.unitTicks': string;
     'drawing.shark.label': string;
     'drawing.shark.patternName': string;
     'drawing.showOn.day': string;

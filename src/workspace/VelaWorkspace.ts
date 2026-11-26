@@ -40,7 +40,7 @@ import { ShortcutsHelp } from '../widget/shortcuts-help';
 import { Toast } from '../widget/toast';
 import { Glider, ZOOM_IN, ZOOM_OUT, PAN_FAST } from '../widget/glide';
 import { toolShortcutHints } from '../widget/tool-shortcuts';
-import { drawingActionsProviderFor, legendActionsProviderFor, legendCalloutsProviderFor, mobilePlacement, statePersistenceHandlers, topbarActionOverride, widgetActions, widgetAttachments, type DockedStrip, type DockStripOptions, type FullscreenControl, type PanelDockView, type TopbarItems, type WidgetActionDescriptor } from '../widget/contributions';
+import { drawingActionsProviderFor, toolbarWithActions, legendActionsProviderFor, legendCalloutsProviderFor, mobilePlacement, statePersistenceHandlers, topbarActionOverride, widgetActions, widgetAttachments, type DockedStrip, type DockStripOptions, type FullscreenControl, type PanelDockView, type TopbarItems, type WidgetActionDescriptor } from '../widget/contributions';
 import { resolveTopbarComposition, topbarHas, TOPBAR_BUILTIN_IDS, type ResolvedTopbarComposition } from '../widget/topbar-composition';
 import { LayoutModeController, type LayoutMode } from '../widget/layout-mode';
 import { Sidebar, sidebarActions, sidebarControl } from '../widget/sidebar';
@@ -417,6 +417,8 @@ export class VelaWorkspace {
     /** The shared bar's content — `drawings: { tools | groups }` picks it. */
     /** The shared toolbar, labelled in the workspace's language (rebuilt when it changes). */
     private toolbarDef: ToolbarDefinition;
+    /** The actions last handed to the shared bar, as a key (see `projectDrawToolbar`). */
+    private drawToolbarActionsKey = '';
     private destroyed = false;
 
     // ── shared chrome ──
@@ -1032,6 +1034,7 @@ export class VelaWorkspace {
             this.manifestSettled = true; // nothing will ever resolve — settled empty from the start
         }
         this.mountAttachments();
+        this.projectDrawToolbar(); // the context the actions' gates read exists from here
         this.sidebar?.activate();
         // A sync-storage boot restores third-party document-level state here — the shell
         // is fully built (cells live, attachments mounted). The async-adapter boot and
@@ -1198,7 +1201,7 @@ export class VelaWorkspace {
         this.dock.relocalize();
         this.sidebar?.relocalize();
         this.toolbarDef = buildToolbar(this.opts.drawings, this.localeState).definition;
-        this.drawToolbar?.setDefinition(this.toolbarDef);
+        this.projectDrawToolbar(true);
         this.drawToolbar?.relabel();
         this.drawToolbar?.setShortcuts(toolShortcutHints(this.keymap, this.localeState));
         this.drawingPill?.relocalize();
@@ -1306,6 +1309,23 @@ export class VelaWorkspace {
         return strip;
     }
 
+    /** The shared bar's definition with the actions contributed to its groups' menus. */
+    private projectedToolbar(): ToolbarDefinition {
+        return toolbarWithActions(this.toolbarDef, this.localeState, () => this.context());
+    }
+
+    /** Hand the shared bar its definition. The bar rebuilds its cells on every definition, so
+     *  a `refreshActions()` that changed none of its actions leaves it alone (`force`: the
+     *  tools themselves changed). */
+    private projectDrawToolbar(force = false): void {
+        if (!this.drawToolbar) return;
+        const def = this.projectedToolbar();
+        const key = def.groups.map((g) => `${g.id}:${(g.actions ?? []).map((a) => `${a.id}|${a.label}|${a.icon ?? ''}`).join(',')}`).join(';');
+        if (!force && key === this.drawToolbarActionsKey) return;
+        this.drawToolbarActionsKey = key;
+        this.drawToolbar.setDefinition(def);
+    }
+
     /** Re-project contributed topbar actions + side panels, and mount late-registered attachments. */
     refreshActions(): void {
         this.mountAttachments();
@@ -1313,6 +1333,7 @@ export class VelaWorkspace {
         this.mobileBar?.renderActions();
         this.dock.refresh(); // rebuilt panels bind to the active cell's chart on their own
         this.sidebar?.render();
+        this.projectDrawToolbar();
         // Re-project every cell's legend rows so a late registerLegendAction /
         // registerLegendCallout / registerDrawingAction (or a callout's own state change)
         // appears there too.
@@ -2300,6 +2321,14 @@ export class VelaWorkspace {
         // Tool/magnet/mode reflection (trigger ②): the ACTIVE cell's drawing state drives
         // the shared bar and the global mirrors — whatever the source (bar press, keymap,
         // API, a one-shot tool disarming itself after placement).
+        // A drawing tool was registered, replaced or removed: the shared bar lists the tools
+        // of the registry, like each chart's own bar does.
+        chart.on('drawing:types', () => {
+            if (cell.id !== this.activeId) return; // once per change, not once per cell
+            this.toolbarDef = buildToolbar(this.opts.drawings, this.localeState).definition;
+            this.projectDrawToolbar(true);
+            this.drawToolbar?.setShortcuts(toolShortcutHints(this.keymap, this.localeState));
+        });
         chart.on('drawing:tool', ({ type }) => {
             if (cell.id !== this.activeId) return;
             this.globalTool = type;
@@ -3136,7 +3165,7 @@ export class VelaWorkspace {
     private openDrawingsDrawer(): void {
         this.drawingsDrawer ??= new DrawingsDrawer({
             host: this.root,
-            toolbar: () => this.toolbarDef, // the shared static toolbar's definition (see constructor)
+            toolbar: () => this.projectedToolbar(), // the shared static toolbar's definition (see constructor)
             currentTool: () => this.active.chart.drawings.getTool(),
             isFavorite: (type) => this.active.chart.drawings.isFavorite(type),
             onFavorite: (type, on) => this.active.chart.drawings.setFavorite(type, on),

@@ -1,11 +1,13 @@
 # Vela™ plugin SDK
 
-Everything importable from **`@luxalgo/vela/plugin`**. Three extension seams: **chart types**
-(data + transform side), **renderer layers** (paint side), and **native indicators**
-(core-computed indicators with their own layers) — plus the authoring surface for
+Everything importable from **`@luxalgo/vela/plugin`**. Four extension seams: **chart types**
+(data + transform side), **renderer layers** (paint side), **native indicators**
+(core-computed indicators with their own layers), and **drawing tools** (the interactive
+tools a user places from the drawing toolbar) — plus the authoring surface for
 **scripting engines**, which register per chart rather than into a registry. All
 registries are id-keyed (re-registering an id replaces it) and read live — charts
-constructed after registration pick the entries up.
+constructed after registration pick the entries up. Drawing tools also reach the charts
+that are already built.
 
 ## Chart types — `registerChartType`
 
@@ -257,7 +259,8 @@ registerIcon('rocket', '<svg …>…</svg>'); // optional, inline SVG (stroke cu
 
 registerWidgetAction({
     id: 'mytool.open',
-    target: 'topbar',            // or 'context:body' | 'context:price-axis' | 'context:time-axis'
+    target: 'topbar',            // or 'sidebar' | 'drawings' | 'context:body' |
+                                 //  'context:price-axis' | 'context:time-axis'
     label: 'My tool',            // ALWAYS required: aria-label, tooltip, mobile row text
     icon: 'rocket',
     iconOnly: true,              // topbar only: no button text — the native 32px tool look
@@ -757,12 +760,433 @@ registerLegendCallout({
 - The seam degrades gracefully: a custom renderer without `setLegendCallouts` simply
   never shows contributed callouts.
 
+## Drawing tools — `defineDrawing`
+
+A **drawing tool** is a type in the drawing registry: an entry of the drawing toolbar that a
+user arms and places, like the trend line or the Fibonacci retracement. `defineDrawing`
+registers one from a single object. You describe what the tool paints as a list of shapes;
+placement, handles, hit-testing, the settings panel, undo, copy and paste, and saving follow
+from that description.
+
+```ts
+import { LINE_FIELDS, defineDrawing, lineValueAt, type ShapePoint } from '@luxalgo/vela/plugin';
+
+const unregister = defineDrawing({
+    type: 'acme.midline',      // the type key: namespace it
+    label: 'Midline',
+    group: 'lines',            // joins the built-in Lines section; omit for a group of its own
+    props: { ratio: 0.5 },     // the tool's own settings and their defaults, saved with each drawing
+    settings: [...LINE_FIELDS, { path: 'props.ratio', label: 'Ratio', kind: 'number', min: 0, max: 1, step: 0.05 }],
+    shapes: (c) => {
+        const [a, b] = c.points;   // the two points, in plot pixels
+        if (!a || !b) return [];   // still being placed
+        const mid: ShapePoint = [a[0] + (b[0] - a[0]) * c.props.ratio, a[1] + (b[1] - a[1]) * c.props.ratio];
+        return [
+            { kind: 'line', from: a, to: b },
+            { kind: 'marker', at: mid, shape: 'diamond', part: 'mid', tip: `Ratio ${c.props.ratio}` },
+        ];
+    },
+    // What an alert on the drawing compares the price with.
+    valueAt: (time, d, proj) => (d.anchors.length < 2 ? null : lineValueAt(d.anchors[0]!, d.anchors[1]!, time, { proj, paneId: d.paneId })),
+});
+```
+
+`defineDrawing` returns the function that unregisters the tool. The tool joins the toolbar of
+every chart, the charts already on screen included. `chart.drawings.setTool('acme.midline')`
+arms it and `chart.drawings.add('acme.midline', { anchors })` places one from code.
+
+The repository's `playground/custom-drawings.ts` holds nine complete tools written against this
+entry alone: a spiral, an anchored VWAP, a retracement with editable levels, a regression
+channel, a zone, a position, a volume profile, a five-point pattern, and a tool made of two
+built-in ones.
+
+### The definition
+
+| Member | What it does |
+|---|---|
+| `type` | The **type key**: what `setTool`, `add` and a saved drawing's `type` carry. Any string. Namespace it (`'acme.spiral'`) so it never meets a tool a later release adds. |
+| `label` | The tool's name in the toolbar, the settings and the object tree. A string, or a `msg()` to follow the chart's language. |
+| `icon` | Inline SVG markup for the toolbar. Default: a generic curve. |
+| `group` | The toolbar group (see [Toolbar groups](#toolbar-groups)). Default `'custom'`. |
+| `toolbar` | `false` keeps the tool off the default toolbar: your own interface arms it with `chart.drawings.setTool(type)`. |
+| `shapes(ctx)` | **Required.** The drawing as shapes for this frame (see [Shapes](#shapes)). |
+| `props` | The tool's own settings and their defaults. Each drawing saves its own copy as `props`, so keep them plain JSON. |
+| `style`, `text` | The look and the text block a new drawing starts with, over the neutral default (a solid 2 px line in the accent color, no fill, no text). |
+| `settings`, `levels` | The settings panel (see [Settings](#settings)). |
+| `anchors`, `placement`, `place`, `placed`, `angleSnap`, `placementHint` | How the user places the tool (see [Placement](#placement)). |
+| `compute(ctx, prev)` | Work on the chart's bars, kept off the paint path (see [Work on the bars](#work-on-the-bars--compute)). |
+| `handles(data)` | Grips beyond one per point (see [Handles](#handles)). |
+| `constrain(index, anchors, props)` | The handle of point `index` was dragged: re-impose what must hold between the points by changing `anchors` in place. |
+| `translate(dt, dp, orig)` | The body was dragged by a time and a price: return the new points. Default: every point moves. |
+| `timeExtent`, `priceRange(data)` | The time span the drawing covers, used to skip it when it is off screen (`'all'` for a full-width tool), and its price span. Default: the span of its points. |
+| `coversSeries` | The drawing's body replaces the series under it, so a new one starts over them instead of just under the candles. |
+| `autoscale`, `valueAt`, `readout`, `snapTargets`, `click` | What the drawing gives back to the chart (see [What a drawing gives back](#what-a-drawing-gives-back)). |
+
+`defineDrawing<Props, State>` takes two type parameters when inference from `props` is not
+enough: the shape of `props`, and what `compute` returns.
+
+### Shapes
+
+`shapes(ctx)` returns a list of shapes, painted in list order: the last one is on top. Every
+coordinate is in **plot pixels**, the frame the context converts into. The function runs on
+every frame, so keep it to geometry and move anything heavier to `compute`.
+
+| `kind` | Draws | Its own members |
+|---|---|---|
+| `line` | A segment | `from`, `to`, `extend` (`'left'`, `'right'`, `'both'`: on to the plot's edge), `arrows` (`'start'`, `'end'`, `'both'`) |
+| `path` | A polyline or a polygon | `points`, `closed`, `smooth`, `colors` (one per segment) |
+| `rect` | A rectangle | `from`, `to`, `radius` |
+| `ellipse` | An ellipse, a circle or an arc | `center`, `rx`, `ry` (absent: a circle), `rotation`, `from` and `to` (angles in radians, for an arc) |
+| `curve` | Bézier paths | `d`: a list of `['M', x, y]`, `['L', x, y]`, `['Q', cx, cy, x, y]`, `['C', c1x, c1y, c2x, c2y, x, y]`, `['Z']` |
+| `band` | The area between two series of points | `upper`, `lower`. The edges are not outlined: add a `path` for each. |
+| `rows` | Horizontal histogram rows from one x (a profile) | `x`, `rows`: `{ y, h, w, fill? }` each. A negative `w` grows to the left. |
+| `text` | Text | `at`, `text`, `color` (`'auto'`: readable over its plate), `size` (pixels or `'tiny'` … `'huge'`), `bold`, `italic`, `align`, `baseline`, `angle`, `upright`, `plate` (a box behind it), `maxWidth` (wraps), `halo`, `avoid` (moves clear of the drawing's other `avoid` texts) |
+| `marker` | A mark of a fixed pixel size | `at`, `shape` (`circle`, `square`, `diamond`, `triangle`, `triangleDown`, `cross`, `plus`, `arrowUp`, `arrowDown`) or `glyph` (a character), `size` |
+| `image` | An image centered on a point | `at`, `w`, `h`, `src`: a URL the page may load, or a `data:` URI. It paints once it has loaded. |
+| `tag` | An axis tag: a chip on the price axis or on the time axis | `axis` (`'price'`, `'time'`), `value` (a price, or a time in epoch ms), `text` (default: the formatted value), `color` (default: the line color) |
+| `drawing` | Another registered drawing, as a part of this one | `type`, `anchors` (time and price), `style`, `text`, `props` |
+
+Members the kinds share (`text`, `image` and `drawing` take no `stroke` or `fill`; a `tag`
+takes none of them):
+
+| Member | Meaning |
+|---|---|
+| `stroke` | The outline. Absent: the drawing's line color, width and style. A string: that color. `{ color?, width?, dash? }`: each member you leave out falls back to the drawing's. `null`: no outline. `dash` is `'solid'`, `'dashed'`, `'dotted'` or a dash array. |
+| `fill` | The interior. Absent or `null`: none. `true`: the drawing's fill color. Otherwise a color, a gradient (`{ gradient: { from, to, stops } }`) or a hatch (`{ hatch: { color, spacing?, angle?, width? } }`). |
+| `opacity` | 0 to 1. |
+| `part` | Names the shape as a **part** of the drawing. Hover and click report the part, and `ctx.view.part` tells the paint which one is under the pointer. |
+| `front` | Paint the shape over the series even when the drawing sits under them: a label on a zone drawn behind the candles. |
+| `hit` | `false` keeps the shape out of hit-testing: decoration the pointer passes through. |
+| `cursor` | The CSS cursor while the pointer is over the shape. |
+| `tip` | A short text shown beside the pointer while it is over the shape. |
+
+Hit-testing reads the same list, so it follows the paint: a filled shape is hit anywhere
+inside it, an outlined one on its outline, and the front-most shape under the pointer names
+the part. The selection bounds, the handles and the saved document derive from the shapes, the
+points and `props` in the same way.
+
+### The context
+
+| Member | What it holds |
+|---|---|
+| `anchors` | The drawing's points, in time and price. |
+| `points` | The same points in plot pixels (`[x, y]`). |
+| `x(time)`, `y(price)`, `point({ time, price })` | Plot pixels of a time, of a price on the drawing's pane, and of both. |
+| `props`, `style`, `text` | The drawing's own settings, its look, and its text block. |
+| `state`, `pending` | What `compute` last returned (`undefined` before its first result), and whether a new result is on its way. |
+| `view` | `{ selected, hovered, part, placing }`: the interaction state of this frame. |
+| `theme` | `{ text, background, font, up, down }`: the chart's colors and font. |
+| `price(value)` | A price as text, in the chart's format. |
+| `bars(from, to)` | The chart's bars in a time range: `{ time, open, high, low, close, volume? }`. |
+| `width`, `height` | The plot's size in pixels. |
+| `id`, `type`, `paneId`, `proj` | The drawing's identity, and the frame's `Projector` (`proj.barMs` is one chart bar in milliseconds, when known). |
+
+While the tool is being placed, `view.placing` is true and `anchors` holds only the points
+clicked so far plus the one under the cursor: return what can already be drawn.
+
+### Work on the bars — `compute`
+
+`compute(ctx, prev)` holds the work that depends on the points, the `props` and the chart's
+bars, and not on the viewport: a fit, a profile, a running average. It runs when one of the
+three changes and never on a pan or a zoom. `shapes` reads its result as `ctx.state`, and the
+other hooks as `data.state`.
+
+- `ctx` carries `anchors`, `props`, `bars(from, to)`, `timeZone` and
+  `change: { anchors, props, bars }`. `change.bars` is `'none'`, `'tick'` (only the newest
+  bar moved), `'append'` (bars were added after it) or `'reset'` (the series is another one:
+  a symbol or timeframe change, older history loaded). On a tick or an append, extend `prev`
+  instead of starting over.
+- **`ctx.timeZone` is the zone the chart shows its times in**, as an IANA name
+  (`'America/New_York'`, `'UTC'`). A tool that works in sessions, days or weeks measures them
+  in it. `compute` runs again when the user picks another zone, with `change.bars` set to
+  `'reset'`. `shapes` reads the same value as `ctx.timeZone`.
+- **Return a promise to do the work elsewhere**, in a worker for example. The previous result
+  stays painted and `pending` is true until the new one lands; the chart then repaints. A
+  result that lands after a newer run started is ignored.
+- **A run that throws or rejects keeps the previous result.** The chart logs the error once
+  for the tool and runs `compute` again when the points, the `props` or the bars next change.
+  A `shapes` that throws paints nothing for that frame, and the other drawings are unaffected.
+
+```ts
+defineDrawing<Record<string, never>, { slope: number }>({
+    type: 'acme.fit',
+    label: 'Fit',
+    compute: (c) => {
+        const [a, b] = c.anchors;
+        return worker.fit(a && b ? c.bars(a.time, b.time) : []);   // a Promise<{ slope: number }>
+    },
+    shapes: (c) => (c.state && c.points.length === 2 ? [{ kind: 'line', from: c.points[0]!, to: c.points[1]!, extend: 'right' }] : []),
+});
+```
+
+### Placement
+
+| Member | What it sets |
+|---|---|
+| `anchors` | How many points the tool takes. A count (default 2); a range `{ min, max }`, which the user ends with Enter or a double-click; or one entry per point: `{ role?, free?, hint? }`. `free` names the axes the point's handle moves along once placed (`'both'`, `'x'`, `'y'`, `'none'`), and `hint` is the prompt shown before that point is clicked. |
+| `placement` | `'click'` (default): one click per point. `'drag'`: press at the first point, release at the second. `'freehand'`: press and drag to capture a path; such a tool stays armed after each stroke. |
+| `place(step)` | Runs for each click and for the cursor between clicks, so the preview shows what a click would commit. Return a point to constrain it. |
+| `placed(data)` | Placement ended: return the `props` to keep, such as values read from the chart. |
+| `angleSnap` | `true`: holding Shift locks a two-point tool to 45° steps. |
+| `placementHint` | The prompt shown while the tool is armed. |
+
+`step` holds `index` (0 for the first click), `point` (where the pointer is, after the
+magnet), `anchors` (the points already placed), `props`, `bars(from, to)` and `preview`
+(`true` while the pointer is only passing over). `step.set(patch)` keeps values read at this
+click in the drawing's `props`, and `step.finish()` ends the placement with this point. A
+preview ignores both.
+
+```ts
+// A flat range: the second point keeps the first one's price, in the preview too.
+place: (s) => {
+    if (s.index === 0) s.set({ firstClose: s.bars(s.point.time, s.point.time)[0]?.close ?? s.point.price });
+    return s.index === 1 ? { time: s.point.time, price: s.anchors[0]!.price } : undefined;
+},
+```
+
+### Handles
+
+Every point gets a handle. `handles(data)` adds grips at other data points; each one's
+`drag(point)` returns the `props` to change:
+
+```ts
+props: { target: 0 },
+handles: (d) => [{ at: { time: d.anchors[0]?.time ?? 0, price: d.props.target }, drag: (pt) => ({ target: pt.price }) }],
+```
+
+Use `constrain` for a rule between the points themselves, such as keeping a stop and a target
+on opposite sides of an entry.
+
+### What a drawing gives back
+
+| Member | What the chart does with it |
+|---|---|
+| `valueAt(time, data, proj)` | The drawing's price at a time, or `null` where it has none. [`chart.drawings.valueAt(id, time)`](../user/api-reference.md#chartdrawings--the-drawings-control-surface) returns it: this is what an alert on a drawing compares the price with. `proj` is the chart's `Projector`, or `null` without renderer support. Pass it to `lineValueAt(a, b, time, { proj, paneId, extend })` to read a straight line as it is painted, which matters on a logarithmic scale. |
+| `readout(data)` | The values the drawing reports: rows of `{ label, value, key?, color? }`. The data window lists them, one group per drawing, and `chart.drawings.readout(id)` returns them. `key` names a value for a read-only settings row. |
+| `snapTargets(data)` | Points (`{ time, price }`), levels (`{ price }`) and times (`{ time }`) offered to the magnet while **another** drawing is placed or reshaped. |
+| `autoscale` | `true`: while the pane's price scale is automatic, it widens to keep the drawing's `priceRange` in view. Off by default, so an ordinary drawing never pulls the scale. |
+| `click(part, data)` | A click landed on the drawing, on `part` or on its plain body (`null`). Return `props` to change and the click edits the drawing, as one undo step, in place of opening its quick-settings bar. A locked drawing is not edited. |
+
+The chart reports the same interactions to the host: `drawing:hover` (`{ id, part }`, `id`
+`null` when the pointer leaves the drawings) and `drawing:click` (`{ id, part, time, price }`),
+with `chart.drawings.at(x, y)` and `chart.drawings.hovered()` to ask at any time.
+`chart.drawings.addSnapSource(fn)` gives the magnet targets that come from the host instead of
+from a drawing.
+
+A script does not read drawings. To drive an indicator from one, feed the drawing's value
+into an input:
+
+```ts
+const study = chart.addIndicator(source);   // a script with a "Level" input
+const line = chart.drawings.add('hline', { anchors: [{ time: Date.now(), price: 64000 }] });
+const push = (): void => {
+    const level = line ? chart.drawings.valueAt(line.id, Date.now()) : null;
+    if (level != null) study.setInputs({ Level: level });
+};
+chart.on('drawing:edited', ({ id }) => {
+    if (id === line?.id) push();
+});
+push();
+```
+
+### Settings
+
+`settings` lists the fields of the tool's settings: `{ path, label, kind, … }` each. Without
+it a tool gets the line settings, and the fill color when its `style` sets one. Start from the
+exported bundles: `LINE_FIELDS`, `BORDER_FIELDS`, `FILL_FIELDS`, `TEXT_FIELDS`.
+
+| Field member | Meaning |
+|---|---|
+| `path` | Where the value lives on the drawing: `props.<key>`, `style.<key>`, `text.<key>`, or `results.<key>` for the readout row whose `key` is `<key>`. |
+| `kind` | `color`, `number` (`min`, `max`, `step`), `select` (`options`), `lineStyle`, `boolean`, `text`, `opacity`, or `readout`: a read-only row that shows the value at its path. |
+| `unit: { base }` | On a `number` stored as a **price**: the settings panel adds a unit switch (price, points, percent, ticks) beside the input. `base` is the path of the reference price, for example `'anchors.0.price'`. What the user types in any unit is saved as a price. Ticks are offered when the chart knows the symbol's price increment, and percent when the reference is not zero. |
+| `section` | A title. Fields that name the same section share a titled block of their own in the panel. |
+| `quick` | `true`: the control also shows on the quick-settings bar. Text fields and readouts stay in the panel. |
+| `when: { path, in }` | Show the field only while another setting holds one of these values. |
+
+With `levels: true` and a `props.levels` list of `{ ratio, color, enabled }`, the panel shows
+the level editor: each level's switch, ratio and color.
+
+```ts
+props: { target: 0, mode: 'a' },
+settings: [
+    { path: 'props.target', label: 'Target', kind: 'number', step: 0.01, unit: { base: 'anchors.0.price' }, section: 'Levels' },
+    { path: 'props.mode', label: 'Mode', kind: 'select', quick: true, options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }] },
+    { path: 'results.rr', label: 'Risk / reward', kind: 'readout' },
+],
+readout: () => [{ key: 'rr', label: 'Risk / reward', value: '2.00' }],
+```
+
+The rest of the panel is the same as for a built-in tool: the points, the timeframes the
+drawing shows on, the tool's remembered settings and its saved styles.
+
+### Toolbar groups
+
+A tool's `group` decides where it lands in the toolbar:
+
+| `group` | Toolbar button and section |
+|---|---|
+| `'lines'`, `'channels'`, `'pitchforks'` | **Lines**, in the section of that name |
+| `'fibonacci'`, `'priceaction'`, `'geometry'` | **Fibonacci**, in the Fibonacci, Price Action or Geometry section |
+| `'patterns'` | **Patterns**, in the Patterns section |
+| `'measure'` | **Measurements**, in the Measurements section |
+| `'shapes'` | **Shapes**, in the Shapes section |
+| `'annotations'` | **Text** |
+| `'stamps'` | **Icons** |
+| Any other id (default `'custom'`) | A toolbar group of its own, after the built-in ones |
+
+Set `toolbar: false` on a tool that your own interface arms: it stays registered, placeable
+and saved like any other, and the default toolbar leaves it out.
+
+A group of your own is labelled with the id read as a name (`'my-tools'` becomes "My tools")
+until you name it:
+
+```ts
+registerDrawingGroup({ id: 'acme', label: msg('acme.drawings.group', 'Acme tools') });
+```
+
+#### A group before its first tool, and commands in a group's menu
+
+A group shows once a tool names it. To have its button on the bar earlier, register the
+group with `showEmpty`, and give its menu something to list: a widget action with
+`target: 'drawings'` and the group's id.
+
+```ts
+registerDrawingGroup({
+    id: 'acme',
+    label: msg('acme.drawings.group', 'Acme tools'),
+    icon: '<svg viewBox="0 0 24 24" …>…</svg>', // the button's icon while the group has no tool
+    showEmpty: true,
+});
+
+registerWidgetAction({
+    id: 'acme.createTool',
+    target: 'drawings',
+    group: 'acme',                // a group of yours, or a built-in one ('text', 'measurements', …)
+    label: msg('acme.drawings.create', 'Create a tool'),
+    icon: 'plus',                 // an icon id, as for every widget action
+    run: (ctx) => openMyToolBuilder(ctx.chart),
+});
+```
+
+- **The action is a row at the end of the group's menu**, after the tools and a divider.
+  It runs a command and arms nothing. `order` sorts the actions of one group, and `when`
+  gates them. The mobile drawings drawer lists the same rows at the end of the group.
+- **While the group has no tool, its button opens the menu.** The button shows the group's
+  `icon` (a plus sign without one). Once the group has tools, the button shows and arms the
+  last-used tool, like a built-in group, and the chevron beside it opens the menu.
+- **A registered group keeps its place.** Groups you register sit after the built-in ones
+  in registration order, with or without tools, so the button does not move when the first
+  tool arrives.
+- **Find them by id, not by text.** A group's cell on the bar carries `data-group` (the
+  group id) and an action's row carries `data-action` (the action id), for a host that
+  styles or measures them.
+- **An empty group with no action stays off the bar.** A button that arms nothing and
+  lists nothing would be dead. The actions come from the shell, so a bare `Vela` chart
+  (no widget or workspace) never shows an empty group.
+- **Call `refreshActions()`** after registering an action on a widget that is already
+  built, as for every widget action. The tools themselves need no call.
+
+A chart whose `drawings` option lists `tools` keeps the empty group: the list picks tools,
+and the group has none to drop. A chart that lists `groups` shows it only when you list it
+there (`{ id: 'acme', label: 'Acme tools', tools: [] }`).
+
+A chart whose [`drawings` option](../user/options.md#the-drawings-option) lists `tools` or
+`groups` still shows only what it lists. Add your type key there to show the tool on that
+chart.
+
+### Registering late, replacing, unregistering
+
+Charts follow the drawing registry. You need no `refreshActions()` call.
+
+- **Register at any time.** A tool registered after a chart is built joins that chart's
+  toolbar. Registrations made in a row are followed once, and each chart then raises
+  `drawing:types`.
+- **Define a type again to replace it.** The drawings already placed are rebuilt from their
+  saved records and follow the new definition, with their own `props` and style.
+- **Unregister** with the function `defineDrawing` returned, or
+  `unregisterDrawingType(type)`. The tool leaves the toolbars, and its drawings stay on their
+  charts as placeholders (see below) until the type is registered again.
+- **Take a group's registration back** with `unregisterDrawingGroup(id)`. Its tools keep
+  their group, labelled with the id again, and a group kept on the bar empty (`showEmpty`)
+  leaves it.
+- `onDrawingTypesChange(cb)` follows the registry for a tool list of your own, and
+  `isBuiltinDrawingType(type)` tells the tools Vela ships from the ones a host registered.
+  `drawingTypes()` lists them all.
+
+### Drawings of a type that is not registered
+
+A saved document can hold a drawing whose type is not registered on the page: the plugin that
+defines it is not loaded yet, or not loaded here at all. Such a drawing is **kept**:
+
+- It shows as a **placeholder**: a dashed outline of its points (a small diamond for a single
+  point), which the user can select, move and delete. Duplicate, copy and paste leave it out.
+- It saves back exactly as it was loaded, `props` included, so the document round-trips.
+- It becomes the real drawing as soon as its type is registered.
+- `setToolDefaults` and `setToolTemplates` keep the entries of such a type. `setFavorites`
+  leaves the type out and stars it once it registers.
+- `chart.drawings.add(type)` returns `null` for it, and so do `createDrawing` and
+  `deserializeDrawing`. `reviveDrawing(record)` never does: it returns the placeholder.
+
+### A tool as a class
+
+Write a class when the tool extends a family Vela already draws: a new Fibonacci tool, a new
+harmonic pattern. The plugin entry exports the bases, the field bundles and the hit-test
+helpers (`distToSegment`, `distToPolyline`, `pointInBox`, `pointInCircle`, `pointInPolygon`,
+`handleAt`, `extendRay`). Register the class with `registerDrawingType`:
+
+```ts
+import { HarmonicPattern, registerDrawingType, type HarmonicRanges } from '@luxalgo/vela/plugin';
+
+class AcmeHarmonic extends HarmonicPattern {
+    readonly type = 'acme.harmonic';
+    patternName(): string {
+        return 'Acme';
+    }
+    protected ranges(): HarmonicRanges {
+        return { ab: { min: 0.5, max: 0.618 }, bc: { min: 0.382, max: 0.886 }, cd: { min: 1.272, max: 1.618 }, ad: { min: 0.786, max: 0.886 } };
+    }
+}
+
+registerDrawingType({
+    type: 'acme.harmonic',
+    group: 'patterns',
+    label: 'Acme Harmonic',
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 17 7 6 12 14 17 5 21 16"/></svg>',
+    defaultStyle: { lineColor: '#3b82f6', lineWidth: 1, lineStyle: 'solid' },
+    create: (init) => new AcmeHarmonic(init),
+});
+```
+
+`registerDrawingType` also takes `placementHint`, `coversSeries`, `staysArmed` (the tool
+stays armed after each placement, as a brush does) and `toolbar` (`false` keeps the type off
+the default toolbar). It returns nothing: remove the type with `unregisterDrawingType(type)`.
+
+| Base | For | Painted by |
+|---|---|---|
+| `SegmentDrawing` | Multi-line tools: channels, pitchforks | Its family's painter |
+| `FibRatios`, `FibLevels`, `RadialFib` | Fibonacci tools: free-form, horizontal levels, concentric rings | Its family's painter |
+| `PatternDrawing`, `HarmonicPattern` | Labelled vertex patterns, and harmonics validated against Fibonacci bands | Its family's painter |
+| `GlyphStamp` | One-point glyph stamps | Its family's painter |
+| `ShapeDrawing` | Anything else: implement `anchorSchema()` and `shapes()` | Its `shapes()` |
+| `TwoPointLine`, `CalloutBase`, `PinnedLabel`, `Drawing` | Two-point lines, pinned boxes and labels, a tool like no other | Its `shapes()`: add one |
+
+A class that implements `shapes()` is painted from the list it returns and needs nothing
+from a renderer. A class without it relies on the painter its family already has. The
+built-in lines, callouts and pinned labels are each painted by their own type, so a subclass
+of `TwoPointLine`, `CalloutBase` or `PinnedLabel` adds `shapes()` for its look.
+[Adding a drawing tool](./adding-a-drawing-tool.md) lists what each base leaves to the leaf
+and the hooks a class can override.
+
+A custom renderer shows these tools once it paints the shape list: see
+[the user-drawings port](./adding-a-renderer.md#user-drawings-interactive).
+
 ## Drawing actions — `registerDrawingAction`
 
 A button for one **drawing**: an icon on the toolbar that floats by a selected drawing (just
 before its settings wheel) and a labelled button at the start of the drawing's settings dialog
-footer. The classic use: put an alert, a note or a share link on the drawing the user is
-looking at, where they look for it.
+footer. It can also be a row in the drawing's menus. The classic use: put an alert, a note or
+a share link on the drawing the user is looking at, where they look for it.
 
 ```ts
 import { msg, registerDrawingAction } from '@luxalgo/vela/plugin';
@@ -770,17 +1194,24 @@ import { msg, registerDrawingAction } from '@luxalgo/vela/plugin';
 registerDrawingAction({
     id: 'mytool.drawing-alert',
     icon: 'bell',                                       // vela/ui icon registry
-    label: msg('mytool.drawing-alert', 'Add alert'),    // toolbar tooltip + dialog button text
+    label: msg('mytool.drawing-alert', 'Add alert'),    // toolbar tooltip, dialog button and menu row text
+    surfaces: ['toolbar', 'settings', 'menu'],          // default: the toolbar and the settings dialog
     when: (d) => d.type === 'hline' || d.type === 'trendline', // per-drawing gate
-    run: (ctx, d) => myAlerts.open({ symbol: ctx.symbol, anchors: d.anchors }),
+    run: (ctx, d) => myAlerts.open({ symbol: ctx.symbol, drawingId: d.id, level: ctx.chart.drawings.valueAt(d.id, Date.now()) }),
 });
 ```
 
 - `d` is the drawing's `SerializedDrawing` — the shape `chart.drawings.all()` returns: `id`,
   `type`, `anchors`, `style`, `props`. `when` sees it as the toolbar opens; `run` reads it
   again at click time, so a drag since then shows through.
-- `surfaces: ['toolbar']` or `['settings']` limits it to one of the two places (default: both).
-  `order` sorts the contributed group (ascending; default 0).
+- `surfaces` lists where the action shows: `'toolbar'`, `'settings'` and `'menu'` (default:
+  the toolbar and the settings dialog). With `'menu'` the action is a row at the end of the
+  toolbar's overflow menu, and a row at the top of the chart's right-click menu while the
+  pointer is over a drawing. The right-click row needs no selection: it acts on the drawing
+  under the pointer. `order` sorts the contributed group (ascending; default 0).
+- For an alert, read the level to watch with
+  [`chart.drawings.valueAt(id, time)`](../user/api-reference.md#chartdrawings--the-drawings-control-surface):
+  it answers for the built-in lines and for any tool that defines `valueAt`.
 - It acts on one drawing, so the toolbar of a **multi-selection** leaves it out.
 - `run` receives a fresh `WidgetContext` per click. In a workspace, the click's own press made
   the drawing's chart the active one, so `ctx.chart` is the chart the drawing is on.
@@ -1072,6 +1503,8 @@ registerLocale(acmeDe);
 - A registered chart type appears in the **style dropdown** automatically
   (`priceStyleIds()` = built-ins ∪ registry; labels from `label`), greyed on a symbol its
   `supports` rules out.
+- A registered drawing tool appears in the **drawing toolbar** automatically, in the group
+  its `group` names (see [Toolbar groups](#toolbar-groups)).
 - Keyboard bindings: `widget.keymap.register({ id, keys: 'mod+shift+k', label,
   category, scope?, run })` — they show up in the `?` shortcuts panel. `'mod'` is ⌘ on
   macOS, Ctrl elsewhere. Scopes: bindings fire when their scope is the top of the
@@ -1079,7 +1512,10 @@ registerLocale(acmeDe);
 
 ## Rules of thumb
 
-- Register at **import time**, before charts are constructed.
+- Register at **import time**, before charts are constructed. Drawing tools are the one
+  seam with no such order: a tool registered, replaced or unregistered later reaches the
+  charts already on screen (see
+  [Registering late, replacing, unregistering](#registering-late-replacing-unregistering)).
 - Payloads pushed through channels are yours end to end — the core never inspects them.
 - Never reach into renderer internals from a layer; everything you need arrives in
   `render(args)`.

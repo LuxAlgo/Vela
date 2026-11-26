@@ -7,6 +7,73 @@ All notable changes to Vela, newest first.
 ### Added
 
 - **Place a horizontal line's or ray's label left, in the middle or on the right, above or below the line.** The **Label** section of a Horizontal Line's and a Horizontal Ray's settings now has the **Position** (Left, Middle, Right) and **Side** (Above, Below) choices the trend line already had. A line's label sits at the left edge, the middle or the right edge of the chart; a ray's runs from its anchor to the right edge. A ray's label used to start right on its anchor, under the line; it now starts just past the anchor, above the line, like a horizontal line's. A horizontal line's existing label stays beside its handle until you pick a position. Either label stays whole on the chart: one that would run past the chart's side slides back in (a line's label follows its handle only as far as the edge), one that would be cut off at the top or bottom of its pane moves to the other side of the line, and a ray that starts past the chart's right edge shows no label until it comes into view.
+- **Custom drawing tools.** An app or a plugin can now add its own tools to the drawing
+  toolbar, without forking Vela. `defineDrawing` from `@luxalgo/vela/plugin` registers a tool
+  from one description: you say what the tool paints as a list of shapes (lines, paths,
+  rectangles, ellipses, curves, bands, histogram rows, text, markers, images, tags on the
+  price or time axis, or another drawing used as a part), and the chart does the rest. The
+  tool is placed, selected, reshaped, undone, copied and saved like a built-in one. A tool
+  can compute from the chart's bars without slowing a pan or a zoom, and can hand that work
+  to a worker. It reads the chart's time zone, so it can work in sessions, days and weeks.
+  It can guide each click of its placement, add handles beyond its points, and
+  ask the price scale to keep it in view. Its settings are its own: read-only result rows,
+  prices you can type as points, percent or ticks, titled sections, controls on the
+  quick-settings bar, and a level editor. The tool joins a built-in toolbar group or a
+  group of your own (`registerDrawingGroup`), and its type key works wherever a built-in
+  key does: `setTool`, `add`, the `drawings` option, favorites and saved styles. A tool
+  registered, replaced or removed while charts are open reaches them at once, and the new
+  `drawing:types` event tells a toolbar of your own to refresh. For a tool that extends a
+  family Vela already draws, such as a new Fibonacci tool or harmonic pattern, the base
+  classes are exported too.
+- **Drawing values, readouts, hover and click.** `chart.drawings.valueAt(id, time)` returns
+  a drawing's price at a time: the level an alert on a trend line compares the price with.
+  The trend line, ray, extended line, horizontal line and horizontal ray report it, read as
+  the line is painted on a logarithmic scale, and a custom tool reports whatever it
+  defines. `chart.drawings.readout(id)` returns the values a tool reports, and the data
+  window lists them, one group per drawing. `chart.drawings.at(x, y)` and `hovered()` tell
+  which drawing is under a point or under the pointer, and which named part of it. Two new
+  events follow the pointer: `drawing:hover` and `drawing:click`.
+- **More for the magnet to snap to.** `chart.drawings.addSnapSource()` gives the magnet
+  targets from your app: a point, a price level or a time, such as an indicator's value or
+  a round price. A custom drawing tool can offer its own points and levels the same way, so
+  the next drawing snaps to them. A target takes the point only from close by, in weak and
+  strong mode alike, and nothing snaps while the magnet is off.
+- **Menu rows for a drawing.** A drawing action (`registerDrawingAction`) can now list
+  `'menu'` among its `surfaces`. It then shows as a row in the overflow menu of the
+  drawing's toolbar, and at the top of the chart's right-click menu while the pointer is
+  over a drawing, with no need to select the drawing first.
+- **Commands in a drawing toolbar group.** A widget action (`registerWidgetAction`) with
+  `target: 'drawings'` and a `group` adds a row at the end of that group's menu, after its
+  tools: a command such as "Create a tool" that runs your code instead of arming a tool. It
+  works for the built-in groups and for your own, and the mobile drawings list shows the
+  same row. A group of your own can also be on the toolbar before it has any tool: register
+  it with `showEmpty` and an `icon`, and its button opens the menu until the first tool
+  arrives.
+
+### Changed
+
+- **Drawings of a tool the page does not have are kept.** A saved document can hold a
+  drawing whose tool is not registered on the page that loads it: the plugin that defines
+  it loads later, or is not installed there. Such a drawing used to be dropped on load, and
+  was missing from the document the next time it was saved. It now stays on the chart as a
+  dashed outline of its points that you can select, move and delete, saves back exactly as
+  it was, and becomes the real drawing as soon as its tool is registered. A tool's
+  remembered settings and saved styles are kept the same way, and a favorite waits for its
+  tool. _(Breaking: `fromJSON`, `setToolDefaults` and `setToolTemplates` no longer drop
+  the entries of an unknown type, so `all()`, `toJSON()`, `toolDefaults()` and
+  `toolTemplates()` can return types the page did not register. Filter them yourself if
+  you relied on the drop.)_
+- **Drawing type keys are open.** `DrawingTypeKey` now accepts any string beside the
+  built-in keys, which keep their completions in an editor. _(Breaking: TypeScript code
+  that switches over `DrawingTypeKey` and expects to have covered every key no longer
+  compiles as exhaustive. Use `BuiltinDrawingType`, exported from `@luxalgo/vela/plugin`,
+  for the list of built-in keys.)_
+- **A drawing type you registered now shows in the toolbar.** A type registered with
+  `registerDrawingType` used to appear in the default toolbar only when its `group` was
+  `'lines'`, `'channels'` or `'pitchforks'`. Every registered type now joins the toolbar, in
+  the built-in group it names or in a group of its own. _(Breaking: a type you registered to
+  arm from your own interface appears in the toolbar too. Register it with `toolbar: false`
+  to keep it out.)_
 
 ### Fixed
 

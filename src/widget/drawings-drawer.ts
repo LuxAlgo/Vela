@@ -8,7 +8,7 @@ import { Drawer } from '@luxalgo/vela-ui/drawer';
 import { createTabs, tabsDef, type TabsHandle } from '@luxalgo/vela-ui/tabs';
 import { iconEl } from '@luxalgo/vela-ui/icons';
 import { injectChromeStyles } from '../ui/chromeStyles';
-import type { ToolbarDefinition, ToolDefinition } from '../core/drawings/toolbar';
+import type { ToolbarDefinition, ToolDefinition, ToolGroupAction } from '../core/drawings/toolbar';
 import type { DrawingTypeKey } from '../core/drawings/Drawing';
 import { msg } from '../core/i18n/message';
 import { sourceText, textOf } from '../core/i18n/text';
@@ -185,7 +185,8 @@ export class DrawingsDrawer {
     open(): void {
         this.drawer.setTitle(this.t(TEXT.title));
         this.input.placeholder = this.t(TEXT.search);
-        this.definition = this.opts.toolbar();
+        // A group with no tool and no action would be an empty tab.
+        this.definition = { groups: this.opts.toolbar().groups.filter((g) => g.tools.length > 0 || (g.actions?.length ?? 0) > 0) };
         if (!this.definition.groups.some((g) => g.id === this.activeGroup)) this.activeGroup = this.definition.groups[0]?.id ?? '';
         this.input.value = '';
         this.renderTabs();
@@ -272,6 +273,25 @@ export class DrawingsDrawer {
             this.list.appendChild(el);
         };
 
+        // A group's commands, after its tools: the same glyph column, no star to toggle.
+        const actionRow = (action: ToolGroupAction): void => {
+            const el = doc.createElement('div');
+            el.className = 'vela-dd-row';
+            el.setAttribute('role', 'button');
+            const glyph = doc.createElement('span');
+            glyph.className = 'vela-dd-glyph';
+            if (action.icon) glyph.appendChild(iconEl(action.icon, doc));
+            const label = doc.createElement('span');
+            label.className = 'vela-dd-label';
+            label.textContent = action.label;
+            el.append(glyph, label);
+            el.addEventListener('click', () => {
+                this.drawer.hide();
+                action.run();
+            });
+            this.list.appendChild(el);
+        };
+
         if (query) {
             // Search flattens every group; group labels become the section headers.
             let any = false;
@@ -302,5 +322,6 @@ export class DrawingsDrawer {
         } else {
             for (const tool of group.tools) row(tool);
         }
+        for (const action of group.actions ?? []) actionRow(action);
     }
 }

@@ -2159,6 +2159,7 @@ export class NativeRenderer implements IChartRenderer {
         // new scale) until the next tick re-seeds. The bars given here carry real values —
         // drop the ease; the next tick snaps fresh (liveEaseTime no longer matches).
         this.liveEaseTime = 0;
+        this.barsGeneration += 1;
         const prevBars = this.bars;
         const prevHeadTime = prevBars[0]?.time;
         this.scene.variableDuration = opts?.variableDuration === true;
@@ -3478,7 +3479,9 @@ export class NativeRenderer implements IChartRenderer {
         const bar = this.bars[idx];
         const pricePane = this.dataWindowPricePane();
         const parts = bar ? formatStampParts(bar.time, displayZone(this.scene.timezone, this.coords.barInterval)) : { date: '', time: '' };
-        return { date: parts.date, time: parts.time, ohlc: this.dataWindowOHLC(bar, pricePane), groups: this.dataWindowGroups(idx, pricePane) };
+        // The drawings that report values follow the indicators, one group each.
+        const groups = [...this.dataWindowGroups(idx, pricePane), ...(this.userDrawings?.readoutGroups() ?? [])];
+        return { date: parts.date, time: parts.time, ohlc: this.dataWindowOHLC(bar, pricePane), groups };
     }
 
     private dataWindowPricePane(): PaneNode | null {
@@ -3791,7 +3794,26 @@ export class NativeRenderer implements IChartRenderer {
                 paneId === PRICE_PANE_ID && this.scene.priceMintick
                     ? { tick: this.scene.priceMintick, pip: this.symbolFacts?.pipsize }
                     : undefined,
+            { barsKey: this.barsKey(), barMs: this.coords.barInterval, timeZone: this.scene.timezone },
         );
+    }
+
+    /** How many times the whole series was set (`setBars`): another series on the same time
+     *  grid (a symbol switch) is then told apart from a tick of the same one. */
+    private barsGeneration = 0;
+
+    /**
+     * A fingerprint of the bars drawings compute from: it changes when they do, and tells
+     * a moved newest bar from added bars from another series (see `Projector.barsKey`).
+     * It reads the bars as they are painted, so while the forming bar glides toward a tick
+     * a drawing computes along with it and ends on the true values, like the candle does.
+     */
+    private barsKey(): string {
+        const n = this.bars.length;
+        const first = this.bars[0];
+        const last = this.bars[n - 1];
+        if (!first || !last) return `0|0|0|${this.barsGeneration}|`;
+        return `${n}|${first.time}|${last.time}|${this.barsGeneration}|${last.open},${last.high},${last.low},${last.close},${last.volume ?? ''}`;
     }
 
     /** OHLC bars whose open-time falls within `[from, to]` (inclusive) — the data a regression
@@ -3924,6 +3946,7 @@ export class NativeRenderer implements IChartRenderer {
         if (i1 < i0) return;
         // Series points past the last bar paint in the right whitespace, so they scale there too.
         const s1 = Math.max(i1, Math.ceil(vr.to));
+        const visibleTime = this.coords.visibleTimeRange();
         // Percent mode: the reference is the first visible bar's close (the common idiom).
         this.scene.percentBaseline = this.bars[i0]?.close ?? 0;
         this.scene.modelPercentBaselines.clear();
@@ -3955,9 +3978,12 @@ export class NativeRenderer implements IChartRenderer {
                 pane.initialized = true;
                 continue;
             }
-            // User drawings do not expand the scale (placing one in the empty margin
-            // must not yank the window to follow the cursor). Pine drawings still fold in.
+            // User drawings do not expand the scale (placing one in the empty margin must not
+            // yank the window to follow the cursor) unless their type asks for it. Pine
+            // drawings fold in.
             let dr = this.chrome.paneDrawingsRange(masterModels, this.scene, pane === pricePane, vr);
+            const ur = this.userDrawings?.autoscaleRangeForPane(pane.id, visibleTime.from, visibleTime.to) ?? null;
+            if (ur) dr = dr ? { min: Math.min(dr.min, ur.min), max: Math.max(dr.max, ur.max) } : ur;
             // force_overlay series render on the price pane whatever pane their indicator
             // owns — fold their visible range in here (their own pane excludes them).
             if (pane === pricePane) {

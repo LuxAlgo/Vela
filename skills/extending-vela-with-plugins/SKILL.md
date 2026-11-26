@@ -1,6 +1,6 @@
 ---
 name: extending-vela-with-plugins
-description: Extends Vela charts through the public plugin SDK (@luxalgo/vela/plugin) - topbar buttons and right-click menu rows (registerWidgetAction), overlays and per-chart behavior (registerWidgetAttachment), docked side panels (registerSidePanel), custom chart types, renderer layers, native indicators, legend actions, drawing actions, saved state and shell defaults. Use when adding a feature, button, menu entry, panel, overlay or chart style to a Vela chart or VelaWorkspace, or packaging such features as a plugin, instead of forking Vela or reaching into its DOM.
+description: Extends Vela charts through the public plugin SDK (@luxalgo/vela/plugin) - topbar buttons and right-click menu rows (registerWidgetAction), overlays and per-chart behavior (registerWidgetAttachment), docked side panels (registerSidePanel), custom chart types, renderer layers, native indicators, custom drawing tools (defineDrawing), legend actions, drawing actions, saved state and shell defaults. Use when adding a feature, button, menu entry, panel, overlay, chart style or drawing tool to a Vela chart or VelaWorkspace, or packaging such features as a plugin, instead of forking Vela or reaching into its DOM.
 license: Apache-2.0
 ---
 
@@ -14,6 +14,7 @@ and Vela projects them into its chrome; it never edits Vela's DOM.
 | To add | Hook |
 | --- | --- |
 | A topbar button, or a row in the chart, price-axis or time-axis right-click menu | `registerWidgetAction` (`target: 'topbar'`, `'context:body'`, `'context:price-axis'`, `'context:time-axis'`) |
+| A command at the end of a drawing toolbar group's menu | `registerWidgetAction` (`target: 'drawings'`, `group: '<group id>'`); `registerDrawingGroup({ …, showEmpty: true })` keeps a group of yours on the bar before its first tool |
 | An overlay, a gesture, key handling: behavior mounted once per chart app | `registerWidgetAttachment` |
 | A docked panel on the right, with its own toggle button | `registerSidePanel` |
 | A full-width strip or a rail at the edge | `ctx.dockStrip(el)`, `ctx.dockEdge(el, 'right')` from an action or attachment |
@@ -21,7 +22,8 @@ and Vela projects them into its chrome; it never edits Vela's DOM.
 | Drawing on the chart canvas | `registerRendererLayer` |
 | A computed study without a script | `registerNativeIndicator` |
 | Buttons or badges on legend rows | `registerLegendAction`, `registerLegendCallout` |
-| A button on a selected drawing's toolbar and settings dialog | `registerDrawingAction` (`when(drawing)`, `run(ctx, drawing)`) |
+| A drawing tool the user places from the drawing toolbar | `defineDrawing` (`shapes(ctx)` returns what to paint; the `using-vela-drawing-tools` skill has a full example) |
+| A button on a selected drawing's toolbar and settings dialog, or a row in its menus | `registerDrawingAction` (`when(drawing)`, `run(ctx, drawing)`; list `'menu'` in `surfaces` for a row in the toolbar's overflow menu and in the right-click menu over a drawing) |
 | State saved with the chart's document | `registerStatePersistence` |
 | A default for every shell (the sidebar on) | `registerShellDefaults` |
 | A scripting language for every chart | `registerDefaultEngine` |
@@ -83,7 +85,8 @@ registerSidePanel({
 
 1. **Register at import time, before charts are built.** A chart built later picks the
    contributions up; after a late registration or an unregistration, call the shell's
-   `refreshActions()`.
+   `refreshActions()`. Drawing tools are the exception: a tool registered, replaced or
+   unregistered at any time reaches the charts already built, with no call to make.
 2. **Read everything from the context you are handed, at the moment you need it.** `ctx.chart`,
    `ctx.symbol` and `ctx.timeframe` are live getters: never keep the chart in a variable of your
    own, since a rebuild or a grid's active cell change replaces it. A symbol or timeframe switch
@@ -113,7 +116,8 @@ registerSidePanel({
 ## Further reading
 
 - `node_modules/@luxalgo/vela/docs/contributing/plugin-sdk.md`: every hook with its full
-  descriptor, the right-click menu ranks, layout regions, the sidebar and keyboard bindings.
+  descriptor, drawing tools (`defineDrawing`), the right-click menu ranks, layout regions, the
+  sidebar and keyboard bindings.
 - `node_modules/@luxalgo/vela/docs/user/workspace.md`: composing the topbar and the sidebar
   from the host.
 - The `using-vela-ui-components` skill (shipped with `@luxalgo/vela-ui`) for the components a
