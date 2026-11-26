@@ -110,7 +110,8 @@ export const exampleProvider: DataProvider = {
 2. **Ascending and de-duplicated by `time`.** Normalize before returning.
 3. **The newest bar is the forming candle.** It changes as ticks arrive; a bar closes when you
    emit the next, later `time`. There is no close event. Its close time lies in the future, so
-   page a close-stamped API from beyond now or you drop it.
+   page a close-stamped API from beyond now or you drop it. A source that confirms a candle's
+   final values after the next one opened can emit that candle again: it replaces the candle.
 4. **Answer the window asked for.** `range` is `{ from?, to?, limit?, session? }` in open
    times; `to` absent means now. The cache asks again with a `from` that overlaps bars it holds:
    return the window as is. You write no cache of your own.

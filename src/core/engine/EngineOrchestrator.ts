@@ -3,7 +3,7 @@ import type { MarketDataFeed, BarRange, SymbolFacts, SymbolInfo } from '../ports
 import { tickDecimals } from '../format/numbers';
 import type { ScriptingEngine, ExecutionMarket, VisibleBarRange, BarsChangeReason, PreparedScript } from '../ports/ScriptingEngine';
 import type { Unsubscribe } from '../util/types';
-import { isSameBar, isNewerBar, type OHLCV } from '../model/ohlcv';
+import { closedBarIndex, isSameBar, isNewerBar, sameBarValues, type OHLCV } from '../model/ohlcv';
 import type { IndicatorModel } from '../model/indicator';
 import type { ValuePatch, SeriesValueDelta } from '../model/patch';
 import { isLineLikeSeries } from '../model/series';
@@ -1820,13 +1820,39 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
                 viewBar = this.barTransform.next(bar, this.bars[this.bars.length - 1]);
                 this.bars.push(viewBar);
             }
-        } else return;
+        } else {
+            this.reviseClosedBar(bar);
+            return;
+        }
 
         this.renderer.updateBar(viewBar);
         this.events.emit('bar', bar);
         // During a backfill a tick is tagged 'backfill' too — policy-A sessions hold their
         // run either way, and the eventual 'complete' run reads the tick from the array.
         if (notify) this.notifySessionsBars(this.historyState === 'backfill' ? 'backfill' : undefined);
+    }
+
+    /**
+     * A bar for a candle that already closed: its final values, which some sources confirm
+     * only after the next candle has opened. It replaces that candle, so the live chart ends
+     * up matching what a reload of the history shows. No `'bar'` event (hosts read the latest
+     * price from it) and no session notification: scripts read the corrected candle from the
+     * canonical array on their next run. A bar that matches no held candle is dropped.
+     */
+    private reviseClosedBar(bar: OHLCV): void {
+        if (isVariableDurationTimeframe(this.config.market.timeframe ?? '')) return;
+        const i = closedBarIndex(this.rawBars, bar);
+        if (i < 0 || sameBarValues(this.rawBars[i]!, bar)) return;
+        this.rawBars[i] = bar;
+        if (!this.barTransform) {
+            this.renderer.updateBar(bar);
+            return;
+        }
+        // A derived bar opens from the one before it: every view bar from the revised one on changes.
+        for (let k = i; k < this.rawBars.length; k += 1) {
+            this.bars[k] = this.barTransform.next(this.rawBars[k]!, this.bars[k - 1]);
+            this.renderer.updateBar(this.bars[k]!);
+        }
     }
 
     /**

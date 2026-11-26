@@ -290,7 +290,10 @@ export interface IChartRenderer {
      * preserved, time-based bar countdowns stay hidden, and sub-minute stamps show seconds.
      */
     setBars(bars: OHLCV[], opts?: { preserveView?: boolean; variableDuration?: boolean }): void;
-    /** Append a new bar or replace the forming (last) bar, decided by time. */
+    /**
+     * Append a new bar, or replace the bar that opens at the same time, decided by time: the
+     * forming (last) bar, or a closed one whose final values arrived late.
+     */
     updateBar(bar: OHLCV): void;
 
     /**
