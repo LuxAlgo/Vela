@@ -237,6 +237,182 @@ describe('ClockCorrection', () => {
     });
 });
 
+// A device clock running FAST: candles never land early on it, so they can't prove it off,
+// and the countdown ended before every close. Reported on EURUSD 1m from a computer 22 s
+// fast: each 1-minute countdown ran out 22 s early and the clock read 22 s ahead.
+describe('ClockCorrection with a server time source', () => {
+    const NEXT = T0 + MIN; // the 14:45:00 candle
+    const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+    /** The market's real time, a device clock `offBy` ms off it, and a monotonic clock. */
+    function world(offBy: number) {
+        let realMs = T0;
+        let monoMs = 1_000;
+        let deviceOffBy = offBy;
+        const correction = new ClockCorrection(
+            () => realMs + deviceOffBy,
+            () => monoMs,
+        );
+        const pass = (ms: number): void => {
+            realMs += ms;
+            monoMs += ms;
+        };
+        return {
+            correction,
+            pass,
+            get realMs() {
+                return realMs;
+            },
+            /** The OS sets the device clock (or the machine wakes from sleep). */
+            setDeviceOffBy(ms: number) {
+                deviceOffBy = ms;
+            },
+            /** A server answering with the real time, stamped halfway through a `roundTrip` exchange. */
+            server(roundTrip = 80) {
+                return vi.fn(async () => {
+                    pass(roundTrip / 2);
+                    const stamp = realMs;
+                    pass(roundTrip / 2);
+                    return stamp;
+                });
+            },
+        };
+    }
+
+    it('a computer clock 22 s fast reads the server time once it answers', async () => {
+        const w = world(22_000);
+        w.pass(30_000); // 14:44:30 on the market, 14:44:52 on the device
+        expect(countdownText(T0, MIN, w.correction.now())).toBe('00:08'); // the device clock alone
+        await w.correction.setServerTimeSource(w.server());
+        expect(w.correction.offsetMs).toBe(-22_000);
+        expect(w.correction.now()).toBe(w.realMs);
+        expect(countdownText(T0, MIN, w.correction.now())).toBe('00:30');
+    });
+
+    it('the countdown runs to the close instead of ending 22 s early', async () => {
+        const w = world(22_000);
+        await w.correction.setServerTimeSource(w.server());
+        w.pass(T0 + 38_000 - w.realMs); // 14:44:38: the device already reads 14:45:00
+        expect(countdownText(T0, MIN, w.realMs + 22_000)).toBeNull(); // where the chip used to vanish
+        expect(countdownText(T0, MIN, w.correction.now())).toBe('00:22');
+        w.pass(21_000);
+        expect(countdownText(T0, MIN, w.correction.now())).toBe('00:01');
+        w.pass(1_000);
+        expect(countdownText(T0, MIN, w.correction.now())).toBeNull(); // the next candle is due
+    });
+
+    it('a slow computer clock reads the server time too', async () => {
+        const w = world(-6_000);
+        await w.correction.setServerTimeSource(w.server());
+        expect(w.correction.offsetMs).toBe(6_000);
+        expect(w.correction.now()).toBe(w.realMs);
+    });
+
+    it('keeps the answer that spent the least time in transit, and stops at a quick one', async () => {
+        const w = world(22_000);
+        // The first answer pays for opening the connection: 900 ms, stamped late in the exchange.
+        const exchanges = [
+            { roundTrip: 900, stampedAt: 0.9 },
+            { roundTrip: 60, stampedAt: 0.5 },
+        ];
+        const source = vi.fn(async () => {
+            const { roundTrip, stampedAt } = exchanges[source.mock.calls.length - 1]!;
+            w.pass(roundTrip * stampedAt);
+            const stamp = w.realMs;
+            w.pass(roundTrip * (1 - stampedAt));
+            return stamp;
+        });
+        await w.correction.setServerTimeSource(source);
+        expect(source).toHaveBeenCalledTimes(2);
+        expect(w.correction.now()).toBe(w.realMs);
+    });
+
+    it('ignores an answer that is not a time in milliseconds, or that took longer than 5 s', () => {
+        const w = world(22_000);
+        expect(w.correction.observeServerTime(Number.NaN, 50)).toBe(false);
+        expect(w.correction.observeServerTime(Math.floor(w.realMs / 1000), 50)).toBe(false); // seconds
+        expect(w.correction.observeServerTime(w.realMs, 6_000)).toBe(false);
+        expect(w.correction.observeServerTime(w.realMs, -1)).toBe(false);
+        expect(w.correction.offsetMs).toBe(0);
+        expect(w.correction.observeServerTime(w.realMs, 0)).toBe(true);
+        expect(w.correction.offsetMs).toBe(-22_000);
+    });
+
+    it('stays on the device clock while the server cannot answer, and asks again a minute later', async () => {
+        const w = world(22_000);
+        const failing = vi.fn(async (): Promise<number> => {
+            throw new Error('offline');
+        });
+        await w.correction.setServerTimeSource(failing);
+        expect(w.correction.now()).toBe(w.realMs + 22_000);
+        w.pass(30_000);
+        w.correction.now();
+        await flush();
+        expect(failing).toHaveBeenCalledTimes(1); // not on every read
+        w.pass(30_000);
+        w.correction.now();
+        await flush();
+        expect(failing).toHaveBeenCalledTimes(2);
+    });
+
+    it('asks again every 30 minutes, not on every read', async () => {
+        const w = world(22_000);
+        const source = w.server();
+        await w.correction.setServerTimeSource(source);
+        w.pass(29 * MIN);
+        w.correction.now();
+        await flush();
+        expect(source).toHaveBeenCalledTimes(1);
+        w.pass(MIN);
+        w.correction.now();
+        await flush();
+        expect(source).toHaveBeenCalledTimes(2);
+    });
+
+    it('asks again when the device clock is set, instead of applying the old answer to it', async () => {
+        const w = world(22_000);
+        const source = w.server();
+        await w.correction.setServerTimeSource(source);
+        expect(w.correction.offsetMs).toBe(-22_000);
+        w.setDeviceOffBy(0); // the OS syncs the clock
+        const before = w.realMs;
+        expect(w.correction.now()).toBe(before); // not 22 s behind
+        await flush();
+        expect(source).toHaveBeenCalledTimes(2);
+        expect(w.correction.offsetMs).toBe(0);
+    });
+
+    it('a server answer replaces the lag candles proved instead of adding to it', () => {
+        const w = world(-6_000);
+        w.pass(MIN + 2_200); // the 14:45 candle lands 2.2 s after the minute
+        w.correction.observeCandle(NEXT, MIN);
+        expect(w.correction.offsetMs).toBe(3_800);
+        expect(w.correction.observeServerTime(w.realMs, 0)).toBe(true);
+        expect(w.correction.offsetMs).toBe(6_000);
+    });
+
+    it('candles still prove a clock slow that an imprecise answer left behind', () => {
+        const w = world(-6_000);
+        w.correction.observeServerTime(w.realMs - 1_000, 0); // an answer 1 s behind the market
+        expect(w.correction.offsetMs).toBe(5_000);
+        w.pass(NEXT + 200 - w.realMs); // the 14:45 candle lands 200 ms after the minute
+        w.correction.observeCandle(NEXT, MIN);
+        expect(w.correction.offsetMs).toBe(5_800);
+    });
+
+    it('going back to the device clock forgets the server, even an answer still on its way', async () => {
+        const w = world(22_000);
+        let answer: (ms: number) => void = () => undefined;
+        const slow = vi.fn(() => new Promise<number>((resolve) => (answer = resolve)));
+        const asking = w.correction.setServerTimeSource(slow);
+        await w.correction.setServerTimeSource(null);
+        answer(w.realMs);
+        await asking;
+        expect(w.correction.offsetMs).toBe(0);
+        expect(w.correction.now()).toBe(w.realMs + 22_000);
+    });
+});
+
 describe('the second pulse on a corrected clock', () => {
     afterEach(() => {
         vi.useRealTimers();
