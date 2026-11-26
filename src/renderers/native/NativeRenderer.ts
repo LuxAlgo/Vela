@@ -28,7 +28,7 @@ import { textOf } from '../../core/i18n/text';
 import type { MessageLike } from '../../core/i18n/types';
 import { ENGLISH_FORMAT } from '../../core/format/formatters';
 import type { FormatSurface } from '../../core/format/types';
-import { isSameBar, isNewerBar, type OHLCV } from '../../core/model/ohlcv';
+import { closedBarIndex, isSameBar, isNewerBar, type OHLCV } from '../../core/model/ohlcv';
 import type { Millis } from '../../core/model/time';
 import type { VolumeLayerData, VpvrLayerData } from '../../core/model/volume-layers';
 import type { Pane } from '../../core/model/scene';
@@ -2249,7 +2249,11 @@ export class NativeRenderer implements IChartRenderer {
             // slow — learned before this frame paints, so the countdown never reads `01:04`.
             if (!this.scene.variableDuration) clockCorrection.observeCandle(bar.time, this.coords.barInterval);
         } else {
-            return;
+            // A closed candle's late final values: same open time, so the time axis and the
+            // forming bar's glide stay as they are.
+            const i = this.scene.variableDuration ? -1 : closedBarIndex(this.bars, bar);
+            if (i < 0) return;
+            this.bars[i] = bar;
         }
         this.scene.bars = this.bars;
         this.scheduler.invalidate(InvalidateLevel.Full);

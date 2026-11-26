@@ -140,7 +140,7 @@ A feed injected this way is used as-is: `chart.data.registerProvider(...)` becom
 ## Checklist
 
 - `getBars` implemented; reads ticker/timeframe from arguments, returns open-time-in-ms bars, sorted + de-duplicated.
-- Newest bar treated as the forming candle; roll forward by emitting a larger open-time (no separate close event).
+- Newest bar treated as the forming candle; roll forward by emitting a larger open-time (no separate close event). A closed candle emitted again after a newer one opened (its final values, confirmed late) replaces that candle on the chart.
 - Ranged `getBars` tolerates an overlapping `from` and honors "`to` omitted = now"; no timeframe aggregation across requests unless your venue needs it internally.
 - A timeframe the venue never serves for a symbol throws a `DataUnavailableError` with `finest` (and `default` when you have one), not an empty list.
 - (Optional) `listSymbols` so bare symbols resolve to you; `getSymbolInfo` for real syminfo and the symbol's facts (time zone, sessions, timeframes, volume, one value per bar); `subscribe` for a true candle stream (else polling is used); `getCalendar` for resolved market-time windows on venues with trading sessions.
