@@ -6,6 +6,8 @@ import type { MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
 import { msg } from '../core/i18n/message';
 import { textOf } from '../core/i18n/text';
 import type { MessageDescriptor, Translator } from '../core/i18n/types';
+import type { SerializedDrawing } from '../core/drawings';
+import type { DrawingActionDescriptor } from './contributions';
 import { timezoneMenuRows } from './timezones';
 
 const TEXT = {
@@ -20,6 +22,8 @@ const TEXT = {
     axisLabels: msg('widget.contextMenu.axisLabels', 'Price axis labels'),
     priceLabel: msg('widget.contextMenu.priceLabel', 'Last price label'),
     countdown: msg('widget.contextMenu.countdown', 'Countdown to bar close'),
+    indicatorValueLabels: msg('widget.contextMenu.indicatorValueLabels', 'Indicator value labels'),
+    indicatorNameLabels: msg('widget.contextMenu.indicatorNameLabels', 'Indicator name labels'),
     levels: msg('widget.contextMenu.levels', 'Levels'),
     priceLine: msg('widget.contextMenu.priceLine', 'Last price line'),
     moreSettings: msg('widget.contextMenu.moreSettings', 'More settings…'),
@@ -129,6 +133,8 @@ export interface PriceAxisState {
     axisLabels: boolean;
     priceLabel: boolean;
     countdown: boolean;
+    indicatorValueLabels: boolean;
+    indicatorNameLabels: boolean;
     priceLine: boolean;
 }
 
@@ -153,6 +159,8 @@ export function priceAxisItems(s: PriceAxisState, i18n?: Translator | null): Men
                 { id: 'toggle:axisLabels', label: t(TEXT.axisLabels), checked: s.axisLabels },
                 { id: 'toggle:priceLabel', label: t(TEXT.priceLabel), checked: s.priceLabel },
                 { id: 'toggle:countdown', label: t(TEXT.countdown), checked: s.countdown },
+                { id: 'toggle:indicatorValueLabels', label: t(TEXT.indicatorValueLabels), checked: s.indicatorValueLabels },
+                { id: 'toggle:indicatorNameLabels', label: t(TEXT.indicatorNameLabels), checked: s.indicatorNameLabels },
             ],
         },
         {
@@ -186,6 +194,22 @@ export function bodyItems(counts: { drawings: number; indicators: number }, i18n
         { id: 'remove-indicators', label: t(TEXT.removeIndicators), icon: 'indicators', disabled: counts.indicators === 0 },
         settingsItem('body', t(TEXT.settings), 'gear'),
     ];
+}
+
+/** The menu id prefix of a drawing action's row. */
+export const DRAWING_ACTION_PREFIX = 'drawing-action:';
+
+/** The drawing actions the right-click menu offers for `drawing` (the one under the
+ *  pointer): those on the `'menu'` surface that their `when` lets through, in registry
+ *  order. None without a drawing. */
+export function drawingMenuActions(actions: readonly DrawingActionDescriptor[], drawing: SerializedDrawing | null | undefined): DrawingActionDescriptor[] {
+    if (!drawing) return [];
+    return actions.filter((a) => a.surfaces?.includes('menu') === true && (!a.when || a.when(drawing)));
+}
+
+/** {@link drawingMenuActions} as menu rows. */
+export function drawingMenuItems(actions: readonly DrawingActionDescriptor[], drawing: SerializedDrawing | null | undefined, i18n?: Translator | null): MenuItemDescriptor[] {
+    return drawingMenuActions(actions, drawing).map((a) => ({ id: `${DRAWING_ACTION_PREFIX}${a.id}`, label: textOf(i18n, a.label), icon: a.icon }));
 }
 
 /**
@@ -224,9 +248,10 @@ export interface ContributedRow {
  * {@link CONTEXT_MENU_BUILTIN_ORDER}). Separators fall between groups only, never at the
  * ends: each built-in group is a run the builder already separates, and consecutive
  * contributed rows form one group. `contributed` arrives in registration order within
- * equal `order`s (what `widgetActions` returns) and keeps it.
+ * equal `order`s (what `widgetActions` returns) and keeps it. `leading` rows (the actions of
+ * the drawing under the pointer) open the menu whatever the ranks, as a group of their own.
  */
-export function composeMenu(zone: Zone, builtin: readonly MenuItemDescriptor[], contributed: readonly ContributedRow[]): MenuItemDescriptor[] {
+export function composeMenu(zone: Zone, builtin: readonly MenuItemDescriptor[], contributed: readonly ContributedRow[], leading: readonly MenuItemDescriptor[] = []): MenuItemDescriptor[] {
     const ranks: Readonly<Record<string, number>> = CONTEXT_MENU_BUILTIN_ORDER[zone];
     const rows: Array<{ item: MenuItemDescriptor; rank: number; group: number }> = [];
     let group = 0;
@@ -236,5 +261,6 @@ export function composeMenu(zone: Zone, builtin: readonly MenuItemDescriptor[], 
     }
     for (const { item, order } of contributed) rows.push({ item, rank: order ?? 0, group: -1 });
     rows.sort((a, b) => a.rank - b.rank);
-    return rows.map(({ item, group: g }, i) => ({ ...item, separatorBefore: i > 0 && rows[i - 1]!.group !== g }));
+    const all = [...leading.map((item) => ({ item, group: -2 })), ...rows];
+    return all.map(({ item, group: g }, i) => ({ ...item, separatorBefore: i > 0 && all[i - 1]!.group !== g }));
 }

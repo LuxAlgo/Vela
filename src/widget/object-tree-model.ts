@@ -5,6 +5,7 @@
 // unit-testable on plain objects.
 import type { PaneInfo } from '../core/options';
 import type { SerializedDrawing } from '../core/drawings/Drawing';
+import type { DrawingGroup } from '../core/drawings/document';
 import { getDrawingType } from '../core/drawings/registry';
 import { msg } from '../core/i18n/message';
 import { sourceText, textOf } from '../core/i18n/text';
@@ -17,15 +18,9 @@ const TEXT = {
     group: msg('widget.objectTree.group', 'Group {n}'),
 };
 
-/** A user-made bundle of drawings that hide, lock, delete and move as one. */
-export interface DrawGroup {
-    id: string;
-    name: string;
-    ids: string[];
-    /** The pane an EMPTY group sits in. A group made before it holds anything has no member to
-     *  take a pane from; once drawings join, theirs is where it shows. Absent: the main chart. */
-    pane?: string;
-}
+/** A user-made bundle of drawings that hide, lock, delete and move as one. The chart keeps
+ *  them with its drawings (`drawings.groups()`), so they persist alongside. */
+export type DrawGroup = DrawingGroup;
 
 /** The candles. */
 export interface PriceRow {
@@ -301,6 +296,17 @@ function withMembers(groups: readonly DrawGroup[], keep: (id: string) => boolean
         const next = { ...g, ids: g.ids.filter(keep) };
         return survives(g, next) ? [next] : [];
     });
+}
+
+/** An id no group has: one past the highest `grp-N` — groups now come back from saved
+ *  documents, so a counter starting at zero would collide with them. */
+export function nextGroupId(groups: readonly DrawGroup[]): string {
+    let n = 0;
+    for (const g of groups) {
+        const m = /^grp-(\d+)$/.exec(g.id);
+        if (m) n = Math.max(n, Number(m[1]));
+    }
+    return `grp-${n + 1}`;
 }
 
 /** Drop members that no longer exist, and the groups left empty by that. */

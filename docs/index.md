@@ -2,7 +2,7 @@
 
 Vela™ is a modern charting library built around a small, robust **core** wrapped by three independently-extensible **layers**: **Data providers** feed market data in, **Scripting engines** execute indicators, and **Renderers** draw the result. The core owns the canonical data and orchestrates everything; each layer plugs in behind a single narrow port, so you can swap any one of them — a different data source, a different scripting language, a different drawing backend — without touching the others or the core.
 
-On top of the core, Vela™ ships two more things: a **shell** (`@luxalgo/vela/workspace` — the batteries-included chart app, one chart or a grid: topbar, pickers, status line, bottom bar, object tree, keyboard-first UX) and a **plugin SDK** (`@luxalgo/vela/plugin` — chart types, renderer layers, native indicators, widget actions) that lets external packages extend both.
+On top of the core, Vela™ ships two more things: a **shell** (`@luxalgo/vela/workspace` — the batteries-included chart app, one chart or a grid: topbar, pickers, status line, bottom bar, object tree, keyboard-first UX) and a **plugin SDK** (`@luxalgo/vela/plugin` — chart types, renderer layers, native indicators, drawing tools, widget actions) that lets external packages extend both.
 
 ## The one mental model
 
@@ -42,7 +42,7 @@ The documentation is grouped by what you are trying to do.
 
 - **User** — get a chart rendering and drive it from your app: [Quickstart](user/quickstart.md), [The workspace](user/workspace.md) (single chart or a multi-chart grid), [Options](user/options.md), [Localization](user/localization.md), [API reference](user/api-reference.md), [Drawing tools](user/drawing-tools.md), [Timeline marks](user/timeline-marks.md), [Renderer features](user/renderer-features.md), [Data providers](user/data-providers.md), [Scripting engines](user/scripting-engines.md), [Examples](user/examples.md), [FAQ](user/faq.md), [Upgrading](user/upgrading.md).
 - **Architecture** — understand the core, the three layers, the neutral model, and how data flows: [Overview](architecture/overview.md), [Data flow](architecture/data-flow.md), and the [decision records](architecture/adr/README.md).
-- **Contributing** — set up the project and extend Vela™: the [plugin SDK](contributing/plugin-sdk.md) (chart types, renderer layers, widget actions — no fork needed), or extend a layer behind its port in-repo: add a [renderer](contributing/adding-a-renderer.md), an [engine](contributing/adding-an-engine.md), a [data provider](contributing/adding-a-data-provider.md), a [drawing tool](contributing/adding-a-drawing-tool.md), or a [UI-kit component](contributing/adding-a-ui-component.md).
+- **Contributing** — set up the project and extend Vela™: the [plugin SDK](contributing/plugin-sdk.md) (chart types, renderer layers, drawing tools, widget actions — no fork needed), or extend a layer behind its port in-repo: add a [renderer](contributing/adding-a-renderer.md), an [engine](contributing/adding-an-engine.md), a [data provider](contributing/adding-a-data-provider.md), a [built-in drawing tool](contributing/adding-a-drawing-tool.md), or a [UI-kit component](contributing/adding-a-ui-component.md).
 
 ## Reading paths
 
@@ -55,10 +55,11 @@ Pick the path that matches your goal.
 - **"I want to draw on the chart"** → [Drawing tools](user/drawing-tools.md)
 - **"I want to pin events — dividends, news, releases — to the chart"** → [Timeline marks](user/timeline-marks.md)
 - **"I want a custom chart type or overlay"** → [Plugin SDK](contributing/plugin-sdk.md)
+- **"I want a drawing tool of my own"** → [Plugin SDK — drawing tools](contributing/plugin-sdk.md#drawing-tools--definedrawing)
 - **"I want to grasp the design"** → [Architecture overview](architecture/overview.md)
 - **"I want to add a backend"** → choose the port you're extending:
   - a new drawing/output backend → [adding a renderer](contributing/adding-a-renderer.md)
   - a new scripting language/engine → [adding an engine](contributing/adding-an-engine.md)
   - a new market-data source → [adding a data provider](contributing/adding-a-data-provider.md)
-  - a new interactive drawing tool → [adding a drawing tool](contributing/adding-a-drawing-tool.md)
+  - a drawing tool that ships with Vela → [adding a drawing tool](contributing/adding-a-drawing-tool.md)
 - **"I want to contribute code"** → [Contributing setup](contributing/setup.md)

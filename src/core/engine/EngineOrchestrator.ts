@@ -1,13 +1,14 @@
 import type { IChartRenderer, VisibleRange } from '../ports/IChartRenderer';
 import type { MarketDataFeed, BarRange, SymbolFacts, SymbolInfo } from '../ports/MarketDataFeed';
+import { tickDecimals } from '../format/numbers';
 import type { ScriptingEngine, ExecutionMarket, VisibleBarRange, BarsChangeReason, PreparedScript } from '../ports/ScriptingEngine';
 import type { Unsubscribe } from '../util/types';
-import type { OHLCV } from '../model/ohlcv';
+import { isSameBar, isNewerBar, type OHLCV } from '../model/ohlcv';
 import type { IndicatorModel } from '../model/indicator';
 import type { ValuePatch, SeriesValueDelta } from '../model/patch';
 import { isLineLikeSeries } from '../model/series';
 import type { InputSchema, InputValue } from '../model/inputs';
-import type { VelaTheme, MarketConfig, MarketSwitch, MarketSnapshot, AddIndicatorOptions, PriceStyle, MoveTarget, PaneInfo } from '../options';
+import { normalizeSession, type VelaTheme, type MarketConfig, type MarketSwitch, type MarketSnapshot, type AddIndicatorOptions, type PriceStyle, type MoveTarget, type PaneInfo } from '../options';
 import type { PaneController } from '../PanesControl';
 import type { PaneAction } from '../ports/IChartRenderer';
 import type { CodeUpdateResult, IndicatorHandle } from '../IndicatorHandle';
@@ -34,7 +35,7 @@ import { MarksController } from '../marks/MarksController';
 import { DrawingSeriesService } from './DrawingSeriesService';
 import type { DrawingsOption } from '../drawings/toolbar';
 import type { DataControl } from '../DataControl';
-import { timeframeToMs } from '../../data/timeframe';
+import { isVariableDurationTimeframe, timeframeToMs } from '../../data/timeframe';
 import { parseSymbol } from '../../data/ProviderRegistry';
 import { isDataUnavailableError, type DataUnavailableError } from '../data-unavailable';
 import { barTransformFor, parseExtendedTicker, type BarTransform } from '../price-styles/BarTransform';
@@ -386,7 +387,8 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
      */
     private async fetchSeries(symbol: string, timeframe: string, range: BarRange): Promise<OHLCV[]> {
         const parsed = parseExtendedTicker(symbol);
-        const cfg: MarketConfig = { symbol: parsed.symbol, timeframe };
+        const session = normalizeSession(range.session);
+        const cfg: MarketConfig = { symbol: parsed.symbol, timeframe, ...(session ? { session } : {}) };
         const bars = await (this.feed.loadRange ? this.feed.loadRange(cfg, range) : this.feed.load({ ...cfg, bars: range.limit }));
         return parsed.transform ? parsed.transform.full(bars) : bars;
     }
@@ -710,6 +712,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
     async setMarket(next: MarketSwitch): Promise<void> {
         const m = this.config.market;
         const identityChanged =
+            next.force === true ||
             (next.symbol !== undefined && next.symbol !== m.symbol) ||
             (next.timeframe !== undefined && next.timeframe !== m.timeframe) ||
             // A session switch changes WHICH bars exist (RTH vs ETH) — a full reload,
@@ -1054,7 +1057,8 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
                     return;
                 }
                 for (let i = 1; i < head.length; i += 1) {
-                    if (head[i]!.time <= head[i - 1]!.time) {
+                    // Ordered as live bars are: by time, then by `seq` within one millisecond.
+                    if (!isNewerBar(head[i]!, head[i - 1]!)) {
                         console.warn('[vela] non-monotonic history chunk — stopping the backfill');
                         this.completeHistory('aborted');
                         return;
@@ -1593,9 +1597,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
      */
     private syncSymbolFacts({ refresh = false } = {}): void {
         const probe = ++this.factsProbe;
+        const symbol = this.qualifiedSymbol();
+        this.renderer.setSymbolName?.(symbol ? parseSymbol(symbol).ticker : undefined);
         const known = this.feed.symbolInfo?.(this.config.market);
         this.applySymbolFacts(symbolFactsOf(known));
-        const symbol = this.qualifiedSymbol();
         if (!symbol || this.config.market.data?.length || (known !== undefined && !refresh)) return;
         void this.dataControl
             .symbolInfo(symbol)
@@ -1609,7 +1614,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
     private applySymbolFacts(facts: SymbolFacts | null): void {
         const prev = this.facts;
         const mintickChanged = prev?.mintick !== facts?.mintick;
-        if (prev === facts || (prev && facts && prev.ohlc === facts.ohlc && prev.volume === facts.volume && !mintickChanged)) return;
+        if (prev === facts || (prev && facts && prev.ohlc === facts.ohlc && prev.volume === facts.volume && prev.pipsize === facts.pipsize && !mintickChanged)) return;
         this.facts = facts;
         if (mintickChanged) this.renderer.setPricePrecision?.(facts?.mintick);
         this.renderer.setSymbolFacts?.(facts);
@@ -1773,7 +1778,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
     private setBarSeries(raw: OHLCV[], opts?: { preserveView?: boolean; clearing?: boolean }): void {
         this.rawBars = raw;
         this.bars = this.barTransform ? this.barTransform.full(raw) : raw;
-        this.renderer.setBars(this.bars, { preserveView: opts?.preserveView });
+        this.renderer.setBars(this.bars, {
+            preserveView: opts?.preserveView,
+            variableDuration: isVariableDurationTimeframe(this.config.market.timeframe ?? ''),
+        });
         // The first PAINTED batch ends the loading state — on a deep history that is the quick
         // preview, well before the load pipeline completes. Only a non-empty series counts: the
         // switch-time CLEARING call says so explicitly, and an empty COMPLETED load is closed
@@ -1794,7 +1802,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
     private applyBar(bar: OHLCV, notify = true): void {
         const last = this.rawBars[this.rawBars.length - 1];
         let viewBar = bar;
-        if (last && bar.time === last.time) {
+        if (last && isSameBar(last, bar)) {
             this.rawBars[this.rawBars.length - 1] = bar;
             // The forming candle refined — its values are still provisional.
             this.barCause = 'tick';
@@ -1803,7 +1811,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
                 viewBar = this.barTransform.next(bar, this.bars[this.bars.length - 2]);
                 this.bars[this.bars.length - 1] = viewBar;
             }
-        } else if (!last || bar.time > last.time) {
+        } else if (!last || isNewerBar(bar, last)) {
             this.rawBars.push(bar);
             // A new bar opened, so the one before it is now FINAL — the distinction
             // `script:run` carries as `cause: 'bar'`.
@@ -1873,9 +1881,11 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         }
     }
 
-    /** Gap healing needs a ranged feed and a provider-backed series (offline `data` has no source). */
+    /** Gap healing needs a ranged feed, a provider-backed series (offline `data` has no
+     *  source), and a fixed-duration timeframe (variable-duration series have no fixed
+     *  bar interval to detect missed bars against). */
     private canHeal(): boolean {
-        return !!this.feed.loadRange && !this.config.market.data?.length;
+        return !!this.feed.loadRange && !this.config.market.data?.length && !isVariableDurationTimeframe(this.config.market.timeframe ?? '');
     }
 
     /** Duration of one chart bar in ms (for live-bar continuity checks). */
@@ -1995,14 +2005,16 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         const symbol = this.qualifiedSymbol();
         const present = new Set(this.presentNativeIndicators());
         return Promise.all(
-            nativeIndicatorEntries().map(async (d) => ({
-                type: d.type,
-                title: textOf(this.i18n, d.title),
-                supported: await this.isNativeSupported(d, symbol),
-                present: present.has(d.type),
-                beta: d.beta,
-                ...(d.multiInstance ? { multiInstance: true } : {}),
-            })),
+            nativeIndicatorEntries()
+                .filter((d) => d.catalog !== false)
+                .map(async (d) => ({
+                    type: d.type,
+                    title: textOf(this.i18n, d.title),
+                    supported: await this.isNativeSupported(d, symbol),
+                    present: present.has(d.type),
+                    beta: d.beta,
+                    ...(d.multiInstance ? { multiInstance: true } : {}),
+                })),
         );
     }
 
@@ -2431,6 +2443,11 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
             record.engine = engine;
 
             const prepared = await engine.prepare(source, id);
+            // Removed while preparing (a host re-applying a saved chart takes its scripts off
+            // and puts them back): a placeholder mounted now would be a loading row no one
+            // owns, never run and never removed. A server-side engine's prepare is a network
+            // round trip, so this window is real.
+            if (this.registry.get(id) !== record) return;
             // An updateCode that landed during this prepare owns the record now — the
             // original source must not overwrite the replacement's schema and session.
             if (record.source !== source) return;
@@ -2450,6 +2467,8 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
             this.mountLoadingPlaceholder(id, record);
             this.executeIndicator(id, handle);
         } catch (err) {
+            // A removed indicator's failure is nobody's to report.
+            if (this.handles.get(id) !== handle) return;
             this.fail(id, handle, err);
         }
     }
@@ -2556,8 +2575,10 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
             // One context per start: once the instance is stopped, nothing it left in flight
             // may reach the scene (a stopped market's payload, or a removed indicator's).
             let alive = true;
+            const secondaryUnsubs: Unsubscribe[] = [];
             native.revokeContext = () => {
                 alive = false;
+                for (const off of secondaryUnsubs.splice(0)) off();
             };
             const ctx: NativeIndicatorContext = {
                 id,
@@ -2567,6 +2588,27 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
                 session: this.config.market.session,
                 bars: () => this.bars,
                 data: this.dataControl,
+                fetchSeries: (symbol, timeframe, range) =>
+                    this.fetchSeries(symbol, timeframe, { ...(this.config.market.session ? { session: this.config.market.session } : {}), ...range }),
+                subscribeSeries: (symbol, timeframe, onBar) => {
+                    if (!alive || !this.config.live || this.replayQueue !== null) return () => {};
+                    const parsed = parseExtendedTicker(symbol);
+                    const cfg: MarketConfig = {
+                        symbol: parsed.symbol,
+                        timeframe,
+                        ...(this.config.market.session ? { session: this.config.market.session } : {}),
+                    };
+                    const rawOff = this.feed.subscribe(cfg, (bar) => {
+                        if (alive) onBar(bar);
+                    });
+                    const off: Unsubscribe = () => {
+                        const idx = secondaryUnsubs.indexOf(off);
+                        if (idx >= 0) secondaryUnsubs.splice(idx, 1);
+                        rawOff();
+                    };
+                    secondaryUnsubs.push(off);
+                    return off;
+                },
                 emit: (out) => {
                     if (alive) this.applyModel(id, this.buildNativeModel(record, out, this.bars[0]?.time));
                 },
@@ -2604,16 +2646,29 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         const d = record.native!.descriptor;
         const type = record.native!.type;
         const channel = this.nativeChannel(record);
-        const displayTitle = messageOnly(d.title);
-        const displayShorttitle = messageOnly(d.shortTitle);
+        const titleSrc = out.title ?? d.title;
+        const shortSrc = out.shortTitle !== undefined ? out.shortTitle : out.title !== undefined ? undefined : d.shortTitle;
+        const title = out.title !== undefined ? textOf(this.i18n, out.title) : record.title;
+        if (out.title !== undefined) {
+            record.title = title;
+            const h = this.handles.get(record.id);
+            if (h) h.title = title;
+        }
+        const displayTitle = messageOnly(titleSrc);
+        const displayShorttitle = messageOnly(shortSrc);
+        const paneHint = out.paneHint ?? d.paneHint;
+        const overlay = out.paneHint !== undefined ? out.paneHint === 'price' : d.overlay;
         return {
             id: record.id,
-            title: record.title,
-            ...(d.shortTitle ? { shorttitle: textOf(this.i18n, d.shortTitle) } : {}),
+            title,
+            ...(shortSrc !== undefined ? { shorttitle: textOf(this.i18n, shortSrc) } : {}),
             ...(displayTitle ? { displayTitle } : {}),
             ...(displayShorttitle ? { displayShorttitle } : {}),
-            overlay: d.overlay,
-            paneHint: d.paneHint,
+            overlay,
+            paneHint,
+            ...(out.ownScale ? { ownScale: true } : {}),
+            ...(out.percentBaseline !== undefined ? { percentBaseline: out.percentBaseline } : {}),
+            ...(out.priceAxisLabel ? { priceAxisLabel: true } : {}),
             native: { type, ...(channel !== type ? { channel } : {}) },
             ...(anchorTime != null ? { anchorTime } : {}),
             ...(d.legend === false ? { legend: false } : {}),
@@ -2775,12 +2830,18 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         for (const r of this.registry.all()) {
             const d = r.native?.descriptor;
             if (!d) continue;
-            r.title = textOf(this.i18n, d.title);
-            const handle = this.handles.get(r.id);
-            if (handle) handle.title = r.title;
+            // Preserve per-instance dynamic string titles (e.g. a compared symbol's ticker)
+            // — only re-translate titles backed by a translatable MessageDescriptor.
+            const titleMsg = r.model ? r.model.displayTitle : d.title;
+            if (titleMsg !== undefined) {
+                r.title = textOf(this.i18n, titleMsg);
+                const handle = this.handles.get(r.id);
+                if (handle) handle.title = r.title;
+                if (r.model) r.model.title = r.title;
+            }
             if (r.model) {
-                r.model.title = r.title;
-                if (d.shortTitle !== undefined) r.model.shorttitle = textOf(this.i18n, d.shortTitle);
+                const shortMsg = r.model.displayShorttitle;
+                if (shortMsg !== undefined) r.model.shorttitle = textOf(this.i18n, shortMsg);
             }
         }
     }
@@ -3055,17 +3116,14 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         }
 
         let paneId = record.model?.paneId ?? 'price';
-        const prevOwnScale = record.model?.ownScale === true;
+        const prevModel = record.model;
+        const prevOwnScale = prevModel?.ownScale === true;
         let rerouted = false;
-        if (record.loading && !record.paneLocked) {
-            // First COMPUTED model after the placeholder. The placeholder's pane came from
-            // the prepare-time overlay guess — if the real model routes differently, move
-            // off the placeholder pane before mounting. (A user-placed indicator is locked,
-            // so its pane is never re-derived here.)
+        if (!record.paneLocked && (record.loading || record.native)) {
+            // Re-derive pane routing when a placeholder resolves, or when a native indicator
+            // changes its emitted paneHint (e.g. compare switching between price pane and new pane).
             const routed = this.routePane(id, model, record.options ?? {});
             if (routed !== paneId) {
-                // A placeholder's pane is its own; after a code update the pane may also hold
-                // indicators merged into it since — those keep it.
                 if (paneId !== 'price' && !this.registry.all().some((r) => r.id !== id && r.model?.paneId === paneId)) {
                     this.renderer.removePane(paneId);
                     this.forgetPane(paneId); // keep core paneOrder in sync (was left stale → desynced list()/anchors/undo)
@@ -3078,6 +3136,16 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         }
         this.placeModel(model, id, paneId);
         if (record.paneLocked) model.ownScale = prevOwnScale; // carry the merge across the recompute
+        if (
+            prevModel &&
+            (model.title !== prevModel.title ||
+                model.shorttitle !== prevModel.shorttitle ||
+                (model.ownScale === true) !== prevOwnScale ||
+                model.percentBaseline !== prevModel.percentBaseline ||
+                model.priceAxisLabel !== prevModel.priceAxisLabel)
+        ) {
+            record.pendingStructural = true;
+        }
         record.model = model;
         if (record.pendingStructural) {
             // Idempotent-by-id remount: refresh visuals while keeping the legend + open
@@ -3384,5 +3452,12 @@ function symbolFactsOf(info: SymbolInfo | undefined): SymbolFacts | null {
     if (typeof mintick === 'number' && Number.isFinite(mintick) && mintick > 0) facts.mintick = mintick;
     if (typeof info.ohlc === 'boolean') facts.ohlc = info.ohlc;
     if (typeof info.volume === 'boolean') facts.volume = info.volume;
+    const { pipsize } = info;
+    if (typeof pipsize === 'number' && Number.isFinite(pipsize) && pipsize > 0) facts.pipsize = pipsize;
+    else if (typeof info.type === 'string' && info.type.toLowerCase() === 'forex' && facts.mintick) {
+        // a pair quoted to whole units or one decimal has no standard pip: its moves count in ticks
+        const d = tickDecimals(facts.mintick);
+        if (d >= 2) facts.pipsize = d >= 4 ? 0.0001 : 0.01;
+    }
     return facts;
 }

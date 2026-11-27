@@ -1,8 +1,8 @@
 import type { DrawingController, AddInit } from './drawings/DrawingController';
-import type { Drawing, DrawingTypeKey, SerializedDrawing } from './drawings/Drawing';
-import type { DrawingsDocument } from './drawings/document';
+import type { Drawing, DrawingReadoutRow, DrawingTypeKey, SerializedDrawing } from './drawings/Drawing';
+import type { DrawingGroup, DrawingsDocument } from './drawings/document';
 import type { SnapMode } from './drawings/geometry';
-import type { DrawingMode } from './drawings/port';
+import type { DrawingMode, DrawingSnapSource } from './drawings/port';
 import type { DrawingsOption } from './drawings/toolbar';
 import type { DrawingToolDefaults, DrawingToolTemplate } from './drawings/defaults';
 
@@ -232,6 +232,54 @@ export class DrawingsControl {
         return this.ctrl.all();
     }
 
+    /** The drawings' groups (the object tree's bundles), as copies. They persist with the
+     *  drawings in {@link toJSON}. */
+    groups(): DrawingGroup[] {
+        return this.ctrl.groups();
+    }
+    /** Replace the drawings' groups — for a host-side tree or list. Members that are not
+     *  drawings on this chart, or that an earlier group already holds, are left out.
+     *  Fires `drawing:groups` when the groups changed; not an undo step. */
+    setGroups(groups: readonly DrawingGroup[]): this {
+        this.ctrl.setGroups(groups);
+        return this;
+    }
+
+    /**
+     * A drawing's price at a time: a line's level there, a curve's value. This is what an
+     * alert on a drawing compares the price with. Null where the drawing has no value (off
+     * its ends), for an unknown id, and for a type that reports none.
+     */
+    valueAt(id: string, time: number): number | null {
+        return this.ctrl.valueAt(id, time);
+    }
+
+    /** The values a drawing reports (the ones the data window lists for it). */
+    readout(id: string): DrawingReadoutRow[] {
+        return this.ctrl.readout(id);
+    }
+
+    /** The drawing under a plot pixel, and the named part of it there (null over its plain
+     *  body). Null when no drawing is there, or without renderer support. */
+    at(x: number, y: number): { id: string; part: string | null } | null {
+        return this.ctrl.at(x, y);
+    }
+
+    /** The drawing the pointer is over right now, and the named part of it there. Follow
+     *  `drawing:hover` for changes. */
+    hovered(): { id: string; part: string | null } | null {
+        return this.ctrl.hovered();
+    }
+
+    /**
+     * Give the magnet more to snap to. While a drawing is placed or reshaped, `source` is
+     * asked for targets near the pointer: a point (`{ time, price }`), a level (`{ price }`)
+     * or a time (`{ time }`). Returns the function that removes the source.
+     */
+    addSnapSource(source: DrawingSnapSource): () => void {
+        return this.ctrl.addSnapSource(source);
+    }
+
     /** Snapshot all drawings as a versioned document (persistence). */
     toJSON(): DrawingsDocument {
         return this.ctrl.toJSON();
@@ -272,7 +320,8 @@ export class DrawingsControl {
     }
 
     /** Replace every tool's remembered settings (e.g. restoring persisted prefs). Malformed
-     *  entries and unknown types are dropped. Follow changes on `drawing:defaults`. */
+     *  entries are dropped; the settings of a tool that is not registered are kept for the
+     *  day it is. Follow changes on `drawing:defaults`. */
     setToolDefaults(map: Readonly<Record<string, unknown>>): this {
         this.ctrl.setToolDefaults(map);
         return this;

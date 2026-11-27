@@ -6,6 +6,7 @@
  * same invariant Pine drawings get from `xloc:'bar_time'`.
  */
 
+import type { PriceSteps } from './measureText';
 import type { DrawingSeriesState } from './series';
 
 /** A drawing anchor in DATA space (epoch-ms time + data-space price). */
@@ -53,6 +54,8 @@ export interface Projector {
     yOf(price: number, paneId: string): number | null;
     /** Known price precision for this pane, when supplied by the renderer. */
     priceDecimals?(paneId: string): number | undefined;
+    /** The symbol's tick size (and pip, for a currency pair) on this pane, when known. */
+    priceSteps?(paneId: string): PriceSteps | undefined;
     /** Inverse — pixel → data point on a pane (used on create/drag commit). */
     pxToPoint(x: number, y: number, paneId: string): DrawingPoint;
     /** Which pane owns a pixel y, or `null` outside every pane. */
@@ -81,6 +84,18 @@ export interface Projector {
      * an anchors-only rendering.
      */
     seriesInRange?(timeframe: string, from: number, to: number): DrawingSeriesState;
+    /**
+     * A fingerprint of the chart's bars, `count|firstTime|lastTime|series|lastBar`: it
+     * changes when the bars do, and only then, so a drawing that computes from them knows
+     * when to run again (and whether the newest bar moved, bars were added, or the series
+     * is another one: `series` changes each time the whole series is set). Absent on a
+     * renderer that cannot tell.
+     */
+    readonly barsKey?: string;
+    /** One chart bar in ms (the chart's own timeframe); absent when unknown. */
+    readonly barMs?: number;
+    /** The time zone the chart shows its times in, as an IANA name; absent when unknown. */
+    readonly timeZone?: string;
     /** Plot width in media px (excludes the right price-axis strip). */
     readonly width: number;
     /** Plot height in media px (excludes the bottom time-axis strip). */

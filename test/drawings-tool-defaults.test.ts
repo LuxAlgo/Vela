@@ -185,10 +185,12 @@ describe('remembered settings are announced and can be saved and restored', () =
         expect(announced).toEqual([]);
     });
 
-    it('unknown tools and malformed entries are dropped from a restored set', () => {
+    it('malformed entries are dropped from a restored set; a tool that is not registered keeps its own', () => {
         const { ctrl } = setup();
-        ctrl.setToolDefaults({ trendline: { style: { lineColor: '#ff0000' } }, notatool: { style: {} }, box: 'junk', hline: [1, 2] });
-        expect(Object.keys(ctrl.toolDefaults())).toEqual(['trendline']);
+        // `latertool` belongs to a plugin that is not loaded here: dropping its entry would
+        // lose the user's settings for it on the next save.
+        ctrl.setToolDefaults({ trendline: { style: { lineColor: '#ff0000' } }, latertool: { style: {} }, box: 'junk', hline: [1, 2] });
+        expect(Object.keys(ctrl.toolDefaults())).toEqual(['trendline', 'latertool']);
     });
 
     it('resetting a tool sends its next drawing back to the factory defaults', () => {

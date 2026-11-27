@@ -80,19 +80,23 @@ export interface LegendActionView {
 
 /**
  * One HOST-CONTRIBUTED action of a drawing, resolved by the shell for one drawing: an icon
- * button on the drawing's selection toolbar and a labelled button in its settings dialog.
- * Plain data plus a bound `run` thunk, like {@link LegendActionView}.
+ * button on the drawing's selection toolbar, a labelled button in its settings dialog, a
+ * row of the toolbar's overflow menu. Plain data plus a bound `run` thunk, like
+ * {@link LegendActionView}.
  */
 export interface DrawingActionView {
     id: string;
     /** Icon id in the core icon registry (`registerIcon`). */
     icon: string;
-    /** The toolbar button's tooltip and accessible name, and the settings dialog button's text. */
+    /** The toolbar button's tooltip and accessible name, and the text of the settings dialog
+     *  button and of the menu row. */
     label: string;
     /** Show it on the selection toolbar. */
     toolbar: boolean;
     /** Show it in the settings dialog. */
     settings: boolean;
+    /** Show it as a row of the selection toolbar's overflow menu. */
+    menu: boolean;
     run(): void;
 }
 
@@ -285,9 +289,11 @@ export interface IChartRenderer {
      * Replace all price bars. By default re-frames the view (a fresh series). Pass
      * `{ preserveView: true }` to keep the current viewport — used when extending the
      * same series in place (e.g. swapping a quick preview for the full history) so
-     * candles don't jump.
+     * candles don't jump. Pass `{ variableDuration: true }` for series whose bars have
+     * no fixed wall-clock period (tick bars, etc.): duplicate-millisecond bars are
+     * preserved, time-based bar countdowns stay hidden, and sub-minute stamps show seconds.
      */
-    setBars(bars: OHLCV[], opts?: { preserveView?: boolean }): void;
+    setBars(bars: OHLCV[], opts?: { preserveView?: boolean; variableDuration?: boolean }): void;
     /** Append a new bar or replace the forming (last) bar, decided by time. */
     updateBar(bar: OHLCV): void;
 
@@ -307,6 +313,12 @@ export interface IChartRenderer {
      * renderer without it draws whatever style is set.
      */
     setSymbolFacts?(facts: SymbolFacts | null): void;
+
+    /**
+     * Set the active symbol's short display name (bare ticker, e.g. `'AAPL'`), used when
+     * the price axis labels multiple instruments side by side. Optional.
+     */
+    setSymbolName?(name: string | undefined): void;
 
     /**
      * Push a bespoke NATIVE-LAYER render payload, keyed by layer `type`. Visuals that aren't

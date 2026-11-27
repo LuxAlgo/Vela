@@ -1,5 +1,5 @@
 import { type AnchorSlot } from '../Drawing';
-import type { Projector, SegmentGeometry } from '../geometry';
+import type { DrawingPoint, Projector, SegmentGeometry } from '../geometry';
 import type { SettingsSchema } from '../schema';
 import { LINE_FIELDS, FILL_FIELDS, TEXT_FIELDS } from '../schema';
 import { SegmentDrawing } from './SegmentDrawing';
@@ -24,6 +24,22 @@ export class ParallelChannel extends SegmentDrawing {
                 { role: 'offset', free: 'y' }, // width only — drag the midpoint handle vertically
             ],
         };
+    }
+
+    /**
+     * The 3rd anchor is the parallel line's price AT THE BASELINE MIDPOINT (its time is
+     * ignored). The cursor, though, sits near p2, so storing it raw would read as an offset
+     * of about half the baseline's price span and snap the channel wide open. Measure the
+     * cursor's vertical gap from the baseline at its own time and re-express it as the
+     * midpoint price, so the channel line passes through the cursor.
+     */
+    override placeAnchor(index: number, point: DrawingPoint): DrawingPoint {
+        const a = this.anchors[0];
+        const b = this.anchors[1];
+        if (index !== 2 || !a || !b) return point;
+        const span = b.time - a.time;
+        const baseAtCursor = span === 0 ? a.price : a.price + ((b.price - a.price) * (point.time - a.time)) / span;
+        return { time: (a.time + b.time) / 2, price: (a.price + b.price) / 2 + (point.price - baseAtCursor) };
     }
 
     /** Price delta of the parallel line from the baseline, measured at the midpoint. */

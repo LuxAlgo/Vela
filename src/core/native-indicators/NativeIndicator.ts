@@ -5,6 +5,8 @@ import type { Fill, Background, PriceLine } from '../model/scene';
 import type { DrawingLine, DrawingBox, DrawingLabel, DrawingPolyline, DrawingLinefill, DrawingTable } from '../model/drawings';
 import type { InputSchema, InputValue } from '../model/inputs';
 import type { VisibleRange, IndicatorStatus } from '../ports/IChartRenderer';
+import type { BarRange } from '../ports/MarketDataFeed';
+import type { Unsubscribe } from '../util/types';
 import type { DataControl } from '../DataControl';
 import type { MessageLike, Translator } from '../i18n/types';
 import { textOf } from '../i18n/text';
@@ -17,6 +19,21 @@ import { textOf } from '../i18n/text';
  * columns — instead pushes its payload through the dedicated renderer seam, `pushData`.)
  */
 export interface NativeIndicatorOutput {
+    /**
+     * Per-instance display title overriding the descriptor's static `title` (e.g. a
+     * compared symbol showing its ticker and venue). Absent ⇒ descriptor's `title`.
+     */
+    title?: MessageLike;
+    /** Per-instance compact title overriding the descriptor's `shortTitle`. */
+    shortTitle?: MessageLike;
+    /** Per-instance pane placement override (applied until the user moves the indicator). */
+    paneHint?: 'price' | 'new';
+    /** Per-instance own-scale override (applied until the user moves the indicator). */
+    ownScale?: boolean;
+    /** Percent/indexed normalization mode (see `IndicatorModel.percentBaseline`). */
+    percentBaseline?: 'pane' | 'own';
+    /** Show a colored last-value + name badge on the price axis (see `IndicatorModel.priceAxisLabel`). */
+    priceAxisLabel?: boolean;
     /**
      * Value-axis override for the pane this native OWNS (see `IndicatorModel.paneAxis`):
      * `'none'` for content that is not value-mapped, or band labels for a categorical
@@ -55,6 +72,17 @@ export interface NativeIndicatorContext {
     bars(): readonly OHLCV[];
     /** Market-data access (trades / capabilities) for data-driven natives. */
     readonly data: DataControl;
+    /**
+     * Fetch bars for another symbol/timeframe through the chart's data feed (the same gateway
+     * scripting engines use). Unresolvable or empty answers resolve to `[]`.
+     */
+    fetchSeries?(symbol: string, timeframe: string, range: BarRange): Promise<OHLCV[]>;
+    /**
+     * Subscribe to live bar updates for another symbol/timeframe. Returns an unsubscribe
+     * function; always a no-op while `live` is `false` (bar replay or static mode), and
+     * automatically torn down when this indicator context stops.
+     */
+    subscribeSeries?(symbol: string, timeframe: string, onBar: (bar: OHLCV) => void): Unsubscribe;
     /**
      * Push a fresh render output; the chart mounts it (first call) or patches it (subsequent).
      * Series payloads are index-aligned: one slot per bar of `bars()` AS IT STANDS AT THE
@@ -152,6 +180,13 @@ export interface NativeIndicatorDescriptor {
      * overwrite each other (see `IndicatorModel.native.channel`).
      */
     readonly multiInstance?: boolean;
+    /**
+     * Whether this type appears in `chart.availableNativeIndicators()` (indicator pickers).
+     * Absent / `true` ⇒ listed; `false` ⇒ excluded from the picker while still addable
+     * through `chart.addNativeIndicator(type)` (for tools with their own entry point, such
+     * as symbol comparison).
+     */
+    readonly catalog?: boolean;
     inputsSchema(): InputSchema[];
     defaultInputs(): Record<string, InputValue>;
     create(): NativeIndicator;

@@ -65,7 +65,7 @@ describe('pinnedTopbarActionIds', () => {
 
 describe('built-in slot overrides (registerWidgetAction under a built-in id)', () => {
     afterEach(() => {
-        for (const id of ['indicators', 'screenshot']) unregisterWidgetAction(id);
+        for (const id of ['indicators', 'screenshot', 'compare']) unregisterWidgetAction(id);
         vi.restoreAllMocks();
     });
 
@@ -87,7 +87,7 @@ describe('built-in slot overrides (registerWidgetAction under a built-in id)', (
     });
 
     it('only the documented simple-button slots are overridable', () => {
-        expect([...OVERRIDABLE_TOPBAR_IDS]).toEqual(['indicators', 'screenshot']);
+        expect([...OVERRIDABLE_TOPBAR_IDS]).toEqual(['indicators', 'screenshot', 'compare']);
         for (const id of OVERRIDABLE_TOPBAR_IDS) expect(TOPBAR_BUILTIN_IDS).toContain(id);
         // a non-built-in id is never reported as an override, even when registered
         registerWidgetAction({ id: 'vendor.tool', target: 'topbar', label: 'T', run: () => undefined });

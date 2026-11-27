@@ -29,7 +29,7 @@ export interface InteractionDeps {
     /** A click (press+release, no drag) landed on a drawing → open its settings popup. */
     openSettings(id: string, x: number, y: number): void;
     /** Snap a data point to the nearest candle (time + OHLC), per the magnet mode + cursor pixel. */
-    snap(point: DrawingPoint, paneId: string, mode: SnapMode, cursorPx?: { x: number; y: number }): DrawingPoint;
+    snap(point: DrawingPoint, paneId: string, mode: SnapMode, cursorPx?: { x: number; y: number }, skipId?: string): DrawingPoint;
     /** The armed tool's remembered settings (if any) — seed the placement draft so its ghost
      *  previews them (color, width, fib levels…), not the type default. */
     toolDefaults(): DrawingToolDefaults | undefined;
@@ -125,7 +125,8 @@ export class DrawingInteraction {
             this.snapAt = null;
             return raw;
         }
-        const snapped = this.deps.snap(raw, paneId, mode, { x, y });
+        // A drawing being reshaped never snaps to its own points.
+        const snapped = this.deps.snap(raw, paneId, mode, { x, y }, this.state.kind === 'pressed' ? this.state.id : undefined);
         const changed = snapped.time !== raw.time || snapped.price !== raw.price;
         this.snapAt = changed ? { point: snapped, paneId } : null;
         return snapped;
@@ -168,7 +169,7 @@ export class DrawingInteraction {
     /** The pivot the free endpoint angle-snaps around while placing `draft`, or null when
      *  the tool is not a two-point segment (or no anchor is committed yet). */
     private placingPivot(draft: Drawing): DrawingPoint | null {
-        if (!ANGLE_SNAP_TYPES.has(draft.type)) return null;
+        if (!ANGLE_SNAP_TYPES.has(draft.type) && !draft.angleSnaps()) return null;
         return draft.anchors[draft.anchors.length - 1] ?? null;
     }
 
@@ -241,8 +242,9 @@ export class DrawingInteraction {
             const point = pivot
                 ? this.resolveAngleSnapped(pivot, this.state.draft.paneId, x, y)
                 : this.resolve(x, y, this.state.draft.paneId, mode);
-            this.state.draft.anchors.push(this.placementAnchor(this.state.draft, point));
-            if (this.state.draft.anchors.length >= this.state.need) this.finalize();
+            const draft = this.state.draft;
+            draft.anchors.push(draft.placeAnchor(draft.anchors.length, point, proj, false));
+            if (draft.anchors.length >= this.state.need || draft.placementFinished()) this.finalize();
             else this.deps.changed();
             return;
         }
@@ -252,9 +254,13 @@ export class DrawingInteraction {
             const draft = createDrawing(tool, { paneId, anchors: [this.resolve(x, y, paneId, mode)] });
             if (!draft) return;
             applyToolDefaults(draft, this.deps.toolDefaults());
+            // The first point goes through the type's placement hook like the later ones (the
+            // instance had to exist first to be asked).
+            const first = draft.anchors[0];
+            if (first) draft.anchors[0] = draft.placeAnchor(0, first, proj, false);
             this.state = { kind: 'placing', draft, need: draft.anchorSchema().max, cursor: null };
             // Fixed tools (max === min) finalize as soon as the count is met; variable/freehand wait for a gesture.
-            if (draft.placementMode() === 'click' && draft.anchors.length >= this.state.need) this.finalize();
+            if (draft.placementMode() === 'click' && (draft.anchors.length >= this.state.need || draft.placementFinished())) this.finalize();
             else this.deps.changed();
             return;
         }
@@ -359,7 +365,7 @@ export class DrawingInteraction {
             this.dragBody(d, x, y);
         } else {
             // Shift on a two-point line re-locks the dragged endpoint's angle around the other one.
-            const pivot = shift && ANGLE_SNAP_TYPES.has(d.type) && d.anchors.length === 2 ? d.anchors[1 - this.state.handle] : undefined;
+            const pivot = shift && (ANGLE_SNAP_TYPES.has(d.type) || d.angleSnaps()) && d.anchors.length === 2 ? d.anchors[1 - this.state.handle] : undefined;
             const point = pivot ? this.resolveAngleSnapped(pivot, d.paneId, x, y) : this.resolve(x, y, d.paneId, mode); // a handle snaps to the candle
             d.dragHandle(this.state.handle, point);
             d.constrainHandleDrag(this.state.handle); // e.g. a position flips its reward/stop to stay opposed
@@ -375,7 +381,8 @@ export class DrawingInteraction {
             const mode = this.state.draft.placementMode();
             if (mode === 'drag') {
                 // press-drag-release: the release point is the second anchor (e.g. a box's far corner)
-                if (this.state.cursor) this.state.draft.anchors.push(this.state.cursor);
+                const draft = this.state.draft;
+                if (this.state.cursor) draft.anchors.push(draft.placeAnchor(draft.anchors.length, this.state.cursor, this.deps.projector(), false));
                 if (this.state.draft.anchors.length >= this.state.draft.anchorSchema().min) this.finalize();
                 else this.discardPlacing(); // a bare click with no drag → nothing to keep
             } else if (mode === 'freehand') {
@@ -470,24 +477,16 @@ export class DrawingInteraction {
         const { draft, cursor } = this.state;
         if (!cursor) return draft.anchors.length >= 1 && draft.type === 'hline' ? draft : null;
         const { paneId, style, text, props } = draft.serialize();
-        return createDrawing(draft.type, { paneId, anchors: [...draft.anchors, this.placementAnchor(draft, cursor)], style, text, props });
+        // The cursor goes through the type's placement hook as a PREVIEW, so the ghost shows
+        // the anchor a click here would store (a constrained point, a derived one).
+        const next = draft.placeAnchor(draft.anchors.length, cursor, this.deps.projector(), true);
+        return createDrawing(draft.type, { paneId, anchors: [...draft.anchors, next], style, text, props });
     }
 
-    /** Map a raw placement cursor to the anchor the drawing actually stores.
-     *  Parallel channel: its 3rd anchor is the parallel-line price measured AT THE
-     *  BASELINE MIDPOINT (its time is ignored). The cursor, though, sits near p2, so
-     *  storing it raw would read as an offset of ≈ half the baseline's price span and
-     *  snap the channel wide open. Instead measure the cursor's vertical gap from the
-     *  baseline at its own time and re-express that as the midpoint price, so the
-     *  channel line simply passes through the cursor. Every other type is unchanged. */
-    private placementAnchor(draft: Drawing, cursor: DrawingPoint): DrawingPoint {
-        if (draft.type !== 'parallelchannel' || draft.anchors.length !== 2) return cursor;
-        const a = draft.anchors[0]!;
-        const b = draft.anchors[1]!;
-        const span = b.time - a.time;
-        const baseAtCursor = span === 0 ? a.price : a.price + ((b.price - a.price) * (cursor.time - a.time)) / span;
-        const gap = cursor.price - baseAtCursor;
-        return { time: (a.time + b.time) / 2, price: (a.price + b.price) / 2 + gap };
+    /** How many points the placement in flight has committed (the step about to be clicked),
+     *  with its draft; null when nothing is being placed. */
+    placingStep(): { draft: Drawing; index: number } | null {
+        return this.state.kind === 'placing' ? { draft: this.state.draft, index: this.state.draft.anchors.length } : null;
     }
 
     /** Sample a freehand point while dragging (raw / unsnapped), capped at the path max. */

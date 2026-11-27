@@ -1,26 +1,17 @@
 import type { VelaTheme } from '../../../core/options';
-import type { DrawingPoint, Projector } from '../../../core/drawings';
-import { msg } from '../../../core/i18n/message';
-import { localizeNumberText } from '../../../core/i18n/text';
+import { measureLines, type DrawingPoint, type Projector } from '../../../core/drawings';
 import { englishTranslator } from '../../../core/i18n/translator';
 import type { Translator } from '../../../core/i18n/types';
 
-const TEXT = {
-    priceChange: msg('drawing.ruler.priceChange', '{change} ({percent}%)'),
-    barsAndDuration: msg('drawing.ruler.barsAndDuration', '{count, plural, one {{bars} bar} other {{bars} bars}}, {duration}'),
-};
 import { BEARISH, BULLISH } from '../../../core/palette';
-
-/** Signed value with 2 decimals (e.g. "+12.34"). */
-function signed(n: number): string {
-    return `${n >= 0 ? '+' : ''}${n.toFixed(2)}`;
-}
 
 // The ruler's direction tint is fixed, not the theme's candle colors: it must stay readable
 // over candles of any user-chosen color.
 const UP = BULLISH;
 const DOWN = BEARISH;
 const DRAG_SLOP = 3;
+/** The detail line under the headline reads quieter: the label's text color at this alpha. */
+const DETAIL_ALPHA = 0.62;
 
 type MeasureState = 'idle' | 'measuring' | 'finished';
 
@@ -128,8 +119,6 @@ export class MeasureOverlay {
         const p1 = this.start;
         const p2 = this.end;
         const priceDiff = p2.price - p1.price;
-        const pct = p1.price !== 0 ? (priceDiff / p1.price) * 100 : 0;
-        const bars = proj.barsBetween ? Math.round(proj.barsBetween(p1.time, p2.time)) : null;
         const up = priceDiff >= 0;
         const color = up ? UP : DOWN;
         const left = Math.min(x1, x2);
@@ -166,14 +155,11 @@ export class MeasureOverlay {
         ctx.fill();
         ctx.restore();
 
-        const duration = i18n.format.duration(p2.time - p1.time, { style: 'span', surface: 'drawing' });
-        this.paintLabel(ctx, proj, theme, midX, top, bot, color, [
-            i18n.t(TEXT.priceChange, { change: localizeNumberText(signed(priceDiff), i18n), percent: localizeNumberText(signed(pct), i18n) }),
-            bars != null ? i18n.t(TEXT.barsAndDuration, { count: bars, bars: localizeNumberText(String(bars), i18n), duration }) : duration,
-        ]);
+        this.paintLabel(ctx, proj, theme, midX, top, bot, color, measureLines(p1, p2, proj, this.paneId ?? '', i18n));
     }
 
-    /** A bordered, two-line label centered under the box (flipped above if it would overflow). */
+    /** A bordered, two-line label centered under the box (flipped above if it would overflow,
+     *  shifted to stay inside the plot). */
     private paintLabel(
         ctx: CanvasRenderingContext2D,
         proj: Projector,
@@ -191,7 +177,10 @@ export class MeasureOverlay {
         const h = lines.length * lh + 8;
         let y = boxBot + 8;
         if (y + h > proj.height) y = boxTop - h - 8;
-        const x = midX - w / 2;
+        // kept inside the plot: a ruler near an edge would otherwise cut its label off
+        y = Math.max(2, Math.min(y, proj.height - h - 2));
+        const x = Math.max(2, Math.min(midX - w / 2, proj.width - w - 2));
+        const cx = x + w / 2;
         ctx.fillStyle = theme.background;
         ctx.strokeStyle = color;
         ctx.lineWidth = 1;
@@ -203,7 +192,10 @@ export class MeasureOverlay {
         ctx.fillStyle = theme.textColor;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        lines.forEach((line, i) => ctx.fillText(line, midX, y + 8 + lh / 2 + i * lh));
+        lines.forEach((line, i) => {
+            ctx.globalAlpha = i === 0 ? 1 : DETAIL_ALPHA;
+            ctx.fillText(line, cx, y + 8 + lh / 2 + i * lh);
+        });
         ctx.restore();
     }
 }

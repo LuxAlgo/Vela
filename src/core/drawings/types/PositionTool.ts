@@ -5,6 +5,7 @@ import { Drawing, type AnchorSlot, type SerializedDrawing } from '../Drawing';
 import type { Projector } from '../geometry';
 import type { SettingsSchema } from '../schema';
 import { LINE_FIELDS, TEXT_SIZE_OPTIONS } from '../schema';
+import { priceFromUnit, priceInUnit } from '../units';
 import { pointInBox, handleAt } from '../hittest';
 import { VALID, INVALID } from '../../palette';
 
@@ -330,8 +331,8 @@ export class PositionTool extends Drawing {
         const p = this.prices();
         if (!p) return 0;
         const price = level === 'stop' ? p.stop : p.target;
-        if (mode === 'price') return roundFloat(price);
-        return roundFloat(Math.abs(price - p.entry));
+        const shown = priceInUnit(price, p.entry, mode);
+        return mode === 'price' ? shown : Math.abs(shown);
     }
 
     /** The absolute price a typed value in the given unit resolves to. Points measure the
@@ -343,7 +344,7 @@ export class PositionTool extends Drawing {
         const current = level === 'stop' ? p.stop : p.target;
         let side = Math.sign(current - p.entry);
         if (side === 0) side = (level === 'target' ? 1 : -1) * (this.direction === 'long' ? 1 : -1);
-        return p.entry + side * Math.abs(value);
+        return priceFromUnit(side * Math.abs(value), p.entry, 'points');
     }
 
     private box(proj: Projector): { x1: number; x2: number; ey: number; sy: number; ty: number } | null {
@@ -474,9 +475,4 @@ function formatPrice(n: number): string {
     if (!Number.isFinite(n)) return '0';
     if (Math.abs(n) >= 1) return n.toFixed(2);
     return n.toPrecision(4).replace(/\.?0+$/, '');
-}
-
-/** Trim binary float noise from a converted value (points arithmetic). */
-function roundFloat(n: number): number {
-    return Math.round(n * 1e8) / 1e8;
 }

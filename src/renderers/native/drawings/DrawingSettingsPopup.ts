@@ -2,7 +2,7 @@ import { msg } from '../../../core/i18n/message';
 import { textOf } from '../../../core/i18n/text';
 import type { MessageLike, Translator } from '../../../core/i18n/types';
 import type { VelaTheme } from '../../../core/options';
-import type { Drawing, DrawingToolDefaults, DrawingToolTemplate, RegressionStyle, VwapStyle, SerializedDrawing } from '../../../core/drawings';
+import type { Drawing, DrawingToolDefaults, DrawingToolTemplate, RegressionStyle, VwapStyle, SerializedDrawing, SettingsField } from '../../../core/drawings';
 import {
     DEFAULT_DRAWING_COLOR,
     TEXT_SIZE_OPTIONS,
@@ -12,7 +12,7 @@ import {
     DEDEKIND_CURVATURE_OPTIONS,
     MACH_WAVE_COUNT_OPTIONS,
     MACH_NUMBER_OPTIONS,
-    MachFigure,
+    FibRatios,
     PositionTool,
     Magnifier,
     magnifierTimeframeLabel,
@@ -27,7 +27,7 @@ import { NumberInput } from '@luxalgo/vela-ui/number-input';
 import { TextArea } from '@luxalgo/vela-ui/text-area';
 import { buildColorPicker } from '@luxalgo/vela-ui/color-picker';
 import { Popover, closeOpenPopovers } from '@luxalgo/vela-ui/popover';
-import { DrawingSettingsPanel, type DrawingPanelEnv } from './DrawingSettingsPanel';
+import { DrawingSettingsPanel, readPath, type DrawingPanelEnv } from './DrawingSettingsPanel';
 import { css } from '@luxalgo/vela-ui/css';
 import { disposeWithin } from '@luxalgo/vela-ui/dispose';
 import { t } from '@luxalgo/vela-ui/t';
@@ -122,16 +122,59 @@ export interface SettingsActions {
 export const MIXED: unique symbol = Symbol('mixed');
 export type Mixed = typeof MIXED;
 
-/** The settings paths every one of `drawings` supports — what a multi-selection bar can edit. */
+/** The settings paths every one of `drawings` supports — what a multi-selection bar can edit.
+ *  A read-only row is no setting: its path is never one of them. */
 export function sharedPaths(drawings: readonly Drawing[]): Set<string> {
+    const editable = (d: Drawing): string[] => d.schema().fields.filter((f) => f.kind !== 'readout').map((f) => f.path);
     const [first, ...rest] = drawings;
-    const paths = new Set(first?.schema().fields.map((f) => f.path) ?? []);
+    const paths = new Set(first ? editable(first) : []);
     for (const d of rest) {
-        const own = new Set(d.schema().fields.map((f) => f.path));
+        const own = new Set(editable(d));
         for (const p of paths) if (!own.has(p)) paths.delete(p);
     }
     return paths;
 }
+
+/** The paths the bar's own blocks answer for, on the bar or under its text field: a `quick`
+ *  field at one of them adds no second control. */
+const BAR_PATHS = new Set([
+    'glyph',
+    'size',
+    'magnifier.timeframe',
+    'magnifier.upColor',
+    'magnifier.downColor',
+    'style.lineColor',
+    'style.lineWidth',
+    'style.lineStyle',
+    'style.fillColor',
+    'profitColor',
+    'lossColor',
+    'reg.midColor',
+    'reg.midStyle',
+    'reg.upperColor',
+    'reg.upperStyle',
+    'reg.lowerColor',
+    'reg.lowerStyle',
+    'reg.upperFill',
+    'reg.lowerFill',
+    'reg.showR2',
+    'vwap.midColor',
+    'vwap.midStyle',
+    'vwap.multiplier',
+    'vwap.upperColor',
+    'vwap.lowerColor',
+    'vwap.bandFill',
+    'maxCurvature',
+    'mach',
+    'waveCount',
+    'showPrice',
+    'showDate',
+    'text.value',
+    'text.color',
+    'text.size',
+    'text.bold',
+    'text.italic',
+]);
 
 /** One value read off every drawing: the shared value when they all agree, else {@link MIXED}. */
 export function commonValue<T>(drawings: readonly Drawing[], read: (d: Drawing) => T): T | Mixed {
@@ -380,7 +423,7 @@ export class DrawingSettingsPopup {
                 return f?.kind === 'number' && (f.min ?? 1) > 1;
             });
             if (markers && wf?.kind === 'number') {
-                bar.appendChild(this.widthInput(this.t(TEXT.lineWidth), width, wf.min ?? 1, wf.max ?? 60, wf.step ?? 1, (v) => actions.patch({ 'style.lineWidth': v })));
+                bar.appendChild(this.numberInput(this.t(TEXT.lineWidth), width, wf.min ?? 1, wf.max ?? 60, wf.step ?? 1, (v) => actions.patch({ 'style.lineWidth': v })));
             } else {
                 bar.appendChild(this.dropdown(this.t(TEXT.lineWidth), [1, 2, 3, 4], width, (w) => lineIcon(w, 'solid'), (v) => actions.patch({ 'style.lineWidth': v }), { label: (v) => `${v}px`, labelInTrigger: true }));
             }
@@ -472,12 +515,21 @@ export class DrawingSettingsPopup {
         if (paths.has('text.bold') && !textField) bar.appendChild(this.toggle(this.t(TEXT.bold), BOLD_ICON, common((d) => !!d.text?.bold), (v) => actions.patch({ 'text.bold': v })));
         if (paths.has('text.italic') && !textField) bar.appendChild(this.toggle(this.t(TEXT.italic), ITALIC_ICON, common((d) => !!d.text?.italic), (v) => actions.patch({ 'text.italic': v })));
         if (textField) bar.appendChild(this.iconBtn(this.t(TEXT.text), TYPE_ICON, () => this.toggleTextPanel(drawing, actions, !textOnBar)));
-        const editableLevels = drawing.editableLevels();
-        if (editableLevels && every((d) => d.editableLevels() != null && !(d instanceof MachFigure))) {
-            const fib = (d: Drawing): { numbersSize?: string; labelsSize?: string } => d as unknown as { numbersSize?: string; labelsSize?: string };
+        // The two level-text sizes are the fib family's own fields: another levelled tool (a
+        // Mach figure, one registered from outside) has none to patch.
+        if (every((d) => d instanceof FibRatios)) {
+            const fib = (d: Drawing): FibRatios => d as FibRatios;
             const sizes = TEXT_SIZE_OPTIONS.map((o) => o.value);
             bar.appendChild(this.dropdown(this.t(TEXT.numbersSize), sizes, common((d) => fib(d).numbersSize ?? 'small'), (s) => numbersSizeIcon(s), (v) => actions.patch({ numbersSize: v }), { label: (v) => this.sizeLabel(v) }));
             bar.appendChild(this.dropdown(this.t(TEXT.labelSize), sizes, common((d) => fib(d).labelsSize ?? 'normal'), (s) => labelSizeIcon(s), (v) => actions.patch({ labelsSize: v }), { label: (v) => this.sizeLabel(v) }));
+        }
+        // A tool's own fields that ask for a place on the bar, after the bar's own controls.
+        for (const f of schema.fields) {
+            if (!f.quick || !paths.has(f.path) || BAR_PATHS.has(f.path)) continue;
+            const control = this.quickControl(f, drawings, actions);
+            if (!control) continue;
+            control.dataset.quick = f.path;
+            bar.appendChild(control);
         }
 
         // Trailing group: the settings wheel sits just left of the lock, and a kebab overflow
@@ -499,7 +551,7 @@ export class DrawingSettingsPopup {
         const del = this.iconBtn(this.t(TEXT.delete), TRASH_ICON, () => actions.remove());
         del.style.color = 'var(--vela-danger)';
         bar.appendChild(del);
-        bar.appendChild(this.kebabButton(actions));
+        bar.appendChild(this.kebabButton(actions, multi));
 
         el.append(bar);
         this.host.appendChild(el);
@@ -726,8 +778,10 @@ export class DrawingSettingsPopup {
         return b;
     }
 
-    /** The trailing kebab overflow — duplicate, z-order actions, reset settings. */
-    private kebabButton(actions: SettingsActions): HTMLButtonElement {
+    /** The trailing kebab overflow — duplicate, z-order actions, reset settings, then the
+     *  host-contributed menu actions. Those act on one drawing, so a multi-selection has
+     *  none, and they are read each time the menu opens. */
+    private kebabButton(actions: SettingsActions, multi: boolean): HTMLButtonElement {
         const b = this.base(this.t(TEXT.more));
         b.innerHTML = sized(KEBAB_ICON);
         // Stop the trigger's own pointerdown from reaching `el` (which would pre-close the menu),
@@ -744,6 +798,9 @@ export class DrawingSettingsPopup {
                 { icon: FRONT_ICON, label: this.t(TEXT.bringToFront), onClick: () => actions.reorder('front') },
                 { icon: BACK_ICON, label: this.t(TEXT.sendToBack), onClick: () => actions.reorder('back') },
                 { icon: RESET_ICON, label: this.t(TEXT.resetSettings), onClick: () => actions.resetSettings() },
+                ...(multi ? [] : (actions.extras?.() ?? []))
+                    .filter((extra) => extra.menu)
+                    .map((extra) => ({ icon: icon(extra.icon), label: extra.label, action: extra.id, onClick: () => extra.run() })),
             ]);
         });
         return b;
@@ -835,8 +892,9 @@ export class DrawingSettingsPopup {
         this.menuOwner = anchor;
     }
 
-    /** A floating list of one-shot actions (icon + label rows) opened by the kebab. */
-    private openActionMenu(anchor: HTMLElement, rows: readonly { icon: string; label: string; onClick: () => void }[]): void {
+    /** A floating list of one-shot actions (icon + label rows) opened by the kebab. `action`
+     *  is the id of a host-contributed row. */
+    private openActionMenu(anchor: HTMLElement, rows: readonly { icon: string; label: string; action?: string; onClick: () => void }[]): void {
         this.menuPop = this.hostFloat(anchor, {
             align: 'end',
             zIndex: 26,
@@ -847,6 +905,7 @@ export class DrawingSettingsPopup {
                     item.type = 'button';
                     item.className = 'vela-dpop-item';
                     item.style.cssText = 'display:flex;align-items:center;gap:9px;min-width:150px;padding:6px 9px;border:none;border-radius:5px;color:inherit;cursor:pointer;text-align:left;font:inherit;';
+                    if (row.action) item.dataset.drawingAction = row.action;
                     const ic = document.createElement('span');
                     ic.style.cssText = 'display:flex;flex:none;width:20px;justify-content:center;';
                     ic.innerHTML = sized(row.icon, 18);
@@ -922,17 +981,72 @@ export class DrawingSettingsPopup {
         return b;
     }
 
-    /** An inline numeric width field for tools whose stroke range outgrows the 1–4px
-     *  ladder — the value is clamped to the schema's declared min/max on commit. A mixed
-     *  value shows an empty field with a dash until a number is typed for all. */
-    private widthInput(tip: string, value: number | Mixed, min: number, max: number, step: number, onChange: (v: number) => void): HTMLElement {
+    /** The bar control of a schema field marked `quick`, by its kind. Null for a kind the bar
+     *  has no compact control for: a text field needs room to type in, and a read-only row
+     *  is not a setting. */
+    private quickControl(f: SettingsField, drawings: readonly Drawing[], actions: SettingsActions): HTMLElement | null {
+        const tip = this.t(f.label);
+        const set = (v: unknown): void => actions.patch({ [f.path]: v });
+        const read = (d: Drawing): unknown => readPath(d, f.path);
+        switch (f.kind) {
+            case 'color': {
+                const color = (d: Drawing): string => (read(d) as string | undefined) || (f.fallback ? (readPath(d, f.fallback) as string | undefined) : undefined) || DEFAULT_DRAWING_COLOR;
+                return this.colorButton(tip, BRUSH_ICON, commonValue(drawings, color), set, undefined, distinctValues(drawings, color));
+            }
+            case 'boolean':
+                return this.labelToggle(tip, commonValue(drawings, (d) => read(d) !== false && read(d) != null), set);
+            case 'lineStyle':
+                return this.dropdown(tip, LINE_STYLE_OPTIONS.map((o) => o.value), commonValue(drawings, (d) => String(read(d) ?? 'solid')), (s) => lineIcon(2, s), set, { label: (v) => this.styleLabel(v) });
+            case 'select': {
+                const options = f.options ?? [];
+                if (options.length === 0) return null;
+                const label = (v: string | number): string => {
+                    const opt = options.find((o) => o.value === v);
+                    return opt ? this.t(opt.label) : String(v);
+                };
+                return this.dropdown(tip, options.map((o) => o.value), commonValue(drawings, (d) => String(read(d) ?? options[0]!.value)), () => '', set, { label, labelInTrigger: true });
+            }
+            case 'number':
+            case 'opacity':
+                return this.numberInput(tip, commonValue(drawings, (d) => Number(read(d) ?? 0)), f.min, f.max, f.step ?? 1, set);
+            default:
+                return null;
+        }
+    }
+
+    /** An on/off button that reads as its label: a tool's own flag has no glyph to show.
+     *  Mixed reads half-lit, and the first click turns it on for every drawing. */
+    private labelToggle(label: string, active: boolean | Mixed, onChange: (v: boolean) => void): HTMLButtonElement {
+        const b = this.base(label);
+        b.style.width = 'auto';
+        b.style.padding = '0 8px';
+        b.style.whiteSpace = 'nowrap';
+        b.textContent = label;
+        let on = active;
+        const paint = (): void => {
+            b.dataset.active = on === MIXED ? 'mixed' : on ? '1' : '0';
+            b.setAttribute('aria-pressed', on === MIXED ? 'mixed' : String(on));
+        };
+        paint();
+        b.addEventListener('click', () => {
+            on = on === MIXED ? true : !on;
+            paint();
+            onChange(on);
+        });
+        return b;
+    }
+
+    /** An inline numeric field: a stroke width that outgrows the 1–4px ladder, or a tool's
+     *  own number. The value is clamped to the declared min/max on commit. A mixed value
+     *  shows an empty field with a dash until a number is typed for all. */
+    private numberInput(tip: string, value: number | Mixed, min: number | undefined, max: number | undefined, step: number, onChange: (v: number) => void): HTMLElement {
         const ni = new NumberInput({
             i18n: this.i18n?.() ?? null,
-            value: value === MIXED ? min : value,
+            value: value === MIXED ? (min ?? 0) : value,
             min,
             max,
             step,
-            integer: step >= 1,
+            integer: step >= 1 && Number.isInteger(step),
             size: 'sm',
             fill: false,
             compact: true,

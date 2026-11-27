@@ -28,7 +28,7 @@ import { textOf } from '../../core/i18n/text';
 import type { MessageLike } from '../../core/i18n/types';
 import { ENGLISH_FORMAT } from '../../core/format/formatters';
 import type { FormatSurface } from '../../core/format/types';
-import type { OHLCV } from '../../core/model/ohlcv';
+import { isSameBar, isNewerBar, type OHLCV } from '../../core/model/ohlcv';
 import type { Millis } from '../../core/model/time';
 import type { VolumeLayerData, VpvrLayerData } from '../../core/model/volume-layers';
 import type { Pane } from '../../core/model/scene';
@@ -63,7 +63,7 @@ import { Scheduler, InvalidateLevel, repaintsData, repaintsChrome } from './core
 import { Animator, EaseSetting, easeToward } from './core/Animator';
 import { InputController } from './core/InputController';
 import { KeyboardController } from './core/KeyboardController';
-import { SceneGraph, paneLogScale, paneScaleMode, paneInvert, type PaneNode, type HighlightArea, type SessionZones, type ScaleMode } from './core/SceneGraph';
+import { SceneGraph, paneLogScale, paneScaleMode, paneInvert, percentScaleFor, percentScaleForModel, type PaneNode, type HighlightArea, type SessionZones, type ScaleMode } from './core/SceneGraph';
 import { clampBarSpacing, defaultViewport, MIN_BAR_SPACING, MAX_BAR_SPACING, type ViewportState } from './core/ViewportState';
 import { Canvas2dBackend } from './backend/Canvas2dBackend';
 import type { IRenderBackend } from './backend/IRenderBackend';
@@ -78,7 +78,7 @@ import { IndicatorDrawingSlices, mergeSlices } from './drawings/IndicatorDrawing
 import { createProjector } from './drawings/Projector';
 import type { Projector, SnapMode } from '../../core/drawings';
 import type { IDrawingsRendererPort } from '../../core/drawings';
-import { formatPriceLabel } from './chrome/ticks';
+import { formatAxisValue, formatPriceLabel } from './chrome/ticks';
 import { tickDecimals } from '../../core/format/numbers';
 import { displayZone, zonedDate } from './chrome/tz';
 import { computePaneScale, expandScaleByPixels, overlaySeriesRange } from './core/autoscale';
@@ -454,7 +454,7 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     readonly name = 'native';
-    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'animScroll', 'animAutoscale', 'animLiveBar', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'freePan', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'sessionZones', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'scalePriceOnly', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'shownPriceStyle', 'priceBaseline', 'baselinePrice', 'previousClose', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'marks', 'indicatorTitles', 'indicatorValues', 'crosshairOverride', 'drawingsInteractive', 'priceAxisTicks'];
+    readonly features: readonly string[] = ['logScale', 'currentPriceLine', 'priceLabel', 'countdown', 'indicatorValueLabels', 'indicatorNameLabels', 'upColor', 'downColor', 'glow', 'animZoom', 'animPan', 'animScroll', 'animAutoscale', 'animLiveBar', 'intro', 'zoomAnchor', 'axisDrag', 'paneResize', 'freePan', 'candleZOrder', 'candleVisible', 'seriesOrder', 'highlights', 'sessionZones', 'gridlines', 'axisLabels', 'scaleMode', 'invertScale', 'scalePriceOnly', 'paneScales', 'autoScale', 'timezone', 'keyboard', 'historyChords', 'priceStyle', 'shownPriceStyle', 'priceBaseline', 'baselinePrice', 'previousClose', 'settings', 'attribution', 'dialogHost', 'tradeMarkers', 'marks', 'indicatorTitles', 'indicatorValues', 'crosshairOverride', 'drawingsInteractive', 'priceAxisTicks'];
 
     /** Apply a render feature live — mutate the field + invalidate, no engine re-run. */
     applyFeature(key: string, value: unknown): void {
@@ -477,6 +477,12 @@ export class NativeRenderer implements IChartRenderer {
             case 'countdown':
                 this.scene.showCountdown = Boolean(value);
                 this.syncCountdownTimer();
+                break;
+            case 'indicatorValueLabels':
+                this.scene.showIndicatorValueLabels = Boolean(value);
+                break;
+            case 'indicatorNameLabels':
+                this.scene.showIndicatorNameLabels = Boolean(value);
                 break;
             case 'upColor':
                 this.candleUp = String(value);
@@ -671,6 +677,8 @@ export class NativeRenderer implements IChartRenderer {
             case 'currentPriceLine': return this.scene.showPriceLine;
             case 'priceLabel': return this.scene.showPriceLabel;
             case 'countdown': return this.scene.showCountdown;
+            case 'indicatorValueLabels': return this.scene.showIndicatorValueLabels;
+            case 'indicatorNameLabels': return this.scene.showIndicatorNameLabels;
             case 'upColor': return this.candleUp;
             case 'downColor': return this.candleDown;
             case 'glow': return this.glowAmount;
@@ -818,11 +826,19 @@ export class NativeRenderer implements IChartRenderer {
     /** Port surface: the active symbol's style-deciding facts. A chosen style they rule out
      *  draws as its fallback, and an open settings dialog re-greys its style list. */
     setSymbolFacts(facts: SymbolFacts | null): void {
+        const pipChanged = this.symbolFacts?.pipsize !== facts?.pipsize; // measure labels count in pips
         this.symbolFacts = facts ? { ...facts } : null;
         const before = this.scene.priceStyle;
         this.showPriceStyle();
-        if (this.scene.priceStyle !== before) this.scheduler?.invalidate(InvalidateLevel.Full);
+        if (this.scene.priceStyle !== before || pipChanged) this.scheduler?.invalidate(InvalidateLevel.Full);
         if (this.settingsDialog?.isOpen()) this.settingsDialog.refresh(this.getConfig());
+    }
+
+    /** Port surface: the active symbol's short display name (bare ticker) for axis badges. */
+    setSymbolName(name: string | undefined): void {
+        if (this.scene.symbolName === name) return;
+        this.scene.symbolName = name;
+        this.scheduler?.invalidate(InvalidateLevel.Chrome);
     }
 
     /** The registered style ids the active symbol's facts rule out (none while unknown). */
@@ -871,6 +887,8 @@ export class NativeRenderer implements IChartRenderer {
                 currentPriceLine: this.scene.showPriceLine,
                 priceLabel: this.scene.showPriceLabel,
                 countdown: this.scene.showCountdown,
+                indicatorValueLabels: this.scene.showIndicatorValueLabels,
+                indicatorNameLabels: this.scene.showIndicatorNameLabels,
                 animateLastPrice: this.animLiveBar.on,
             },
             animations: {
@@ -1016,6 +1034,8 @@ export class NativeRenderer implements IChartRenderer {
         this.scene.showPriceLine = next.priceScale.currentPriceLine;
         this.scene.showPriceLabel = next.priceScale.priceLabel;
         this.scene.showCountdown = next.priceScale.countdown;
+        this.scene.showIndicatorValueLabels = next.priceScale.indicatorValueLabels;
+        this.scene.showIndicatorNameLabels = next.priceScale.indicatorNameLabels;
         this.syncCountdownTimer();
         // animations: on/off only — the durations are the host's (EaseSetting remembers them)
         this.animLiveBar.toggle(next.priceScale.animateLastPrice);
@@ -1842,7 +1862,17 @@ export class NativeRenderer implements IChartRenderer {
             onToggleAuto: (paneId) => this.togglePaneAuto(paneId),
             onToggleLog: (paneId) => {
                 const pane = this.scene.panes.get(paneId);
-                if (pane) this.setPaneLog(paneId, !paneLogScale(this.scene, pane));
+                if (!pane) return;
+                const nextLog = !paneLogScale(this.scene, pane);
+                if (nextLog && paneScaleMode(this.scene, pane) !== 'price') this.setPaneScaleMode(paneId, 'price');
+                this.setPaneLog(paneId, nextLog);
+            },
+            onTogglePercent: (paneId) => {
+                const pane = this.scene.panes.get(paneId);
+                if (!pane) return;
+                const nextPct = paneScaleMode(this.scene, pane) !== 'percent';
+                if (nextPct && paneLogScale(this.scene, pane)) this.setPaneLog(paneId, false);
+                this.setPaneScaleMode(paneId, nextPct ? 'percent' : 'price');
             },
         });
 
@@ -1970,6 +2000,7 @@ export class NativeRenderer implements IChartRenderer {
      *  repaints. */
     setLocalization(i18n: Translator, root: RendererRootAttributes): void {
         this.i18n = i18n;
+        this.chrome.i18n = i18n;
         this.rootAttrs = { lang: root.lang, dir: root.dir };
         this.scene.format = i18n.format;
         this.inputsUI?.setI18n(i18n);
@@ -2120,7 +2151,7 @@ export class NativeRenderer implements IChartRenderer {
     }
 
     // ── price data ──
-    setBars(bars: OHLCV[], opts?: { preserveView?: boolean }): void {
+    setBars(bars: OHLCV[], opts?: { preserveView?: boolean; variableDuration?: boolean }): void {
         if (this.introRaf != null) { cancelAnimationFrame(this.introRaf); this.introRaf = null; this.modelAlpha = 1; } // a re-set interrupts a running reveal
         // A series replacement invalidates the forming-bar glide: after an in-place market
         // switch the NEW market's forming bar shares the same bucket open-time, so a stale
@@ -2128,14 +2159,17 @@ export class NativeRenderer implements IChartRenderer {
         // new scale) until the next tick re-seeds. The bars given here carry real values —
         // drop the ease; the next tick snaps fresh (liveEaseTime no longer matches).
         this.liveEaseTime = 0;
+        this.barsGeneration += 1;
         const prevBars = this.bars;
         const prevHeadTime = prevBars[0]?.time;
-        this.bars = normalizeBars(bars);
+        this.scene.variableDuration = opts?.variableDuration === true;
+        this.bars = normalizeBars(bars, this.scene.variableDuration);
         this.scene.bars = this.bars;
         this.coords.setBars(this.bars.map((b) => b.time));
         // The newest candle may already prove this device's clock slow (see ClockCorrection).
+        // Variable-duration bars (ticks) are not aligned to wall-clock periods, so skip it.
         const newest = this.bars[this.bars.length - 1];
-        if (newest) clockCorrection.observeCandle(newest.time, this.coords.barInterval);
+        if (newest && !this.scene.variableDuration) clockCorrection.observeCandle(newest.time, this.coords.barInterval);
         // The bar array's head may have moved (a history-backfill prepend) — re-derive
         // every mounted model's anchor offset against the new indices.
         for (const model of this.scene.indicators.values()) this.refreshAnchorOffset(model);
@@ -2192,14 +2226,14 @@ export class NativeRenderer implements IChartRenderer {
     updateBar(bar: OHLCV): void {
         const n = this.bars.length;
         const last = this.bars[n - 1];
-        if (last && bar.time === last.time) {
+        if (last && isSameBar(last, bar)) {
             this.bars[n - 1] = bar; // actual forming bar — the ease target
             if (!this.animLiveBar.on || this.liveEaseTime !== bar.time) {
                 this.syncLiveEase(bar); // glide off, or the first tick of this bar: snap
             } else {
                 this.animator.start(); // glide the displayed high/low/close toward this tick
             }
-        } else if (!last || bar.time > last.time) {
+        } else if (!last || isNewerBar(bar, last)) {
             // The newest bar is scrolled off the right edge (and no glide is bringing it
             // back): the user is reading history — hold the view on the same bars instead of
             // sliding it along with every new one.
@@ -2214,7 +2248,7 @@ export class NativeRenderer implements IChartRenderer {
             if (holdView) this.coords.setViewport({ ...vp, rightOffset: vp.rightOffset - 1 });
             // A candle landing before the device clock reaches its open proves the clock
             // slow — learned before this frame paints, so the countdown never reads `01:04`.
-            clockCorrection.observeCandle(bar.time, this.coords.barInterval);
+            if (!this.scene.variableDuration) clockCorrection.observeCandle(bar.time, this.coords.barInterval);
         } else {
             return;
         }
@@ -2434,7 +2468,9 @@ export class NativeRenderer implements IChartRenderer {
             this.vpvrActive = true; // the VPVR layer follows the indicator's presence
             this.vpvrHidden = false;
         }
-        if (model.ownScale) this.refreshAxisWidth();
+        const hadOwnScale = this.scene.indicatorScales.has(model.id);
+        if (!model.ownScale && hadOwnScale) this.scene.dropIndicatorScale(model.id);
+        if (model.ownScale || hadOwnScale) this.refreshAxisWidth();
         this.syncLegendOrder();
         this.paneControls?.refresh();
         this.scheduler.invalidate(InvalidateLevel.Full);
@@ -3443,7 +3479,9 @@ export class NativeRenderer implements IChartRenderer {
         const bar = this.bars[idx];
         const pricePane = this.dataWindowPricePane();
         const parts = bar ? formatStampParts(bar.time, displayZone(this.scene.timezone, this.coords.barInterval)) : { date: '', time: '' };
-        return { date: parts.date, time: parts.time, ohlc: this.dataWindowOHLC(bar, pricePane), groups: this.dataWindowGroups(idx, pricePane) };
+        // The drawings that report values follow the indicators, one group each.
+        const groups = [...this.dataWindowGroups(idx, pricePane), ...(this.userDrawings?.readoutGroups() ?? [])];
+        return { date: parts.date, time: parts.time, ohlc: this.dataWindowOHLC(bar, pricePane), groups };
     }
 
     private dataWindowPricePane(): PaneNode | null {
@@ -3505,7 +3543,18 @@ export class NativeRenderer implements IChartRenderer {
                 continue; // markers carry no scalar readout
             }
             if (value == null || !Number.isFinite(value)) continue;
-            rows.push({ label: this.seriesTitle(s, model), value: this.dataWindowFmt(value, pane, surface === 'legend' ? 'legend' : 'dataWindow'), color });
+            const fmtSurface: FormatSurface = surface === 'legend' ? 'legend' : 'dataWindow';
+            let formatted: string;
+            if (pane && model.percentBaseline === 'own') {
+                const sc = this.scene.scaleFor(model, pane);
+                const pct = percentScaleForModel(this.scene, pane, model);
+                formatted = pct
+                    ? formatAxisValue(sc, pane.bounds.height, value, pct, undefined, pane.axisFormat, this.scene.format, fmtSurface)
+                    : formatPriceLabel(sc, pane.bounds.height, value, undefined, this.scene.format, fmtSurface);
+            } else {
+                formatted = this.dataWindowFmt(value, pane, fmtSurface);
+            }
+            rows.push({ label: this.seriesTitle(s, model), value: formatted, color });
         }
         return rows;
     }
@@ -3741,7 +3790,30 @@ export class NativeRenderer implements IChartRenderer {
                 ? (tf, from, to) => this.userDrawings!.seriesGateway!.seriesInRange(tf, from, to)
                 : undefined,
             (paneId) => paneId === PRICE_PANE_ID && this.scene.priceMintick ? tickDecimals(this.scene.priceMintick) || 2 : undefined,
+            (paneId) =>
+                paneId === PRICE_PANE_ID && this.scene.priceMintick
+                    ? { tick: this.scene.priceMintick, pip: this.symbolFacts?.pipsize }
+                    : undefined,
+            { barsKey: this.barsKey(), barMs: this.coords.barInterval, timeZone: this.scene.timezone },
         );
+    }
+
+    /** How many times the whole series was set (`setBars`): another series on the same time
+     *  grid (a symbol switch) is then told apart from a tick of the same one. */
+    private barsGeneration = 0;
+
+    /**
+     * A fingerprint of the bars drawings compute from: it changes when they do, and tells
+     * a moved newest bar from added bars from another series (see `Projector.barsKey`).
+     * It reads the bars as they are painted, so while the forming bar glides toward a tick
+     * a drawing computes along with it and ends on the true values, like the candle does.
+     */
+    private barsKey(): string {
+        const n = this.bars.length;
+        const first = this.bars[0];
+        const last = this.bars[n - 1];
+        if (!first || !last) return `0|0|0|${this.barsGeneration}|`;
+        return `${n}|${first.time}|${last.time}|${this.barsGeneration}|${last.open},${last.high},${last.low},${last.close},${last.volume ?? ''}`;
     }
 
     /** OHLC bars whose open-time falls within `[from, to]` (inclusive) — the data a regression
@@ -3874,14 +3946,30 @@ export class NativeRenderer implements IChartRenderer {
         if (i1 < i0) return;
         // Series points past the last bar paint in the right whitespace, so they scale there too.
         const s1 = Math.max(i1, Math.ceil(vr.to));
+        const visibleTime = this.coords.visibleTimeRange();
         // Percent mode: the reference is the first visible bar's close (the common idiom).
         this.scene.percentBaseline = this.bars[i0]?.close ?? 0;
+        this.scene.modelPercentBaselines.clear();
         const panes = this.scene.orderedPanes();
         const pricePane = panes.find((p) => p.kind === 'price') ?? null;
         this.chrome.prepare(this.scene, this.coords, this.theme); // wire drawing resolvers for priceRange
         const animating = this.animator.active;
         const margins = this.scene.style.margins;
         for (const pane of panes) {
+            const models = this.scene.indicatorsForPane(pane.id);
+            // A merged (own-scale) indicator does NOT contribute to the pane master scale.
+            const masterModels = models.filter((m) => m.ownScale !== true);
+            // Percent baseline for THIS pane (the first visible value it measures change from):
+            // computed before autoscale so `percentBaseline: 'own'` overlays can rebase into the
+            // pane's percentage window (and stays fresh during horizontal pans in manual mode).
+            pane.percentBaseline = pane.kind === 'price'
+                ? (this.bars[i0]?.close ?? 0)
+                : this.firstVisibleValue(masterModels, i0, i1);
+            for (const m of masterModels) {
+                if (m.percentBaseline !== 'own') continue;
+                const ownBase = this.firstVisibleValue([m], i0, i1);
+                if (ownBase !== 0 && Number.isFinite(ownBase)) this.scene.modelPercentBaselines.set(m.id, ownBase);
+            }
             // Manual mode (price-axis drag / vertical pan): render the user's window
             // verbatim and skip autoscale entirely for this pane.
             if (pane.manualScale) {
@@ -3890,12 +3978,12 @@ export class NativeRenderer implements IChartRenderer {
                 pane.initialized = true;
                 continue;
             }
-            const models = this.scene.indicatorsForPane(pane.id);
-            // A merged (own-scale) indicator does NOT contribute to the pane master scale.
-            const masterModels = models.filter((m) => m.ownScale !== true);
-            // User drawings do not expand the scale (placing one in the empty margin
-            // must not yank the window to follow the cursor). Pine drawings still fold in.
+            // User drawings do not expand the scale (placing one in the empty margin must not
+            // yank the window to follow the cursor) unless their type asks for it. Pine
+            // drawings fold in.
             let dr = this.chrome.paneDrawingsRange(masterModels, this.scene, pane === pricePane, vr);
+            const ur = this.userDrawings?.autoscaleRangeForPane(pane.id, visibleTime.from, visibleTime.to) ?? null;
+            if (ur) dr = dr ? { min: Math.min(dr.min, ur.min), max: Math.max(dr.max, ur.max) } : ur;
             // force_overlay series render on the price pane whatever pane their indicator
             // owns — fold their visible range in here (their own pane excludes them).
             if (pane === pricePane) {
@@ -3914,15 +4002,16 @@ export class NativeRenderer implements IChartRenderer {
             // price lines and Pine drawings paint where they fall (off the edge when outside it).
             // With the bars out of the scale there is nothing else to fit, so it does not apply.
             const priceOnly = pane === pricePane && this.scene.scalePriceOnly && includeCandles;
+            const panePct = percentScaleFor(this.scene, pane);
+            const ownBaselineIds = new Set(masterModels.filter((m) => m.percentBaseline === 'own').map((m) => m.id));
+            const valueScaleOf = (id: string): number => {
+                if (!panePct || !ownBaselineIds.has(id)) return 1;
+                const ownBase = this.scene.modelPercentBaselines.get(id);
+                return ownBase != null && ownBase !== 0 ? panePct.baseline / ownBase : 0;
+            };
             pane.scaleTarget = priceOnly
                 ? computePaneScale([], this.bars, true, i0, s1, null, paneLogScale(this.scene, pane), (id) => this.scene.offsetOf(id), margins)
-                : computePaneScale(masterModels, this.bars, includeCandles, i0, s1, dr, paneLogScale(this.scene, pane), (id) => this.scene.offsetOf(id), margins);
-            // Percent baseline for THIS pane (the first visible value it measures change from):
-            // the first visible bar close on the price pane, else the master series' first
-            // visible value. 0 ⇒ no reference yet, so the axis falls back to absolute.
-            pane.percentBaseline = pane.kind === 'price'
-                ? (this.bars[i0]?.close ?? 0)
-                : this.firstVisibleValue(masterModels, i0);
+                : computePaneScale(masterModels, this.bars, includeCandles, i0, s1, dr, paneLogScale(this.scene, pane), (id) => this.scene.offsetOf(id), margins, valueScaleOf);
             // The volume layer is a bespoke renderer layer with no model series, so on its own
             // pane the master scale would be the empty {0,1} placeholder (axis reads "0.50").
             // Drive it from the visible volume instead, matching the columns' bottom-anchored
@@ -4274,7 +4363,7 @@ export class NativeRenderer implements IChartRenderer {
         }));
     }
 
-    /** Thin projection of the panes for the axis A/L hover buttons (top-to-bottom order). */
+    /** Thin projection of the panes for the axis %/L/A hover buttons (top-to-bottom order). */
     private axisScaleViews(): AxisScaleView[] {
         return this.scene.orderedPanes().map((p) => ({
             id: p.id,
@@ -4283,6 +4372,7 @@ export class NativeRenderer implements IChartRenderer {
             collapsed: p.collapsed,
             auto: p.manualScale == null,
             log: paneLogScale(this.scene, p),
+            percent: paneScaleMode(this.scene, p) === 'percent',
         }));
     }
 
@@ -4357,20 +4447,24 @@ export class NativeRenderer implements IChartRenderer {
         }
     }
 
-    /** The first visible value a study pane measures percent-change from: the earliest finite
-     *  value at bar `i0` across its master series (line-like value, else a candle/bar close).
-     *  0 when none is available yet — the axis then falls back to absolute. */
-    private firstVisibleValue(models: IndicatorModel[], i0: number): number {
+    /** The first visible value a study pane (or an `own`-baseline model) measures percent-change
+     *  from: scans from `i0` forward up to `i1` so a secondary series whose history starts
+     *  partway through the viewport still anchors at its first visible bar. 0 when none. */
+    private firstVisibleValue(models: IndicatorModel[], i0: number, i1 = i0): number {
         for (const m of models) {
             const off = this.scene.offsetOf(m.id);
             for (const s of m.series) {
                 if (s.overlay === true) continue; // renders on the price pane, not this one
                 if (isLineLikeSeries(s)) {
-                    const v = s.points[i0 - off]?.value;
-                    if (v != null && Number.isFinite(v)) return v;
+                    for (let i = i0; i <= i1; i += 1) {
+                        const v = s.points[i - off]?.value;
+                        if (v != null && Number.isFinite(v) && v !== 0) return v;
+                    }
                 } else if (s.kind === 'candle' || s.kind === 'bar') {
-                    const b = s.bars[i0 - off];
-                    if (b && Number.isFinite(b.close)) return b.close;
+                    for (let i = i0; i <= i1; i += 1) {
+                        const b = s.bars[i - off];
+                        if (b && Number.isFinite(b.close) && b.close !== 0) return b.close;
+                    }
                 }
             }
         }
@@ -4776,14 +4870,25 @@ function asScaleMode(v: unknown): ScaleMode {
     return v === 'percent' || v === 'indexed' ? v : 'price';
 }
 
-/** Sort ascending + dedupe by time (last write wins). */
-function normalizeBars(bars: OHLCV[]): OHLCV[] {
-    const sorted = [...bars].sort((a, b) => a.time - b.time);
+/** Sort ascending + dedupe (last write wins). Variable-duration series (tick charts)
+ *  preserve distinct bars that open in the same millisecond, collapsing only bars that
+ *  explicitly share the same `(time, seq)` identity. */
+function normalizeBars(bars: OHLCV[], preserveDuplicateTimes = false): OHLCV[] {
+    const sorted = [...bars].sort((a, b) => a.time - b.time || (a.seq ?? 0) - (b.seq ?? 0));
     const out: OHLCV[] = [];
     for (const bar of sorted) {
         const last = out[out.length - 1];
-        if (last && last.time === bar.time) out[out.length - 1] = bar;
-        else out.push(bar);
+        if (last && last.time === bar.time) {
+            if (!preserveDuplicateTimes) {
+                out[out.length - 1] = bar;
+                continue;
+            }
+            if (last.seq !== undefined && bar.seq !== undefined && last.seq === bar.seq) {
+                out[out.length - 1] = bar;
+                continue;
+            }
+        }
+        out.push(bar);
     }
     return out;
 }

@@ -19,6 +19,11 @@ export class HorizontalRay extends Drawing {
         return y == null ? null : [proj.xOf(a.time), y];
     }
 
+    override valueAt(time: number): number | null {
+        const a = this.anchors[0];
+        return a && time >= a.time ? a.price : null; // the level, from its point onward
+    }
+
     hitTest(px: number, py: number, proj: Projector, tol: number): boolean {
         const p = this.pt(proj);
         return p != null && distToSegment(px, py, p[0], p[1], proj.width, p[1]) <= tol;

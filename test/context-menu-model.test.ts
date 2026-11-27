@@ -6,6 +6,9 @@ import {
     bodyItems,
     composeMenu,
     CONTEXT_MENU_BUILTIN_ORDER,
+    DRAWING_ACTION_PREFIX,
+    drawingMenuActions,
+    drawingMenuItems,
     invertWrite,
     paneScaleAt,
     priceAxisItems,
@@ -18,6 +21,8 @@ import {
     type PriceAxisState,
 } from '../src/widget/context-menu-model';
 import type { MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
+import type { SerializedDrawing } from '../src/core/drawings';
+import type { DrawingActionDescriptor } from '../src/widget/contributions';
 import { TIMEZONES } from '../src/widget/timezones';
 
 function pane(id: string, kind: 'price' | 'study', top: number, height: number, extra: Partial<PaneScaleInfo> = {}): PaneScaleInfo {
@@ -31,6 +36,8 @@ const AXIS_STATE: PriceAxisState = {
     axisLabels: true,
     priceLabel: true,
     countdown: false,
+    indicatorValueLabels: true,
+    indicatorNameLabels: false,
     priceLine: true,
 };
 
@@ -102,7 +109,7 @@ describe('price-axis menu', () => {
             'More settings…',
         ]);
         expect(items.filter((i) => i.separatorBefore).map((i) => i.label)).toEqual(['Regular', 'Labels', 'More settings…']);
-        expect(items.find((i) => i.label === 'Labels')?.submenu?.map((i) => i.label)).toEqual(['Price axis labels', 'Last price label', 'Countdown to bar close']);
+        expect(items.find((i) => i.label === 'Labels')?.submenu?.map((i) => i.label)).toEqual(['Price axis labels', 'Last price label', 'Countdown to bar close', 'Indicator value labels', 'Indicator name labels']);
         expect(items.find((i) => i.label === 'Levels')?.submenu?.map((i) => i.id)).toEqual(['toggle:currentPriceLine']);
     });
 
@@ -134,6 +141,8 @@ describe('price-axis menu', () => {
         expect(labels.find((i) => i.id === 'toggle:axisLabels')?.checked).toBe(false);
         expect(labels.find((i) => i.id === 'toggle:priceLabel')?.checked).toBe(true);
         expect(labels.find((i) => i.id === 'toggle:countdown')?.checked).toBe(true);
+        expect(labels.find((i) => i.id === 'toggle:indicatorValueLabels')?.checked).toBe(true);
+        expect(labels.find((i) => i.id === 'toggle:indicatorNameLabels')?.checked).toBe(false);
         expect(items.find((i) => i.id === 'levels')!.submenu![0]!.checked).toBe(false);
     });
 });
@@ -251,6 +260,39 @@ describe('contributed rows sort together with the built-in ones', () => {
         const [first] = composeMenu('body', BODY, [{ item, order: -100 }]);
         expect(first).toEqual({ id: 'action:x', label: 'Copy price', icon: 'clone', separatorBefore: false });
         expect(composeMenu('body', BODY, [])[3]).toMatchObject({ id: 'settings:Canvas', icon: 'gear', separatorBefore: true });
+    });
+
+    it('leading rows open the menu as a group of their own, ahead of even an order -100 action', () => {
+        const lead: MenuItemDescriptor[] = [{ id: 'drawing-action:a', label: 'A' }, { id: 'drawing-action:b', label: 'B' }];
+        expect(shape(composeMenu('body', BODY, [], lead))).toBe('drawing-action:a drawing-action:b | reset-view | remove-drawings remove-indicators | settings:Canvas');
+        const items = composeMenu('body', BODY, [row('copy', -100)], lead);
+        expect(shape(items)).toBe('drawing-action:a drawing-action:b | copy | reset-view | remove-drawings remove-indicators | settings:Canvas');
+        expect(items[0]!.separatorBefore).toBe(false);
+    });
+});
+
+describe('the actions of the drawing under the pointer', () => {
+    const drawing = (type: string): SerializedDrawing => ({ id: 'd1', type, paneId: 'price', anchors: [{ time: 0, price: 100 }] }) as unknown as SerializedDrawing;
+    const action = (id: string, extra: Partial<DrawingActionDescriptor> = {}): DrawingActionDescriptor => ({ id, icon: 'clone', label: id.toUpperCase(), run: () => {}, ...extra });
+    const ACTIONS = [
+        action('export', { surfaces: ['menu'] }),
+        action('alert', { surfaces: ['toolbar', 'menu'], when: (d) => d.type === 'hline' }),
+        action('default'),
+        action('bar', { surfaces: ['toolbar', 'settings'] }),
+    ];
+
+    it('are the ones on the menu surface that their gate lets through, in registry order', () => {
+        expect(drawingMenuActions(ACTIONS, drawing('hline')).map((a) => a.id)).toEqual(['export', 'alert']);
+        expect(drawingMenuActions(ACTIONS, drawing('box')).map((a) => a.id)).toEqual(['export']);
+        expect(drawingMenuItems(ACTIONS, drawing('hline'))).toEqual([
+            { id: `${DRAWING_ACTION_PREFIX}export`, label: 'EXPORT', icon: 'clone' },
+            { id: `${DRAWING_ACTION_PREFIX}alert`, label: 'ALERT', icon: 'clone' },
+        ]);
+    });
+
+    it('are none with no drawing under the pointer', () => {
+        expect(drawingMenuActions(ACTIONS, null)).toEqual([]);
+        expect(drawingMenuItems(ACTIONS, undefined)).toEqual([]);
     });
 });
 

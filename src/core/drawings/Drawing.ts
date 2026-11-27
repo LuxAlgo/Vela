@@ -4,12 +4,42 @@ import { defaultStyle, defaultText } from './style';
 import type { SettingsSchema } from './schema';
 import type { MessageLike } from '../i18n/types';
 import { sanitizeShowOn } from './visibility';
+import type { DrawingData, DrawingShape, ShapeContext } from './shapes';
 
-/**
- * The interactive user-drawing types. The lean-core set ships first; new types
- * (fibs/patterns) extend the union + register a class — no base/port change.
- */
-export type DrawingTypeKey =
+/** What a pointer position hits on a drawing: the named part (null for the plain body), and
+ *  what the chart shows for it. */
+export interface DrawingHit {
+    part: string | null;
+    cursor?: string;
+    tip?: string;
+}
+
+/** One value a drawing reports (the data window, `chart.drawings.readout()`). */
+export interface DrawingReadoutRow {
+    /** Names the value, so a read-only settings row can show it (`results.<key>`). */
+    key?: string;
+    label: MessageLike;
+    value: string;
+    color?: string;
+}
+
+/** A point or a level the magnet may snap to: a time, a price, or both. */
+export interface SnapTarget {
+    time?: number;
+    price?: number;
+}
+
+/** What the renderer hands a drawing it starts painting. */
+export interface DrawingHost {
+    /** The instance this one replaces (same id and type), so cached results carry over a
+     *  re-sync instead of being computed again. */
+    prev: Drawing | null;
+    /** Ask for a repaint (an asynchronous result landed). */
+    invalidate(): void;
+}
+
+/** The drawing types Vela ships. */
+export type BuiltinDrawingType =
     | 'trendline'
     | 'hline'
     | 'ray'
@@ -89,6 +119,13 @@ export type DrawingTypeKey =
     | 'fairvaluegap'
     | 'orderblock'
     | 'liquidity';
+
+/**
+ * A drawing type's key: one of the built-in tools, or any string a host registers a type
+ * under (`registerDrawingType`, `defineDrawing`). Namespace a custom key (`'acme.spiral'`)
+ * so it never meets a tool a later release adds.
+ */
+export type DrawingTypeKey = BuiltinDrawingType | (string & {});
 
 /** One anchor's role + which axes its handle may move along. */
 export interface AnchorSlot {
@@ -191,6 +228,99 @@ export abstract class Drawing {
     }
 
     /**
+     * Map the point of placement step `index` to the anchor the drawing stores: constrain it
+     * (the same price as the first point, the nearest bar), or read the chart at it. Called
+     * for each click and, with `preview`, for the cursor between clicks, so the ghost shows
+     * what the click would commit. Default: the point as given.
+     */
+    placeAnchor(_index: number, point: DrawingPoint, _proj: Projector, _preview: boolean): DrawingPoint {
+        return point;
+    }
+
+    /** True when placement should end before `anchorSchema().max` points are in (a tool
+     *  whose sequence depends on what was clicked). Checked after every committed point. */
+    placementFinished(): boolean {
+        return false;
+    }
+
+    /** The prompt for placement step `index` (the point about to be clicked), shown while
+     *  placing; null keeps the type's one `placementHint`. */
+    stepHint(_index: number): MessageLike | null {
+        return null;
+    }
+
+    /** Whether holding Shift locks a two-point drawing of this type to 45° steps. */
+    angleSnaps(): boolean {
+        return false;
+    }
+
+    /**
+     * The drawing as a list of shapes: the paint seam. A type that implements it needs no
+     * branch in a renderer, which draws the list as it is. Types the renderer already knows
+     * by class leave it undefined.
+     */
+    shapes?(ctx: ShapeContext<object>): DrawingShape[];
+
+    /** The drawing's data as `shapes()` and the other hooks read it. `proj` is the frame's
+     *  projector, when the read happens inside one. */
+    shapeData(proj?: Projector | null): DrawingData<object> {
+        return {
+            id: this.id,
+            type: this.type,
+            paneId: this.paneId,
+            anchors: this.anchors,
+            props: this.writeProps() ?? {},
+            style: this.style,
+            text: this.text,
+            state: undefined,
+            pending: false,
+            bars: (from, to) => proj?.barsInRange?.(from, to) ?? [],
+        };
+    }
+
+    /** What (px, py) hits on this drawing beyond "the body": a named part, its cursor and its
+     *  tip. Null when the type has no parts. */
+    hitInfo(_px: number, _py: number, _proj: Projector, _tol: number): DrawingHit | null {
+        return null;
+    }
+
+    /** A click landed on the drawing (on `part`, or on its plain body). Return true when the
+     *  click changed the drawing: the chart then saves the change in place of opening the
+     *  settings bar. */
+    onClick(_part: string | null): boolean {
+        return false;
+    }
+
+    /** The drawing's price at `time` (a line's level there, a curve's value), or null where
+     *  it has none: what an alert on the drawing compares the price with. `proj` is the
+     *  chart's projector when the read comes through a renderer: a straight line is then
+     *  read as it is painted, whatever the price scale and the gaps in the time axis. */
+    valueAt(_time: number, _proj?: Projector | null): number | null {
+        return null;
+    }
+
+    /** The values the drawing reports, for the data window and `chart.drawings.readout()`. */
+    readout(): DrawingReadoutRow[] {
+        return [];
+    }
+
+    /** Points and levels this drawing offers the magnet while ANOTHER drawing is placed or
+     *  reshaped. */
+    snapTargets(): SnapTarget[] {
+        return [];
+    }
+
+    /** Whether the pane's price scale widens to keep this drawing in view. */
+    autoscales(): boolean {
+        return false;
+    }
+
+    /** The renderer starts painting this instance. */
+    mount(_host: DrawingHost): void {
+        /* base keeps no state across instances */
+    }
+
+    /**
      * Move handle `index` to `pt`. By default handle `i` IS anchor `i`, moved along the axes its slot
      * frees; a type with more handles than anchors (a box's edge midpoints) maps each extra handle
      * onto the anchor coordinates it edits.
@@ -230,7 +360,8 @@ export abstract class Drawing {
     abstract handlePoints(proj: Projector): Array<[number, number]>;
     /** Tight pixel bounds (selection box), or null when unresolvable. */
     abstract bounds(proj: Projector): { x: number; y: number; w: number; h: number } | null;
-    /** Visible price span on its pane. Reserved for a future per-drawing autoscale opt-in. */
+    /** Visible price span on its pane. The pane's scale keeps it in view for a type that
+     *  opts in (`autoscales()`). */
     abstract priceRange(): { min: number; max: number } | null;
 
     /**

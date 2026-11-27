@@ -37,6 +37,23 @@ export function sourceInput(defval: string = 'Close', key = 'source', title: Mes
     return { key, title, type: 'string', defval, options: SOURCES, group: SETTINGS, ...(tooltip != null ? { tooltip } : {}) };
 }
 
+export function symbolInput(
+    key: string,
+    title: MessageLike,
+    defval = '',
+    opts?: { confirm?: boolean; tooltip?: MessageLike },
+): ClassicInput {
+    return {
+        key,
+        title,
+        type: 'symbol',
+        defval,
+        group: SETTINGS,
+        ...(opts?.confirm ? { confirm: true } : {}),
+        ...(opts?.tooltip != null ? { tooltip: opts.tooltip } : {}),
+    };
+}
+
 export function colorInput(defval: string = INFO, title: MessageLike = msg('indicator.common.color', 'Color'), key = 'color', tooltip?: MessageLike): ClassicInput {
     return { key, title, type: 'color', defval, group: STYLE, ...(tooltip != null ? { tooltip } : {}) };
 }

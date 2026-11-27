@@ -8,6 +8,8 @@ import type { SidebarComposition } from './sidebar-composition';
 export interface ShellDefaults {
     /** The right-edge toolbar (`sidebar`), as a shell option takes it. */
     sidebar?: boolean | SidebarComposition;
+    /** Default timeframe presets for shells constructed without an explicit `timeframes` option. */
+    timeframes?: readonly string[];
 }
 
 const defaults = new Map<keyof ShellDefaults, unknown>();

@@ -4,7 +4,7 @@
 // project the same descriptors. Register at import time, before widgets are constructed.
 import type { Vela } from '../Vela';
 import type { DrawingActionView, LegendActionView, LegendCalloutView } from '../core/ports/IChartRenderer';
-import type { SerializedDrawing } from '../core/drawings';
+import type { SerializedDrawing, ToolbarDefinition, ToolGroupAction } from '../core/drawings';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import type { SymbolDescriptor } from '../core/ports/DataProvider';
 import type { InputValue } from '../core/model/inputs';
@@ -63,7 +63,7 @@ export interface WidgetContext {
     addIndicator(entry: ExternalIndicatorEntry): void;
     /** Add a native (core-computed) indicator to the active chart through the shell —
      *  recorded in the undo/redo timeline, unlike the raw `chart.addNativeIndicator`. */
-    addNativeIndicator(type: string): void;
+    addNativeIndicator(type: string, options?: { inputs?: Record<string, InputValue> }): void;
     /** Tell the shell some PERSISTABLE third-party state changed (a debounced
      *  `state:changed` + storage write follows). Only needed for state with no shell
      *  event of its own — indicator adds/removals already trigger the save cycle. */
@@ -223,8 +223,9 @@ export interface ExternalIndicatorEntry {
     hidden?: boolean;
 }
 
-/** Where an action is projected. */
-export type WidgetActionTarget = 'topbar' | 'sidebar' | 'context:body' | 'context:price-axis' | 'context:time-axis';
+/** Where an action is projected. `'drawings'` is the menu of a drawing toolbar group (see
+ *  {@link WidgetActionDescriptor.group}). */
+export type WidgetActionTarget = 'topbar' | 'sidebar' | 'drawings' | 'context:body' | 'context:price-axis' | 'context:time-axis';
 
 export interface WidgetActionDescriptor {
     /** Stable id — re-registering an id replaces it. */
@@ -261,6 +262,12 @@ export interface WidgetActionDescriptor {
      *  three-dots menu — a left (primary) action right after Layout, a right one at the
      *  end. Default: `'bar'` for `align: 'left'`, `'menu'` otherwise. */
     mobile?: 'bar' | 'menu';
+    /** Drawings only, and required there: the id of the toolbar group whose menu lists the
+     *  action, after the group's tools — a built-in group's id (`'text'`, `'measurements'`…)
+     *  or a group of yours (`registerDrawingGroup`). The mobile drawings drawer lists it at
+     *  the end of the same group. An action that names no group on the bar shows nowhere:
+     *  register the group with `showEmpty` to have the menu before its first tool. */
+    group?: string;
     /** Runtime gate — omitted ⇒ always shown. */
     when?: (ctx: WidgetContext) => boolean;
     /** Sidebar only: the pressed look of a toggle that is on (a panel of the plugin's own,
@@ -422,7 +429,7 @@ export function sidePanels(): SidePanelDescriptor[] {
  *  their id — the "simple button" slots. The composites (symbol, timeframes, style,
  *  layout, undo-redo, alerts, panels) are stateful controls the shell pushes state
  *  into; a plain `{label, icon, run}` descriptor cannot stand in for them. */
-export const OVERRIDABLE_TOPBAR_IDS = ['indicators', 'screenshot'] as const;
+export const OVERRIDABLE_TOPBAR_IDS = ['indicators', 'screenshot', 'compare'] as const;
 
 const overridableSet = new Set<string>(OVERRIDABLE_TOPBAR_IDS);
 const builtinTopbarSet = new Set<string>(TOPBAR_BUILTIN_IDS);
@@ -464,6 +471,24 @@ export function widgetActions(target: WidgetActionTarget, ctx?: WidgetContext): 
     const list = [...registry.values()].filter((d) => d.target === target);
     list.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     return ctx ? list.filter((d) => !d.when || d.when(ctx)) : list;
+}
+
+/**
+ * `def` with the `'drawings'` actions added to the groups they name — what a shell hands
+ * its drawing toolbar and its drawings drawer. `when` is read now, against `context()`;
+ * `run` gets a fresh context per click (the widget context rule).
+ */
+export function toolbarWithActions(def: ToolbarDefinition, i18n: Translator | null | undefined, context: () => WidgetContext): ToolbarDefinition {
+    const byGroup = new Map<string, ToolGroupAction[]>();
+    for (const action of widgetActions('drawings', context())) {
+        if (!action.group) continue;
+        const view: ToolGroupAction = { id: action.id, label: textOf(i18n, action.label), run: () => action.run(context()) };
+        if (action.icon) view.icon = action.icon;
+        if (!byGroup.has(action.group)) byGroup.set(action.group, []);
+        byGroup.get(action.group)!.push(view);
+    }
+    if (byGroup.size === 0) return def;
+    return { groups: def.groups.map((g) => (byGroup.has(g.id) ? { ...g, actions: byGroup.get(g.id)! } : g)) };
 }
 
 // ── Legend actions ─────────────────────────────────────────────────────────────────
@@ -677,27 +702,31 @@ export function legendCalloutsProviderFor(chart: Vela, context: () => WidgetCont
 // ── Drawing actions ────────────────────────────────────────────────────────────────
 
 /** Where a contributed drawing action shows: the selection toolbar that floats by a
- *  selected drawing, and the drawing's settings dialog. */
-export type DrawingActionSurface = 'toolbar' | 'settings';
+ *  selected drawing, the drawing's settings dialog, and the drawing's menus (`'menu'`: the
+ *  toolbar's overflow menu, and the chart's right-click menu over the drawing). */
+export type DrawingActionSurface = 'toolbar' | 'settings' | 'menu';
 
 /**
  * A contributed DRAWING action: an icon button on the toolbar that floats by a selected
  * drawing, placed before its settings wheel, and a labelled button at the start of the
- * drawing's settings dialog footer. It acts on one drawing, so a multi-selection's toolbar
- * leaves it out. `when` gates per drawing (its type, its anchors); `run` receives the
- * shell's {@link WidgetContext} and the drawing as it is at click time.
+ * drawing's settings dialog footer. With the `'menu'` surface it is a row at the end of the
+ * toolbar's overflow menu and at the top of the chart's right-click menu over the drawing.
+ * It acts on one drawing, so a multi-selection's toolbar leaves it out. `when` gates per
+ * drawing (its type, its anchors); `run` receives the shell's {@link WidgetContext} and the
+ * drawing as it is at click time.
  */
 export interface DrawingActionDescriptor {
     /** Stable id — re-registering an id replaces it. */
     id: string;
     /** Icon id from the `vela/ui` icon registry (register yours with `registerIcon`). */
     icon: string;
-    /** The toolbar button's tooltip and accessible name, and the settings dialog button's
-     *  text. A message (`msg(id, 'English')`) follows the chart's language. */
+    /** The toolbar button's tooltip and accessible name, and the text of the settings dialog
+     *  button and of the menu rows. A message (`msg(id, 'English')`) follows the chart's
+     *  language. */
     label: MessageLike;
     /** Sort key within the contributed group (ascending; default 0; ties keep registration order). */
     order?: number;
-    /** Where the action shows (default: both). */
+    /** Where the action shows (default: the toolbar and the settings dialog). */
     surfaces?: readonly DrawingActionSurface[];
     /** Per-drawing gate — omitted ⇒ shown on every drawing. */
     when?: (drawing: SerializedDrawing) => boolean;
@@ -744,6 +773,7 @@ export function drawingActionsProviderFor(chart: Vela, context: () => WidgetCont
                     label: textOf(chart.i18n, d.label),
                     toolbar: on.includes('toolbar'),
                     settings: on.includes('settings'),
+                    menu: on.includes('menu'),
                     // Read the drawing AGAIN at click time: the toolbar outlives drags and edits.
                     run: () => d.run(context(), find() ?? drawing),
                 };
@@ -769,7 +799,7 @@ export interface CellStateContext {
     /** Add a script indicator to THIS cell through the shell (see {@link WidgetContext.addIndicator}). */
     addIndicator(entry: ExternalIndicatorEntry): void;
     /** Add a native indicator to THIS cell through the shell. */
-    addNativeIndicator(type: string): void;
+    addNativeIndicator(type: string, options?: { inputs?: Record<string, InputValue> }): void;
 }
 
 /**

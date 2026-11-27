@@ -33,13 +33,14 @@ import { DataWindow, DATA_WINDOW_TITLE } from '../widget/data-window';
 import type { ScriptRun } from '../core/script-run';
 import { PanelDock } from '../widget/panel-dock';
 import { SymbolPicker } from '../widget/symbol-picker';
+import { ComparePicker } from '../widget/compare-picker';
 import { IndicatorPicker } from '../widget/indicator-picker';
 import { TimeframeQuick } from '../widget/timeframe-quick';
 import { ShortcutsHelp } from '../widget/shortcuts-help';
 import { Toast } from '../widget/toast';
 import { Glider, ZOOM_IN, ZOOM_OUT, PAN_FAST } from '../widget/glide';
 import { toolShortcutHints } from '../widget/tool-shortcuts';
-import { drawingActionsProviderFor, legendActionsProviderFor, legendCalloutsProviderFor, mobilePlacement, statePersistenceHandlers, topbarActionOverride, widgetActions, widgetAttachments, type DockedStrip, type DockStripOptions, type FullscreenControl, type PanelDockView, type TopbarItems, type WidgetActionDescriptor } from '../widget/contributions';
+import { drawingActionsProviderFor, toolbarWithActions, legendActionsProviderFor, legendCalloutsProviderFor, mobilePlacement, statePersistenceHandlers, topbarActionOverride, widgetActions, widgetAttachments, type DockedStrip, type DockStripOptions, type FullscreenControl, type PanelDockView, type TopbarItems, type WidgetActionDescriptor } from '../widget/contributions';
 import { resolveTopbarComposition, topbarHas, TOPBAR_BUILTIN_IDS, type ResolvedTopbarComposition } from '../widget/topbar-composition';
 import { LayoutModeController, type LayoutMode } from '../widget/layout-mode';
 import { Sidebar, sidebarActions, sidebarControl } from '../widget/sidebar';
@@ -56,7 +57,7 @@ import { resolveIndicators, type IndicatorManifest, type ResolvedIndicator } fro
 import { DrawingToolbar } from '../renderers/native/drawings/DrawingToolbar';
 import { applyAttributionMarkTheme, createAttributionMark, createCustomMark, relabelAttributionMark } from '../renderers/native/chrome/AttributionMark';
 import { rendererDefaults } from '../core/renderer-defaults';
-import { buildToolbar, type DrawingTypeKey, type SerializedDrawing, type SnapMode, type ToolbarDefinition } from '../core/drawings';
+import { buildToolbar, getDrawingType, type DrawingTypeKey, type SerializedDrawing, type SnapMode, type ToolbarDefinition } from '../core/drawings';
 import { timeframeToMs } from '../data/timeframe';
 import { timeframeLabel } from '../widget/timeframe';
 import { registerBuiltinChartTypes } from '../chart-types/builtins';
@@ -416,6 +417,8 @@ export class VelaWorkspace {
     /** The shared bar's content — `drawings: { tools | groups }` picks it. */
     /** The shared toolbar, labelled in the workspace's language (rebuilt when it changes). */
     private toolbarDef: ToolbarDefinition;
+    /** The actions last handed to the shared bar, as a key (see `projectDrawToolbar`). */
+    private drawToolbarActionsKey = '';
     private destroyed = false;
 
     // ── shared chrome ──
@@ -426,6 +429,7 @@ export class VelaWorkspace {
     /** The side-panel column, shared by the whole grid. */
     private readonly dock: PanelDock;
     private readonly symbolPicker: SymbolPicker;
+    private readonly comparePicker: ComparePicker | null;
     /** Null when the host disabled it (`indicatorPicker: false`). */
     private readonly indicatorPicker: IndicatorPicker | null;
     private readonly tfQuick: TimeframeQuick;
@@ -560,6 +564,7 @@ export class VelaWorkspace {
      *  WHOLE surface: desktop button, mobile counterpart, keyboard chord. */
     private indicatorsOverride?: WidgetActionDescriptor;
     private screenshotOverride?: WidgetActionDescriptor;
+    private compareOverride?: WidgetActionDescriptor;
     /** The document-level third-party state bag (`state.ext`) — seeded from the restored
      *  document, refreshed by global-scope handler `serialize` calls at snapshot time.
      *  Entries with no registered handler this session ride along verbatim. */
@@ -645,6 +650,7 @@ export class VelaWorkspace {
         this.topbarComp = resolveTopbarComposition(opts.topbar);
         this.indicatorsOverride = topbarActionOverride('indicators');
         this.screenshotOverride = topbarActionOverride('screenshot');
+        this.compareOverride = topbarActionOverride('compare');
         if (boot?.trackSizes) for (const [id, ts] of Object.entries(boot.trackSizes)) this.trackSizes.set(id, ts);
         if (boot?.ext) this.extState = { ...boot.ext }; // global handlers restore at the end of construction
         if (boot?.charts) for (const { id, ...cs } of boot.charts) this.pool.set(id, cs);
@@ -677,12 +683,29 @@ export class VelaWorkspace {
             onOpenChange: (open) => {
                 // In-chart dialogs (indicator inputs, chart settings) live inside a cell's
                 // chart container, so opening the search from the topbar never hits their
-                // outside-dismiss — close them on every cell explicitly.
-                if (open) for (const cell of this.cells()) cell.chart.renderer.closeDialogs();
+                // outside-dismiss — close them on every cell explicitly, EXCEPT when the
+                // picker was launched from inside an indicator's own symbol input.
+                if (open && !this.symbolPicker.isPicking) for (const cell of this.cells()) cell.chart.renderer.closeDialogs();
                 this.trackDialog(open);
             },
         });
         this.symbolPicker.setSource(() => this.feed.symbols());
+        this.comparePicker =
+            !this.compareOverride && topbarHas(this.topbarComp, 'compare')
+                ? new ComparePicker({
+                      host: this.root,
+                      i18n: this.localeState,
+                      iconFor: (d) => this.feed.symbolIconOf(d),
+                      activeItems: () => this.active.compareItems(),
+                      onAdd: (symbol, placement) => this.active.addCompare(symbol, placement),
+                      onRemove: (id) => this.active.removeCompare(id),
+                      onOpenChange: (open) => {
+                          if (open) for (const cell of this.cells()) cell.chart.renderer.closeDialogs();
+                          this.trackDialog(open);
+                      },
+                  })
+                : null;
+        this.comparePicker?.setSource(() => this.feed.symbols());
         // The picker exists only while it has an entry point left: the deprecated
         // `indicatorPicker: false`, a composition without 'indicators', or an OVERRIDE
         // of the slot all remove every one of them (topbar button, mobile-bar item,
@@ -695,7 +718,9 @@ export class VelaWorkspace {
                       i18n: this.localeState,
                       library: () => this.active.libraryRows(),
                       onChart: () => this.active.onChartRows(),
-                      onAdd: (i) => this.active.addFromLibrary(i),
+                      onAdd: (i) => {
+                          if (this.active.addFromLibrary(i)) this.indicatorPicker?.close();
+                      },
                       onRemove: (i) => this.active.removeFromChart(i),
                       onOpenChange: (open) => {
                           // Same rule as the symbol search: the renderer's in-chart dialogs never see
@@ -721,6 +746,7 @@ export class VelaWorkspace {
             // side (list is law) from a default one (an override's `order` may flow).
             composition: opts.topbar,
             onSymbolClick: () => this.symbolPicker.open(),
+            ...(this.comparePicker ? { onCompareClick: () => this.comparePicker!.open() } : {}),
             ...(picker ? { onIndicatorsClick: () => picker.open() } : {}),
             onUndoClick: () => this.active.history.undo(),
             onRedoClick: () => this.active.history.redo(),
@@ -728,7 +754,7 @@ export class VelaWorkspace {
             onFullscreenClick: () => this.toggleFullscreen(),
             onAlertsClick: (anchor) => this.openAlertsMenu(anchor),
             timeframe: '60',
-            timeframes: opts.timeframes ?? DEFAULT_TIMEFRAMES,
+            timeframes: this.resolvedTimeframes(),
             timeframeFavorites: this.tfFavs,
             priceStyle: 'candles',
             onTimeframe: (tf) => this.setActiveTimeframe(tf),
@@ -1008,6 +1034,7 @@ export class VelaWorkspace {
             this.manifestSettled = true; // nothing will ever resolve — settled empty from the start
         }
         this.mountAttachments();
+        this.projectDrawToolbar(); // the context the actions' gates read exists from here
         this.sidebar?.activate();
         // A sync-storage boot restores third-party document-level state here — the shell
         // is fully built (cells live, attachments mounted). The async-adapter boot and
@@ -1165,6 +1192,7 @@ export class VelaWorkspace {
      *  it on their next open; what stays on screen is relabeled here. */
     private relocalizeChrome(): void {
         this.symbolPicker.relabel();
+        this.comparePicker?.relabel();
         this.indicatorPicker?.relabel();
         this.tfQuick.relabel();
         this.topbar.relocalize();
@@ -1173,7 +1201,7 @@ export class VelaWorkspace {
         this.dock.relocalize();
         this.sidebar?.relocalize();
         this.toolbarDef = buildToolbar(this.opts.drawings, this.localeState).definition;
-        this.drawToolbar?.setDefinition(this.toolbarDef);
+        this.projectDrawToolbar(true);
         this.drawToolbar?.relabel();
         this.drawToolbar?.setShortcuts(toolShortcutHints(this.keymap, this.localeState));
         this.drawingPill?.relocalize();
@@ -1281,6 +1309,23 @@ export class VelaWorkspace {
         return strip;
     }
 
+    /** The shared bar's definition with the actions contributed to its groups' menus. */
+    private projectedToolbar(): ToolbarDefinition {
+        return toolbarWithActions(this.toolbarDef, this.localeState, () => this.context());
+    }
+
+    /** Hand the shared bar its definition. The bar rebuilds its cells on every definition, so
+     *  a `refreshActions()` that changed none of its actions leaves it alone (`force`: the
+     *  tools themselves changed). */
+    private projectDrawToolbar(force = false): void {
+        if (!this.drawToolbar) return;
+        const def = this.projectedToolbar();
+        const key = def.groups.map((g) => `${g.id}:${(g.actions ?? []).map((a) => `${a.id}|${a.label}|${a.icon ?? ''}`).join(',')}`).join(';');
+        if (!force && key === this.drawToolbarActionsKey) return;
+        this.drawToolbarActionsKey = key;
+        this.drawToolbar.setDefinition(def);
+    }
+
     /** Re-project contributed topbar actions + side panels, and mount late-registered attachments. */
     refreshActions(): void {
         this.mountAttachments();
@@ -1288,6 +1333,7 @@ export class VelaWorkspace {
         this.mobileBar?.renderActions();
         this.dock.refresh(); // rebuilt panels bind to the active cell's chart on their own
         this.sidebar?.render();
+        this.projectDrawToolbar();
         // Re-project every cell's legend rows so a late registerLegendAction /
         // registerLegendCallout / registerDrawingAction (or a callout's own state change)
         // appears there too.
@@ -1799,6 +1845,7 @@ export class VelaWorkspace {
         this.objectTree.destroy();
         this.dataWindow.destroy();
         this.symbolPicker.destroy();
+        this.comparePicker?.destroy();
         this.indicatorPicker?.destroy();
         this.tfQuick.destroy();
         this.shortcutsHelp?.destroy();
@@ -1819,6 +1866,7 @@ export class VelaWorkspace {
         if (!cell) return;
         this.topbar.setSymbol(cell.symbol);
         this.topbar.setTimeframe(cell.timeframe);
+        this.topbar.setUnavailableTimeframes(cell.unavailableTimeframes());
         this.topbar.setPriceStyle(cell.priceStyle, cell.unavailablePriceStyles());
         this.topbar.setIndicatorCount(cell.indicatorCount);
         this.topbar.renderActions(); // contributed `when()` gates may depend on the active cell
@@ -2122,6 +2170,7 @@ export class VelaWorkspace {
                 watermark: this.opts.watermark !== false,
                 nativeBackend: this.cellBackend,
                 dialogHost: this.root,
+                symbolPicker: (current, onPick) => this.symbolPicker.open(current.replace(/^[^:]*:/, ''), { onSelect: onPick }),
                 timezone: () => this.timezone,
                 setTimezone: (zone) => this.setTimezone(zone),
                 context: () => this.context(),
@@ -2135,6 +2184,8 @@ export class VelaWorkspace {
                 onMarketChanged: (id) => this.onCellMarketChanged(id),
                 onPriceStyleChanged: (id) => this.onCellPriceStyleChanged(id),
                 onPriceStyleShown: (id) => this.projectCellPriceStyle(id),
+                timeframes: () => this.resolvedTimeframes(),
+                onTimeframesShown: (id) => this.projectCellTimeframes(id),
                 onIndicatorsChanged: (id) => this.onCellIndicatorsChanged(id),
                 onStatusPrefsChanged: (id) => this.propagateStylePrefs(id),
                 onStateDirty: () => this.markStateDirty(),
@@ -2203,9 +2254,15 @@ export class VelaWorkspace {
         // toggled in any cell re-applies to every other cell (and the shared bar), and
         // the mirror is what `getState()` persists.
         chart.on('drawing:favorites', ({ favorites }) => {
-            this.favs = favorites;
+            // A chart reports the stars of the tools it knows. One whose tool is not
+            // registered yet (a plugin that loads after the saved state) stays in the set
+            // the workspace saves and hands the other cells, so it is starred everywhere
+            // once the tool exists, and a save made meanwhile does not drop it.
+            const waiting = this.favs.filter((type) => !favorites.includes(type) && getDrawingType(type) == null);
+            const all = waiting.length > 0 ? [...favorites, ...waiting] : favorites;
+            this.favs = all;
             for (const other of this.cellsById.values()) {
-                if (other !== cell) other.chart.drawings.setFavorites(favorites as never[]);
+                if (other !== cell) other.chart.drawings.setFavorites(all as never[]);
             }
             this.drawToolbar?.setFavorites(favorites as never[]);
             this.markStateDirty();
@@ -2258,6 +2315,8 @@ export class VelaWorkspace {
         // of the three above: unreported, the saved state keeps the drawings as they were.
         chart.on('drawing:history', () => this.markStateDirty());
         chart.on('drawing:replaced', () => this.markStateDirty());
+        // Groups ride the drawings document: a new grouping is a new saved state.
+        chart.on('drawing:groups', () => this.markStateDirty());
         // A chart that lands on another symbol joins the charts already on it, and is out
         // of the link from the start of the switch until then.
         this.drawingsSettled.set(cell.id, this.chartSymbolOf(cell));
@@ -2268,6 +2327,14 @@ export class VelaWorkspace {
         // Tool/magnet/mode reflection (trigger ②): the ACTIVE cell's drawing state drives
         // the shared bar and the global mirrors — whatever the source (bar press, keymap,
         // API, a one-shot tool disarming itself after placement).
+        // A drawing tool was registered, replaced or removed: the shared bar lists the tools
+        // of the registry, like each chart's own bar does.
+        chart.on('drawing:types', () => {
+            if (cell.id !== this.activeId) return; // once per change, not once per cell
+            this.toolbarDef = buildToolbar(this.opts.drawings, this.localeState).definition;
+            this.projectDrawToolbar(true);
+            this.drawToolbar?.setShortcuts(toolShortcutHints(this.keymap, this.localeState));
+        });
         chart.on('drawing:tool', ({ type }) => {
             if (cell.id !== this.activeId) return;
             this.globalTool = type;
@@ -2936,6 +3003,9 @@ export class VelaWorkspace {
         if (!cell) return;
         this.topbar.setSymbol(cell.symbol);
         this.topbar.setTimeframe(cell.timeframe);
+        this.topbar.setUnavailableTimeframes(cell.unavailableTimeframes());
+        this.topbar.renderActions(); // contributed `when()` gates may depend on the active timeframe/symbol
+        this.mobileBar?.renderActions();
         this.mobileBar?.setSymbol(cell.symbol);
         this.mobileBar?.setTimeframe(cell.timeframe);
         this.objectTree.setSymbol(cell.symbol);
@@ -2962,6 +3032,19 @@ export class VelaWorkspace {
         const cell = this.cellsById.get(id);
         if (!cell) return;
         this.topbar.setPriceStyle(cell.priceStyle, cell.unavailablePriceStyles());
+    }
+
+    /** The topbar timeframe menu's unavailable entries from the cell, if active. */
+    private projectCellTimeframes(id: string): void {
+        if (id !== this.activeId) return;
+        const cell = this.cellsById.get(id);
+        if (!cell) return;
+        this.topbar.setUnavailableTimeframes(cell.unavailableTimeframes());
+    }
+
+    /** Configured timeframe presets: explicit host option wins, else plugin shell defaults, else built-in. */
+    private resolvedTimeframes(): readonly string[] {
+        return this.opts.timeframes ?? shellDefaults().timeframes ?? DEFAULT_TIMEFRAMES;
     }
 
     /** Trigger ② — a cell's indicator ledger changed: count + picker only if active. */
@@ -2995,6 +3078,7 @@ export class VelaWorkspace {
     private onLayoutModeChange(mode: LayoutMode): void {
         if (mode === 'mobile') this.setFullscreen(false); // a touch layout has no key to leave with
         this.symbolPicker.close();
+        this.comparePicker?.close();
         this.indicatorPicker?.close();
         this.tfDrawer?.close();
         this.drawingsDrawer?.close();
@@ -3068,10 +3152,11 @@ export class VelaWorkspace {
     private openTimeframeDrawer(): void {
         this.tfDrawer ??= new TimeframeDrawer({
             host: this.root,
-            timeframes: this.opts.timeframes ?? DEFAULT_TIMEFRAMES,
+            timeframes: this.resolvedTimeframes(),
             ranges: RANGE_PRESETS,
             currentTimeframe: () => this.active.timeframe,
             activeRange: () => this.active.activeRangeId,
+            unavailableTimeframes: () => this.active.unavailableTimeframes(),
             onTimeframe: (tf) => this.setActiveTimeframe(tf),
             onRange: (preset) => {
                 this.active.applyRange(preset);
@@ -3086,7 +3171,7 @@ export class VelaWorkspace {
     private openDrawingsDrawer(): void {
         this.drawingsDrawer ??= new DrawingsDrawer({
             host: this.root,
-            toolbar: () => this.toolbarDef, // the shared static toolbar's definition (see constructor)
+            toolbar: () => this.projectedToolbar(), // the shared static toolbar's definition (see constructor)
             currentTool: () => this.active.chart.drawings.getTool(),
             isFavorite: (type) => this.active.chart.drawings.isFavorite(type),
             onFavorite: (type, on) => this.active.chart.drawings.setFavorite(type, on),
@@ -3107,6 +3192,9 @@ export class VelaWorkspace {
             ...(has('undo-redo') ? { onUndo: () => this.active.history.undo(), onRedo: () => this.active.history.redo() } : {}),
             ...(has('screenshot')
                 ? { onScreenshot: this.screenshotOverride ? () => this.runOverride(this.screenshotOverride!) : () => this.downloadScreenshot() }
+                : {}),
+            ...(has('compare') && (this.comparePicker || this.compareOverride)
+                ? { onCompare: this.compareOverride ? () => this.runOverride(this.compareOverride!) : () => this.comparePicker!.open() }
                 : {}),
             canUndo: () => this.active.history.canUndo,
             canRedo: () => this.active.history.canRedo,
@@ -3275,15 +3363,26 @@ export class VelaWorkspace {
         this.registerScreenshotKey();
         this.registerFullscreenKey(); // same rule: the chord goes with its slot
         this.keymap.register({ id: 'chart.reset-view', keys: 'alt+r', label: TEXT.resetView, category: TEXT.categoryChart, run: () => this.active.resetView() });
-        this.keymap.register({ id: 'chart.toggle-log', keys: 'alt+l', label: TEXT.toggleLog, category: TEXT.categoryChart, run: () => this.active.chart.renderer.set('logScale', !this.active.chart.renderer.get('logScale')) });
+        this.keymap.register({
+            id: 'chart.toggle-log',
+            keys: 'alt+l',
+            label: TEXT.toggleLog,
+            category: TEXT.categoryChart,
+            run: () => {
+                const next = !this.active.chart.renderer.get('logScale');
+                if (next && this.active.chart.renderer.get('scaleMode') !== 'price') this.active.chart.renderer.set('scaleMode', 'price');
+                this.active.chart.renderer.set('logScale', next);
+            },
+        });
         this.keymap.register({
             id: 'chart.toggle-percent',
             keys: 'alt+p',
             label: TEXT.togglePercent,
             category: TEXT.categoryChart,
             run: () => {
-                const mode = this.active.chart.renderer.get('scaleMode');
-                this.active.chart.renderer.set('scaleMode', mode === 'percent' ? 'price' : 'percent');
+                const nextPct = this.active.chart.renderer.get('scaleMode') !== 'percent';
+                if (nextPct && this.active.chart.renderer.get('logScale')) this.active.chart.renderer.set('logScale', false);
+                this.active.chart.renderer.set('scaleMode', nextPct ? 'percent' : 'price');
             },
         });
         this.keymap.register({ id: 'drawings.trendline', keys: 'alt+t', label: TEXT.trendline, category: TEXT.categoryDrawings, run: () => this.active.chart.drawings.setTool('trendline') });

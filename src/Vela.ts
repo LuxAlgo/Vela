@@ -26,6 +26,7 @@ import { registerBuiltinChartTypes } from './chart-types/builtins';
 import { registerVolume } from './core/native-indicators/volume';
 import { registerVpvr } from './core/native-indicators/vpvr';
 import { registerClassicIndicators } from './core/native-indicators/classics';
+import { registerCompare } from './core/native-indicators/compare';
 import { LocaleState, pickLocalization } from './core/i18n/translator';
 import type { LocalizationOptions, Translator } from './core/i18n/types';
 
@@ -76,6 +77,7 @@ export class Vela {
         registerVolume(); // register the built-in native indicators (idempotent)
         registerVpvr();
         registerClassicIndicators();
+        registerCompare();
         const element = resolveElement(container);
         const theme = resolveTheme(options.theme);
         const display = {

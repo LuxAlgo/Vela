@@ -262,6 +262,10 @@ export interface ChartConfig {
         currentPriceLine: boolean;
         priceLabel: boolean;
         countdown: boolean;
+        /** Indicator plots' latest values as chips on their pane's price scale. */
+        indicatorValueLabels: boolean;
+        /** Indicator plot names beside their value chips. */
+        indicatorNameLabels: boolean;
         /** Glide the forming bar (and the last-price line/label) toward each live tick
          *  instead of snapping. The duration comes from `animations.liveBar` / the
          *  `animLiveBar` feature; this is only the on/off switch the settings dialog shows. */
@@ -771,6 +775,8 @@ export function mergeConfig(base: ChartConfig, patch: unknown): ChartConfig {
             currentPriceLine: isBool(ps.currentPriceLine) ? ps.currentPriceLine : base.priceScale.currentPriceLine,
             priceLabel: isBool(ps.priceLabel) ? ps.priceLabel : base.priceScale.priceLabel,
             countdown: isBool(ps.countdown) ? ps.countdown : base.priceScale.countdown,
+            indicatorValueLabels: isBool(ps.indicatorValueLabels) ? ps.indicatorValueLabels : base.priceScale.indicatorValueLabels,
+            indicatorNameLabels: isBool(ps.indicatorNameLabels) ? ps.indicatorNameLabels : base.priceScale.indicatorNameLabels,
             animateLastPrice: isBool(ps.animateLastPrice) ? ps.animateLastPrice : base.priceScale.animateLastPrice,
         },
         animations: {

@@ -12,7 +12,9 @@ import type { OHLCV } from '../core/model/ohlcv';
 import type { VisibleRangePreset } from '../core/visible-range';
 import type { VisibleRange } from '../core/ports/IChartRenderer';
 import type { DrawingsOption } from '../core/drawings';
-import type { MarketDataFeed } from '../core/ports/MarketDataFeed';
+import type { MarketDataFeed, SymbolInfo } from '../core/ports/MarketDataFeed';
+import { isTickTimeframe } from '../data/timeframe';
+import { matchSeriesAdapter } from '../data/series-adapters';
 import type { ScriptingEngine } from '../core/ports/ScriptingEngine';
 import type { IndicatorHandle } from '../core/IndicatorHandle';
 import type { VelaEventMap } from '../core/events/types';
@@ -26,7 +28,7 @@ import { ChartContextMenu } from '../widget/context-menu';
 import { WidgetHistory } from '../widget/history';
 import type { RangePreset } from '../widget/bottombar';
 import { indicatorLedger, ledgerEntryName, ledgerNativeType, type LedgerManifestEntry, type LedgerNativeEntry, type ResolvedIndicator } from '../widget/indicators';
-import { inputDeltas, type InputValue } from '../core/model/inputs';
+import { inputDeltas, type InputValue, type SymbolPickerFn } from '../core/model/inputs';
 import {
     legendActionsProviderFor,
     legendCalloutsProviderFor,
@@ -48,6 +50,9 @@ import { nativeIndicatorEntry } from '../core/native-indicators/NativeIndicator'
 import { priceStyleApplies } from '../chart-types/applicability';
 import { priceStyleIds } from '../renderers/native/core/chartConfig';
 import { STATUSLINE_PART_LABELS } from '../widget/statusline-model';
+import { CATEGORICAL } from '../core/palette';
+import { compareDescriptor, type ComparePlacement } from '../core/native-indicators/compare';
+import type { ActiveCompareItem } from '../widget/compare-picker';
 
 /** The cell's settings rows (the chart settings dialog renders them in the chart's language). */
 const TEXT = {
@@ -182,6 +187,9 @@ export interface CellDeps {
     /** Where the renderer mounts its MODAL dialogs (chart/indicator settings) — the
      *  workspace root, so dialogs center over the whole grid instead of one cell. */
     dialogHost: HTMLElement;
+    /** Default symbol picker wired onto every cell's renderer for `input.symbol` controls
+     *  (a host attachment can still override it via `chart.renderer.setSymbolPicker`). */
+    symbolPicker?: SymbolPickerFn;
     /** The workspace-global display-timezone CHOICE — an IANA zone, or the exchange
      *  rule, which each cell resolves to its own market's zone ({@link ChartCell.applyTimezone}). */
     timezone(): string;
@@ -216,6 +224,10 @@ export interface CellDeps {
     /** What the cell can draw changed with its symbol's facts — the drawn style, the greyed
      *  styles — while the chosen style did not: refresh the style chrome, nothing to save. */
     onPriceStyleShown?(id: string): void;
+    /** The workspace's configured timeframe presets, for per-symbol availability checks. */
+    timeframes?(): readonly string[];
+    /** Per-symbol timeframe availability changed — refresh the timeframe chrome, nothing to save. */
+    onTimeframesShown?(id: string): void;
     /** The cell's indicator ledger changed (count/picker refresh upstream). */
     onIndicatorsChanged(id: string): void;
     /** A Status line tab or watermark pref changed on this cell (the style link mirrors upstream). */
@@ -299,6 +311,8 @@ export class ChartCell {
     /** Latched: the symbol's own trading zone (`SymbolInfo.timezone`) — what the exchange
      *  rule resolves to on this cell. Undefined until metadata lands or when none is declared. */
     private exchangeZone: string | undefined;
+    /** Timeframe presets the active symbol's source cannot serve (greyed in pickers). */
+    private unavailableTfs: string[] = [];
 
     private inner: Vela | null;
     /** The live app theme — seeded from deps, updated on `theme:changed` (the base the
@@ -328,9 +342,14 @@ export class ChartCell {
     /** Volume intent: the seed's ledger, else the workspace `volume` option — a
      *  rehydrated ledger overwrites it (see {@link applyIndicatorLedger}). */
     private volumeIntent: boolean;
-    /** Sync mirror of the chart's native instances (id + type) — the removal handler
-     *  looks the removed id up here to learn which type an undo must re-add. */
-    private presentNatives: Array<{ id: string; type: string }> = [];
+    /** Sync mirror of the chart's native instances (id + type + input deltas) — the removal
+     *  handler looks the removed id up here to learn which type and inputs an undo must re-add. */
+    private presentNatives: Array<{ id: string; type: string; inputs?: Record<string, InputValue> }> = [];
+    /** Scale state before adding a `'same'` comparison auto-switched the price pane to `'percent'`.
+     *  Restored when the last `'same'` comparison leaves and the pane is still on `'percent'`.
+     *  Rides the state document as `scaleBeforeCompare`: the document's `rendererConfig`
+     *  already says `'percent'`, so nothing else could tell it from the user's own choice. */
+    private autoPercentPrev: { mode: string; log: boolean } | null = null;
     private rangeBars = 0;
     private pendingRange: RangePreset | null = null;
     /** Last symbol we toasted "no provider serves this" for — once per symbol (the
@@ -420,6 +439,7 @@ export class ChartCell {
         // Modal dialogs (chart settings, indicator settings) escape the cell's
         // overflow clip and center over the whole grid.
         this.inner.renderer.set('dialogHost', deps.dialogHost);
+        if (deps.symbolPicker) this.inner.renderer.setSymbolPicker(deps.symbolPicker);
         // Contributed legend-row actions — the row resolves on THIS cell's chart; the
         // context follows the workspace rule (built fresh per click, active-cell bound).
         this.inner.renderer.setLegendActions(legendActionsProviderFor(this.inner, () => deps.context()));
@@ -475,6 +495,7 @@ export class ChartCell {
             }
             this.pendingManifestNames = [...seed.indicators.manifest] as LedgerManifestEntry[];
         }
+        this.adoptScaleBeforeCompare(seed.scaleBeforeCompare);
         this.volumeIntent = seed.indicators ? seed.indicators.natives.some((e) => ledgerNativeType(e as LedgerNativeEntry) === 'volume') : deps.volume;
         // Third-party state rides in verbatim; the workspace triggers the handlers'
         // `restore` AFTER wiring the cell (restorePersistedExt) — a restore that adds
@@ -582,7 +603,15 @@ export class ChartCell {
             this.syncPresentNatives();
             this.refreshNativeCatalog();
         });
-        this.inner.on('indicator:inputs', () => this.deps.onStateDirty());
+        this.inner.on('indicator:inputs', ({ id }) => {
+            this.syncPresentNatives();
+            const h = this.nativeHandles().find((n) => n.id === id);
+            if (h?.nativeType === 'compare') {
+                if ((h.inputValues().scale ?? 'same') === 'same') this.ensurePercentForCompare();
+                else this.maybeRestoreScaleAfterCompare();
+            }
+            this.deps.onStateDirty();
+        });
         // A legend-eye toggle is a persistable choice like an input edit — without this
         // a hidden indicator came back visible on reload (nothing marked the doc dirty).
         this.inner.on('indicator:visibility', () => this.deps.onStateDirty());
@@ -608,17 +637,19 @@ export class ChartCell {
                 });
             } else {
                 // A native indicator left the registry — the sync mirror still knows its
-                // type, which is what an undo must re-add. This is the SINGLE recording
-                // site for native removals (picker, legend ✕, object tree). The redo
+                // type and inputs, which is what an undo must re-add. This is the SINGLE
+                // recording site for native removals (picker, legend ✕, object tree). The redo
                 // removes the instance the undo created, never "the one of that type" —
                 // a multi-instance type may have siblings on the chart.
                 const gone = this.presentNatives.find((n) => n.id === id);
                 if (gone) {
-                    const { type } = gone;
+                    const { type, inputs } = gone;
                     let revived: IndicatorHandle | null = null;
                     this.history.push({
                         undo: () => {
-                            revived = this.inner?.addNativeIndicator(type) ?? null;
+                            revived = this.inner?.addNativeIndicator(type, inputs ? { inputs } : undefined) ?? null;
+                            if (type === 'compare' && (inputs?.scale ?? 'same') === 'same') this.ensurePercentForCompare();
+                            this.syncPresentNatives();
                             this.refreshNativeCatalog();
                         },
                         redo: () => {
@@ -627,6 +658,7 @@ export class ChartCell {
                             this.refreshNativeCatalog();
                         },
                     });
+                    if (type === 'compare') this.maybeRestoreScaleAfterCompare();
                 }
             }
             this.syncPresentNatives();
@@ -764,7 +796,64 @@ export class ChartCell {
                 this.pushSettingsSections(); // the Trading session group follows the symbol
             }
             this.refreshSessionShading();
+            void this.refreshTimeframeAvailability(chart, symbol, si);
         });
+    }
+
+    /** Compute which workspace timeframe presets are unavailable for `(symbol, si)` and notify
+     *  the shell if the set changed. Checks registered series adapters first, then symbol metadata. */
+    private async refreshTimeframeAvailability(chart: Vela, symbol: string, si: SymbolInfo | undefined): Promise<void> {
+        const list = this.deps.timeframes?.();
+        if (!list || list.length === 0) return;
+        const resolved = chart.data.resolve(symbol);
+        const provider = resolved ? chart.data.providerInstance(resolved.provider) : undefined;
+        const providerInfo = provider?.info?.();
+        const providerHasTicks = providerInfo?.supportedTimeframes?.some((t) => isTickTimeframe(t)) === true;
+        const siList = si?.timeframes?.list?.map((t) => chartTimeframeOf(t)).filter((t): t is string => t !== null);
+        const siFinestMs = si?.timeframes?.finest !== undefined ? timeframeMs(si.timeframes.finest) : NaN;
+        const siHasTicks = si?.timeframes?.ticks === true || si?.['has_ticks'] === true;
+
+        const next: string[] = [];
+        for (const tf of list) {
+            const adapter = resolved && provider ? matchSeriesAdapter(tf, provider, resolved.provider) : undefined;
+            if (adapter?.supports && resolved && provider) {
+                let ok = true;
+                try {
+                    ok = await adapter.supports(
+                        {
+                            providerName: resolved.provider,
+                            provider,
+                            ticker: resolved.ticker,
+                            session: this.session,
+                            symbolInfo: async () => si,
+                        },
+                        tf,
+                    );
+                } catch {
+                    ok = false;
+                }
+                if (this.inner !== chart || this.metadataProbeSymbol !== symbol) return;
+                if (!ok) next.push(tf);
+                continue;
+            }
+            if (isTickTimeframe(tf)) {
+                const inList = siList?.includes(chartTimeframeOf(tf) ?? tf) === true;
+                if (si !== undefined && !siHasTicks && !inList && !providerHasTicks) next.push(tf);
+                continue;
+            }
+            if (siList) {
+                const canon = chartTimeframeOf(tf) ?? tf;
+                if (!siList.includes(canon)) next.push(tf);
+            } else if (Number.isFinite(siFinestMs)) {
+                const tfMs = timeframeMs(tf);
+                if (Number.isFinite(tfMs) && tfMs < siFinestMs) next.push(tf);
+            }
+        }
+        if (this.inner !== chart || this.metadataProbeSymbol !== symbol) return;
+        const same = next.length === this.unavailableTfs.length && next.every((v, i) => v === this.unavailableTfs[i]);
+        if (same) return;
+        this.unavailableTfs = next;
+        this.deps.onTimeframesShown?.(this.id);
     }
 
     /** (Re)derive the pre/post-market shading bands for this cell's market. The bands
@@ -1091,6 +1180,11 @@ export class ChartCell {
         return typeof live === 'string' ? live : (this.state.priceStyle ?? 'candles');
     }
 
+    /** The timeframe presets the cell's current symbol cannot serve (greyed in pickers). */
+    unavailableTimeframes(): readonly string[] {
+        return this.unavailableTfs;
+    }
+
     /** The style ids the symbol's data cannot draw — greyed in the style pickers. Empty while
      *  the symbol's facts are unknown. */
     unavailablePriceStyles(): string[] {
@@ -1154,7 +1248,7 @@ export class ChartCell {
         const asked = timeframeLabel(e.timeframe, i18n);
         const to = chartTimeframeOf(e.default) ?? chartTimeframeOf(e.finest);
         const again = this.fallback !== null && this.fallback.symbol === e.symbol && this.fallback.timeframe === e.timeframe;
-        if (to === null || again || timeframeMs(to) === timeframeMs(e.timeframe)) {
+        if (to === null || again || to === e.timeframe || timeframeMs(to) === timeframeMs(e.timeframe)) {
             this.deps.toast(textOf(i18n, TEXT.unavailable, { symbol, timeframe: asked }), 'error', 6000);
             return;
         }
@@ -1383,14 +1477,15 @@ export class ChartCell {
         ];
     }
 
-    /** Add by picker LIBRARY index (natives precede the manifest — mirrors libraryRows). */
-    addFromLibrary(index: number): void {
+    /** Add by picker LIBRARY index (natives precede the manifest — mirrors libraryRows).
+     *  Returns `true` when the added study needs user input configuration (and opened its
+     *  settings dialog), so the caller can close the library picker cleanly. */
+    addFromLibrary(index: number): boolean {
         const natives = this.supportedNatives();
-        if (index < natives.length) this.addNative(natives[index]!.type);
-        else {
-            const entry = this.manifest[index - natives.length];
-            if (entry) this.addManifestInstance(entry);
-        }
+        if (index < natives.length) return this.addNative(natives[index]!.type, { confirmInputs: true });
+        const entry = this.manifest[index - natives.length];
+        if (entry) this.addManifestInstance(entry);
+        return false;
     }
 
     /** Remove by picker ON-CHART index (native instances precede script instances — mirrors onChartRows). */
@@ -1505,14 +1600,16 @@ export class ChartCell {
         if (handle.visible !== visible) handle.setVisible(visible);
     }
 
-    addNative(type: string): void {
+    addNative(type: string, opts?: { confirmInputs?: boolean; inputs?: Record<string, InputValue> }): boolean {
         const chart = this.inner;
-        if (!chart) return;
+        if (!chart) return false;
         const before = new Set(chart.indicators().map((h) => h.id));
-        let added: IndicatorHandle | null = chart.addNativeIndicator(type);
+        const inputs = opts?.inputs;
+        if (type === 'compare' && (inputs?.scale ?? 'same') === 'same') this.ensurePercentForCompare();
+        let added: IndicatorHandle | null = chart.addNativeIndicator(type, inputs ? { inputs } : undefined);
         this.syncPresentNatives();
         this.refreshNativeCatalog();
-        if (before.has(added.id)) return;
+        if (before.has(added.id)) return false;
         this.history.push({
             undo: () => {
                 added?.remove();
@@ -1520,10 +1617,99 @@ export class ChartCell {
                 this.refreshNativeCatalog();
             },
             redo: () => {
-                added = this.inner?.addNativeIndicator(type) ?? null;
+                added = this.inner?.addNativeIndicator(type, inputs ? { inputs } : undefined) ?? null;
+                if (type === 'compare' && (inputs?.scale ?? 'same') === 'same') this.ensurePercentForCompare();
+                this.syncPresentNatives();
                 this.refreshNativeCatalog();
             },
         });
+        if (opts?.confirmInputs) {
+            const values = added.inputValues();
+            const needsConfig = added.inputs.some((inp) => inp.confirm && String(values[inp.key] ?? inp.defval ?? '') === '');
+            if (needsConfig) {
+                const targetId = added.id;
+                const off = added.on('ready', () => {
+                    off();
+                    if (!this.destroyed && this.inner === chart) chart.renderer.openIndicatorSettings(targetId);
+                });
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Active compared symbols on this cell (for the Compare picker's removable chips). */
+    compareItems(): ActiveCompareItem[] {
+        const out: ActiveCompareItem[] = [];
+        const defaultTitle = textOf(this.inner?.i18n, compareDescriptor.title);
+        for (const h of this.nativeHandles()) {
+            if (h.nativeType !== 'compare') continue;
+            const vals = h.inputValues();
+            const symbol = typeof vals.symbol === 'string' ? vals.symbol : '';
+            const color = typeof vals.color === 'string' && vals.color ? vals.color : CATEGORICAL[0]!;
+            const fallback = parseSymbol(symbol).ticker || symbol;
+            const title = h.title && h.title !== defaultTitle ? h.title : fallback;
+            out.push({ id: h.id, symbol, title, color });
+        }
+        return out;
+    }
+
+    /** Overlay a secondary symbol for comparison with an auto-picked distinct color. */
+    addCompare(symbol: string, placement: ComparePlacement = 'same'): void {
+        const chart = this.inner;
+        if (!chart || !symbol.trim()) return;
+        const used = new Set(this.compareItems().map((c) => c.color.toLowerCase()));
+        const color = CATEGORICAL.find((c) => !used.has(c.toLowerCase())) ?? CATEGORICAL[this.compareItems().length % CATEGORICAL.length]!;
+        this.addNative('compare', { inputs: { symbol, color, scale: placement } });
+    }
+
+    /** Remove one compared symbol by indicator id (enters the undo timeline). */
+    removeCompare(id: string): void {
+        const handle = this.nativeHandles().find((h) => h.id === id && h.nativeType === 'compare');
+        if (handle) this.removeNative(handle);
+    }
+
+    /** Switch the main price scale to percentage mode when adding a shared-scale comparison
+     *  (remembering the prior mode so removing the last comparison can restore it). */
+    private ensurePercentForCompare(): void {
+        const chart = this.inner;
+        if (!chart) return;
+        const mode = chart.renderer.get('scaleMode');
+        const log = Boolean(chart.renderer.get('logScale'));
+        if (mode === 'percent' || mode === 'indexed') {
+            if (log) chart.renderer.set('logScale', false);
+            return;
+        }
+        this.autoPercentPrev ??= { mode: typeof mode === 'string' ? mode : 'price', log };
+        if (log) chart.renderer.set('logScale', false);
+        chart.renderer.set('scaleMode', 'percent');
+    }
+
+    /** Whether a comparison sharing the main percent scale is on the chart. */
+    private hasSharedScaleCompare(): boolean {
+        return this.nativeHandles().some((h) => h.nativeType === 'compare' && (h.inputValues().scale ?? 'same') === 'same');
+    }
+
+    /** Take the prior price scale a state document carries, once its natives are on the
+     *  chart. Only a shared-scale comparison can release it: without one it would outlive
+     *  the document and overwrite the scale when some later comparison leaves. A document
+     *  that carries none keeps whatever converging to it recorded. */
+    private adoptScaleBeforeCompare(prev: CellState['scaleBeforeCompare']): void {
+        if (!this.hasSharedScaleCompare()) this.autoPercentPrev = null;
+        else if (prev) this.autoPercentPrev = { mode: prev.mode, log: prev.log };
+    }
+
+    /** Restore the prior price scale once the last shared-scale comparison is removed. */
+    private maybeRestoreScaleAfterCompare(): void {
+        const chart = this.inner;
+        const prev = this.autoPercentPrev;
+        if (!chart || !prev) return;
+        if (this.hasSharedScaleCompare()) return;
+        this.autoPercentPrev = null;
+        if (chart.renderer.get('scaleMode') === 'percent') {
+            chart.renderer.set('scaleMode', prev.mode);
+            if (prev.log) chart.renderer.set('logScale', true);
+        }
     }
 
     private removeNative(handle: IndicatorHandle): void {
@@ -1540,9 +1726,12 @@ export class ChartCell {
     }
 
     /** Sync mirror of the chart's native instances — the removal handler looks the
-     *  removed id up here (the registry has already forgotten it) to record its type. */
+     *  removed id up here (the registry has already forgotten it) to record its type + inputs. */
     private syncPresentNatives(): void {
-        this.presentNatives = this.nativeHandles().map((h) => ({ id: h.id, type: h.nativeType! }));
+        this.presentNatives = this.nativeHandles().map((h) => {
+            const inputs = inputDeltas(h.inputs, h.inputValues());
+            return inputs ? { id: h.id, type: h.nativeType!, inputs } : { id: h.id, type: h.nativeType! };
+        });
     }
 
     /** Refresh the native catalog (supported/present flags) for this cell's market. */
@@ -1583,7 +1772,7 @@ export class ChartCell {
             cellId: this.id,
             chart: this.chart,
             addIndicator: (entry) => this.history.silently(() => this.addExternalIndicator(entry)),
-            addNativeIndicator: (type) => this.history.silently(() => this.addNative(type)),
+            addNativeIndicator: (type, options) => this.history.silently(() => this.addNative(type, options)),
         };
     }
 
@@ -1644,8 +1833,13 @@ export class ChartCell {
             if (this.statusline && this.statusline.partVisible(part) !== visible) this.setStatuslinePart(part, visible);
         }
         // Cosmetics round-trip (validates untrusted input); the drawings follow the market below.
+        // Drop any prior auto-percent restore bookmark before converging indicators so removing
+        // an old comparison cannot overwrite the incoming document's own scaleMode; the
+        // document's own bookmark is taken once its comparisons are on the chart.
+        this.autoPercentPrev = null;
         if (cs.rendererConfig != null) this.inner.renderer.applyConfig(cs.rendererConfig);
         if (cs.indicators) this.applyIndicatorLedger(cs.indicators as { manifest: LedgerManifestEntry[]; natives: LedgerNativeEntry[] });
+        this.adoptScaleBeforeCompare(cs.scaleBeforeCompare);
         // Third-party state converges to the document too: the restored bag REPLACES
         // the baseline (absent in the document = the document carries none), then the
         // registered handlers re-apply. After the ledger — a handler re-adding external
@@ -1703,6 +1897,7 @@ export class ChartCell {
             indicatorTitles: this.indicatorTitlesOn,
             indicatorValues: this.indicatorValuesOn,
             ...(statuslineParts ? { statuslineParts } : {}),
+            ...(this.autoPercentPrev ? { scaleBeforeCompare: { ...this.autoPercentPrev } } : {}),
             rendererConfig: this.inner?.renderer.getConfig() ?? undefined,
             drawings: this.inner ? this.inner.drawings.toJSON() : undefined,
             // Natives from the chart's SYNC registry read — an async catalog mirror here

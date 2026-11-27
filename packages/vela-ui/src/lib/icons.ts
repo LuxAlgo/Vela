@@ -192,6 +192,7 @@ registerIcon('reset', S('<path d="M2 8a6 6 0 1 0 6-6 6.5 6.5 0 0 0-4.5 1.83L2 5.
 // ── status glyphs (toasts, notices) ──
 registerIcon('circle-check', S('<circle cx="8" cy="8" r="6.2"/><path d="m5.4 8.2 1.8 1.8 3.4-3.7"/>'));
 registerIcon('circle-info', S('<circle cx="8" cy="8" r="6.2"/><path d="M8 7.4v3.6"/><circle cx="8" cy="5.1" r="0.8" fill="currentColor" stroke="none"/>'));
+registerIcon('circle-plus', S('<circle cx="8" cy="8" r="6.2"/><path d="M8 5.2v5.6M5.2 8h5.6"/>'));
 registerIcon('triangle-alert', S('<path d="M7.1 2.6a1 1 0 0 1 1.8 0l5.3 9.6a1 1 0 0 1-.9 1.5H2.7a1 1 0 0 1-.9-1.5z"/><path d="M8 6.3v3.2"/><circle cx="8" cy="11.4" r="0.8" fill="currentColor" stroke="none"/>'));
 registerIcon('circle-x', S('<circle cx="8" cy="8" r="6.2"/><path d="m5.9 5.9 4.2 4.2M10.1 5.9l-4.2 4.2"/>'));
 registerIcon('loader', S('<path d="M8 1.8a6.2 6.2 0 1 0 6.2 6.2"/>'));

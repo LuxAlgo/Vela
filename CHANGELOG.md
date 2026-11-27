@@ -4,6 +4,131 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- **Place a horizontal line's or ray's label left, in the middle or on the right, above or below the line.** The **Label** section of a Horizontal Line's and a Horizontal Ray's settings now has the **Position** (Left, Middle, Right) and **Side** (Above, Below) choices the trend line already had. A line's label sits at the left edge, the middle or the right edge of the chart; a ray's runs from its anchor to the right edge. A ray's label used to start right on its anchor, under the line; it now starts just past the anchor, above the line, like a horizontal line's. A horizontal line's existing label stays beside its handle until you pick a position. Either label stays whole on the chart: one that would run past the chart's side slides back in (a line's label follows its handle only as far as the edge), one that would be cut off at the top or bottom of its pane moves to the other side of the line, and a ray that starts past the chart's right edge shows no label until it comes into view.
+- **Custom drawing tools.** An app or a plugin can now add its own tools to the drawing
+  toolbar, without forking Vela. `defineDrawing` from `@luxalgo/vela/plugin` registers a tool
+  from one description: you say what the tool paints as a list of shapes (lines, paths,
+  rectangles, ellipses, curves, bands, histogram rows, text, markers, images, tags on the
+  price or time axis, or another drawing used as a part), and the chart does the rest. The
+  tool is placed, selected, reshaped, undone, copied and saved like a built-in one. A tool
+  can compute from the chart's bars without slowing a pan or a zoom, and can hand that work
+  to a worker. It reads the chart's time zone, so it can work in sessions, days and weeks.
+  It can guide each click of its placement, add handles beyond its points, and
+  ask the price scale to keep it in view. Its settings are its own: read-only result rows,
+  prices you can type as points, percent or ticks, titled sections, controls on the
+  quick-settings bar, and a level editor. The tool joins a built-in toolbar group or a
+  group of your own (`registerDrawingGroup`), and its type key works wherever a built-in
+  key does: `setTool`, `add`, the `drawings` option, favorites and saved styles. A tool
+  registered, replaced or removed while charts are open reaches them at once, and the new
+  `drawing:types` event tells a toolbar of your own to refresh. A tool that goes wrong does
+  not take the chart with it: a function of the tool that throws, or a shape the chart cannot
+  draw, is skipped and reported once in the console. An image a tool paints from another
+  origin must be served with CORS headers. For a tool that extends a
+  family Vela already draws, such as a new Fibonacci tool or harmonic pattern, the base
+  classes are exported too.
+- **Drawing values, readouts, hover and click.** `chart.drawings.valueAt(id, time)` returns
+  a drawing's price at a time: the level an alert on a trend line compares the price with.
+  The trend line, ray, extended line, horizontal line and horizontal ray report it, read as
+  the line is painted on a logarithmic scale, and a custom tool reports whatever it
+  defines. `chart.drawings.readout(id)` returns the values a tool reports, and the data
+  window lists them, one group per drawing. `chart.drawings.at(x, y)` and `hovered()` tell
+  which drawing is under a point or under the pointer, and which named part of it. Two new
+  events follow the pointer: `drawing:hover` and `drawing:click`.
+- **More for the magnet to snap to.** `chart.drawings.addSnapSource()` gives the magnet
+  targets from your app: a point, a price level or a time, such as an indicator's value or
+  a round price. A custom drawing tool can offer its own points and levels the same way, so
+  the next drawing snaps to them. A target takes the point only from close by, in weak and
+  strong mode alike, and nothing snaps while the magnet is off.
+- **Menu rows for a drawing.** A drawing action (`registerDrawingAction`) can now list
+  `'menu'` among its `surfaces`. It then shows as a row in the overflow menu of the
+  drawing's toolbar, and at the top of the chart's right-click menu while the pointer is
+  over a drawing, with no need to select the drawing first.
+- **Commands in a drawing toolbar group.** A widget action (`registerWidgetAction`) with
+  `target: 'drawings'` and a `group` adds a row at the end of that group's menu, after its
+  tools: a command such as "Create a tool" that runs your code instead of arming a tool. It
+  works for the built-in groups and for your own, and the mobile drawings list shows the
+  same row. A group of your own can also be on the toolbar before it has any tool: register
+  it with `showEmpty` and an `icon`, and its button opens the menu until the first tool
+  arrives.
+
+### Changed
+
+- **Drawings of a tool the page does not have are kept.** A saved document can hold a
+  drawing whose tool is not registered on the page that loads it: the plugin that defines
+  it loads later, or is not installed there. Such a drawing used to be dropped on load, and
+  was missing from the document the next time it was saved. It now stays on the chart as a
+  dashed outline of its points that you can select, move and delete, saves back exactly as
+  it was, and becomes the real drawing as soon as its tool is registered. A tool's
+  remembered settings and saved styles are kept the same way, and a favorite waits for its
+  tool. _(Breaking: `fromJSON`, `setToolDefaults` and `setToolTemplates` no longer drop
+  the entries of an unknown type, so `all()`, `toJSON()`, `toolDefaults()` and
+  `toolTemplates()` can return types the page did not register. Filter them yourself if
+  you relied on the drop.)_
+- **Drawing type keys are open.** `DrawingTypeKey` now accepts any string beside the
+  built-in keys, which keep their completions in an editor. _(Breaking: TypeScript code
+  that switches over `DrawingTypeKey` and expects to have covered every key no longer
+  compiles as exhaustive. Use `BuiltinDrawingType`, exported from `@luxalgo/vela/plugin`,
+  for the list of built-in keys.)_
+- **A drawing type you registered now shows in the toolbar.** A type registered with
+  `registerDrawingType` used to appear in the default toolbar only when its `group` was
+  `'lines'`, `'channels'` or `'pitchforks'`. Every registered type now joins the toolbar, in
+  the built-in group it names or in a group of its own. _(Breaking: a type you registered to
+  arm from your own interface appears in the toolbar too. Register it with `toolbar: false`
+  to keep it out.)_
+
+### Fixed
+
+- **Anchored VWAP panning.** Drag inside the shaded band to pan the chart and keep the anchor in
+  place. Use the VWAP line, a visible band stroke, or the anchor handle to move the drawing.
+- **An indicator removed while its script is still being prepared leaves nothing behind.** When an indicator came off the chart before its engine finished preparing the script, the chart still put up its legend row, with loading dots that never cleared, and its pane. Nothing ran the script and nothing took the row off again. A host that applies a saved state while the chart is still loading takes its scripts off and puts them back, so every slow script showed twice: the stuck row and the copy that loads. Scripts whose preparation is a network round trip, such as a server-side engine's, were the ones affected. A preparation that fails after its indicator was removed no longer reports an `indicator:error` either.
+- **The measure ruler and the Date & Price Range drawing read moves at the symbol's own precision, in pips or ticks.** The price change used to be rounded to two decimals on every market, so a move on a currency pair or a low-priced coin read `-0.00`. The label now leads with the move and its percent, then a quieter line with the pips (on a currency pair) or the ticks (elsewhere), the bars and the time: `−0.00219 · −0.20%` over `−21.9 pips · 5 bars · 5h`. Large numbers are grouped, a rise on a series below zero reads as a positive percent, the ruler's label stays inside the chart at its edges, and Arabic and Hebrew labels read right to left with every number intact. A data source sets the pip size with `SymbolInfo.pipsize`; on a symbol whose `type` is `'forex'` it defaults to 0.0001, or 0.01 for a pair quoted to two or three decimals. _(Breaking for hosts that reword this label through `messages`: its text now comes from `drawing.measure.headline`, `drawing.measure.pips`, `drawing.measure.ticks` and `drawing.measure.bars`, which replace the `drawing.ruler.*` and `drawing.measure.priceChange` / `barsAndDuration` messages.)_
+- **Object tree groups are saved with the chart.** Groups you make in the object tree used to live only as long as the page: a reload, a switch between saved workspaces or `applyState` brought the drawings back ungrouped. The groups now travel in the drawings document (`drawings.toJSON().groups`), so they're saved and restored wherever the drawings are, including a workspace's saved state. `chart.drawings.groups()` and `setGroups()` read and replace them, and the new `drawing:groups` event says when they change. Undo and redo leave the groups as they are.
+
+## [0.10.19]
+
+### Fixed
+
+- **Removing the last comparison after a reload returns the price axis to its earlier scale.** A comparison on the **Same % scale** switches the main axis to percentage mode and switches it back when the last one leaves. That way back was lost as soon as the chart was reloaded or a saved state was applied, so the axis stayed in percentage mode until you changed it by hand. The saved chart state now remembers the scale the axis was on, regular or logarithmic, and the axis returns to it after a reload, a switch between saved workspaces, or `applyState`. A chart that was already in percentage mode before the comparison stays there, as before. Charts saved by an earlier version carry no earlier scale: removing their comparisons leaves the axis in percentage mode one last time.
+
+## [0.10.18]
+
+### Added
+
+- **Compare symbols on the main chart.** A circular `+` button beside the symbol picker in the top bar (and a Compare symbol row in the mobile menu) opens a dedicated comparison picker to overlay one or more secondary symbols as colored lines. You can place each comparison on the **Same % scale** (switching the main axis to percentage mode automatically so every series rebases to 0% at the left edge of the visible window, and restoring the previous scale when the last shared comparison is removed), on a **New price scale**, or in a **New pane**. Compared symbols display colored name and last-value badges on the price axis, per-symbol percentage readouts in the legend and data window, customizable symbol/source/scale/line settings, and full undo/redo and workspace persistence.
+- **Percentage scale quick toggle on the price axis.** A `%` button now sits beside the `L` (logarithmic) and `A` (auto) buttons at the bottom of each pane's price scale for one-click toggling between absolute prices and percentage change.
+- **Indicator value and name labels on the price scale.** Each indicator plot's value on the last bar now shows as a chip in the plot's color on the scale it draws against: the price scale, an indicator pane's scale, or a merged indicator's own column. Two new toggles under the price scale's **Labels** menu (and in Chart settings → Scales and lines) control them: **Indicator value labels** (on by default) and **Indicator name labels** (off by default), which puts the indicator's name, and the plot's name when the indicator labels more than one, in a tinted chip at the plot's edge, level with the value and readable on any chart background. Labels that would overlap are moved apart (with names on, all of a pane's labels share one set of rows), the last price label always keeps its place, and a label with no room left in its pane is left off. A plot a script keeps off the price scale (`display.priceScale: false`) gets no label. Both choices are saved with the chart settings.
+
+## [0.10.17]
+
+### Fixed
+
+- **Pressing Escape closes indicator settings even when focus is on the chart.** A chart key handler clearing the crosshair used to prevent Escape from dismissing an open indicator settings dialog, while nested dialogs (such as a symbol picker opened from a symbol input) now reliably keep Escape to themselves until closed.
+
+## [0.10.16]
+
+### Added
+
+- **Tick timeframes (`nT`) and pluggable series adapters.** Vela now recognizes tick-count timeframes (`1T`, `10T`, `100T`, `1000T`, or bare `T`) across timeframe parsing, picker sorting, and per-symbol availability gating, and exposes `registerSeriesAdapter` on the plugin SDK so extensions can supply custom or variable-duration bar series. On variable-duration series, bars carry an optional monotonic `seq` identity for same-millisecond updates, sub-minute time-axis ticks and crosshair stamps show seconds, the bar-close countdown hides automatically, and fixed-interval gap healing stands down.
+
+## [0.10.15]
+
+### Added
+
+- **Ichimoku Cloud, Correlation Coefficient, Correlation - Log, and Volatility Close-to-Close built-in indicators.**
+  Ichimoku Cloud plots Conversion Line, Base Line, backward-shifted Lagging Span, and the
+  forward-projected bullish/bearish cloud into the chart's right whitespace, with an optional
+  secondary symbol input. Correlation Coefficient and Correlation - Log compute rolling Pearson
+  correlation across instruments (prices or log returns) in their own pane and open their
+  settings dialog automatically when added from the indicator picker so you can pick the
+  symbol(s) immediately. Volatility Close-to-Close computes annualized sample standard deviation
+  of bar-to-bar close log returns.
+- **Built-in symbol picker inside indicator settings and multi-symbol support for native indicators.**
+  Symbol inputs in indicator settings now open the workspace's symbol search dialog by default
+  without dismissing the settings dialog behind it, and custom native indicators can request
+  and subscribe to secondary symbol series through `fetchSeries` and `subscribeSeries`.
+
 ### Changed
 
 - **Indicators from a script list appear sooner.** When the `indicators` option lists
@@ -31,12 +156,13 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
-- **Anchored VWAP panning.** Drag inside the shaded band to pan the chart and keep the anchor in
-  place. Use the VWAP line, a visible band stroke, or the anchor handle to move the drawing.
 - **A closed symbol search no longer loads symbol icons.** With a custom symbol ranking
   registered, closing the search before its results finished ranking still rebuilt the
   hidden list and loaded about a hundred icons nobody could see. The list now rebuilds
   the next time the search opens.
+- **Crossing band fills render cleanly under WebGL2.** Where two filled series cross between
+  adjacent bars (such as an Ichimoku Cloud twist), the fill now splits cleanly at the
+  intersection instead of drawing an overlapping bow-tie quad.
 
 ## [0.10.14]
 
@@ -102,6 +228,9 @@ All notable changes to Vela, newest first.
   spot on screen, over another bar and price, and the label measured from there. The
   start now stays on the time and price you clicked, through a pan, a zoom, a new bar
   or a price-scale change.
+- **Crossing band fills render cleanly under WebGL2.** Where two filled series cross between
+  adjacent bars (such as an Ichimoku Cloud twist), the fill now splits cleanly at the
+  intersection instead of drawing an overlapping bow-tie quad.
 
 ## [0.10.13]
 

@@ -2,18 +2,18 @@ import type { Unsubscribe } from '../util/types';
 import type { IChartRenderer } from '../ports/IChartRenderer';
 import type { TypedEventBus } from '../events/EventBus';
 import type { VelaEventMap } from '../events/types';
-import type { IDrawingsRendererPort, DrawingIntent, DrawingMode } from './port';
+import type { IDrawingsRendererPort, DrawingIntent, DrawingMode, DrawingSnapSource } from './port';
 import type { DrawingSeriesGateway } from './series';
 import type { DrawingsOption } from './toolbar';
-import { getDrawingType } from './registry';
+import { getDrawingType, onDrawingTypesChange } from './registry';
 import { buildToolbar } from './toolbar';
 import type { Translator } from '../i18n/types';
 import { DrawingStore } from './DrawingStore';
 import { DrawingHistory } from './DrawingHistory';
 import { createDrawing, deserializeDrawing } from './registry';
-import type { Drawing, DrawingTypeKey, SerializedDrawing } from './Drawing';
+import type { Drawing, DrawingReadoutRow, DrawingTypeKey, SerializedDrawing } from './Drawing';
 import type { SnapMode } from './geometry';
-import { clonePlain, type DrawingsDocument } from './document';
+import { clonePlain, type DrawingGroup, type DrawingsDocument } from './document';
 import {
     applyToolDefaults,
     captureToolDefaults,
@@ -70,6 +70,12 @@ export class DrawingController {
     private mode: DrawingMode = null;
     /** FAVORITE tool types (insertion-ordered) — user prefs, not document data. */
     private favs = new Set<DrawingTypeKey>();
+    /** Favorites set while their type was not registered yet: starred once it is. */
+    private readonly pendingFavs = new Set<DrawingTypeKey>();
+    /** A registry change is waiting for its follow-up. */
+    private typesDirty = false;
+    /** The host's extra magnet targets. */
+    private readonly snapSources = new Set<DrawingSnapSource>();
     private selectedIds: string[] = []; // ordered; [0] is the primary (settings-popup) selection
     private clipboard: SerializedDrawing[] = []; // in-memory copy buffer (per chart)
     /** Per-tool remembered settings — the last drawing of each type the user styled seeds the next. */
@@ -98,6 +104,39 @@ export class DrawingController {
             this.subs.push(this.port.onDrawingIntent((i) => this.onIntent(i)));
             this.subs.push(this.store.onChange(() => this.sync()));
         }
+        this.subs.push(onDrawingTypesChange(() => this.onTypesChanged()));
+    }
+
+    /** The registry changed. A plugin registers its tools in a row, so the follow-up runs
+     *  once, after the calls that are already on the stack. */
+    private onTypesChanged(): void {
+        if (this.typesDirty) return;
+        this.typesDirty = true;
+        queueMicrotask(() => {
+            if (!this.typesDirty) return;
+            this.typesDirty = false;
+            this.refreshTypes();
+        });
+    }
+
+    /** Follow the registry now: the toolbar lists the registered tools, the placed drawings
+     *  are rebuilt from their records (a placeholder becomes the real drawing once its type
+     *  exists), and favorites that were waiting for their tool are starred. */
+    refreshTypes(): void {
+        this.typesDirty = false;
+        this.port?.setToolbar(buildToolbar(this.toolbarOption, this.i18n()).definition);
+        if (this.activeTool && !getDrawingType(this.activeTool)) this.setTool(null);
+        this.store.refreshTypes();
+        const known = [...this.favs].filter((t) => getDrawingType(t) != null);
+        const waiting = [...this.pendingFavs].filter((t) => getDrawingType(t) != null);
+        for (const t of this.favs) if (!getDrawingType(t)) this.pendingFavs.add(t);
+        for (const t of waiting) this.pendingFavs.delete(t);
+        if (waiting.length > 0 || known.length !== this.favs.size) {
+            this.favs = new Set([...known, ...waiting]);
+            this.pushFavorites();
+        }
+        this.pushTemplates();
+        this.events.emit('drawing:types', {});
     }
 
     /** Whether the active renderer supports interactive drawings. */
@@ -183,9 +222,12 @@ export class DrawingController {
         this.pushFavorites();
     }
 
-    /** Replace the whole favorite set (bulk restore) — unknown types are dropped. */
+    /** Replace the whole favorite set (bulk restore) — unknown types are left out, and
+     *  starred if their type is registered later (a plugin that loads after the restore). */
     setFavorites(types: readonly DrawingTypeKey[]): void {
         const next = types.filter((t) => getDrawingType(t) != null);
+        this.pendingFavs.clear();
+        for (const t of types) if (!getDrawingType(t)) this.pendingFavs.add(t);
         if (next.length === this.favs.size && next.every((t) => this.favs.has(t))) return;
         this.favs = new Set(next);
         this.pushFavorites();
@@ -204,12 +246,12 @@ export class DrawingController {
         return out;
     }
 
-    /** Replace every tool's remembered settings (restoring persisted prefs). Unknown types and
-     *  malformed entries are dropped; an unchanged set is a no-op and emits nothing. */
+    /** Replace every tool's remembered settings (restoring persisted prefs). Malformed entries
+     *  are dropped; an unchanged set is a no-op and emits nothing. An entry for a type that
+     *  is not registered is kept as it is, for the day the type is. */
     setToolDefaults(map: Readonly<Record<string, unknown>> | null | undefined): void {
         const next = new Map<DrawingTypeKey, DrawingToolDefaults>();
         for (const [type, raw] of Object.entries(map ?? {})) {
-            if (!getDrawingType(type)) continue;
             const d = sanitizeToolDefaults(raw);
             if (d) next.set(type as DrawingTypeKey, clonePlain(d));
         }
@@ -239,12 +281,12 @@ export class DrawingController {
         return out;
     }
 
-    /** Replace every tool's saved looks (restoring persisted prefs). Unknown types and
-     *  malformed entries are dropped; an unchanged set is a no-op and emits nothing. */
+    /** Replace every tool's saved looks (restoring persisted prefs). Malformed entries are
+     *  dropped; an unchanged set is a no-op and emits nothing. The looks of a type that is
+     *  not registered are kept as they are, for the day the type is. */
     setToolTemplates(map: Readonly<Record<string, unknown>> | null | undefined): void {
         const next = new Map<DrawingTypeKey, DrawingToolTemplate[]>();
         for (const [type, raw] of Object.entries(map ?? {})) {
-            if (!getDrawingType(type)) continue;
             const list = sanitizeToolTemplates(raw);
             if (list.length > 0) next.set(type as DrawingTypeKey, list);
         }
@@ -364,9 +406,11 @@ export class DrawingController {
         this.deleteMany(ids);
     }
 
-    /** Delete every drawing as ONE undo step. */
+    /** Delete every drawing as ONE undo step, and every group with them: a group that was
+     *  empty all along would otherwise outlive the drawings. */
     clear(): void {
         this.deleteMany(this.store.serialize().drawings.map((d) => d.id));
+        this.setGroups([]);
     }
 
     /** Whether a symbol change empties the chart of its drawings (see {@link onSymbolChange}). */
@@ -384,7 +428,10 @@ export class DrawingController {
      * with the undo history and no `drawing:removed`, since the user removed nothing.
      */
     onSymbolChange(): void {
-        if (this.clearOnSymbolChange && this.store.serialize().drawings.length > 0) this.replace(null, 'symbol');
+        if (!this.clearOnSymbolChange) return;
+        // An empty group belongs to the symbol too: a chart with one and no drawings is not empty.
+        const doc = this.store.serialize();
+        if (doc.drawings.length > 0 || (doc.groups?.length ?? 0) > 0) this.replace(null, 'symbol');
     }
 
     setLocked(id: string, v: boolean): void {
@@ -502,6 +549,51 @@ export class DrawingController {
         return this.store.serialize().drawings;
     }
 
+    /** The drawings' groups (copies). */
+    groups(): DrawingGroup[] {
+        return this.store.groups();
+    }
+
+    /** Replace the drawings' groups; `drawing:groups` fires when they changed. Groups are not
+     *  an undo step. */
+    setGroups(groups: readonly DrawingGroup[]): void {
+        if (this.store.setGroups(groups)) this.events.emit('drawing:groups', { groups: this.store.groups() });
+    }
+
+    // ── what a drawing gives back ──
+    /** The drawing's price at `time`, or null where it has none (or the type reports none). */
+    valueAt(id: string, time: number): number | null {
+        if (!this.store.has(id)) return null;
+        // The renderer's instance holds what the drawing computed from the chart's bars.
+        return this.port?.drawingValueAt ? this.port.drawingValueAt(id, time) : (this.store.get(id)?.valueAt(time) ?? null);
+    }
+
+    /** The values the drawing reports. */
+    readout(id: string): DrawingReadoutRow[] {
+        if (!this.store.has(id)) return [];
+        return this.port?.drawingReadout ? this.port.drawingReadout(id) : (this.store.get(id)?.readout() ?? []);
+    }
+
+    /** The drawing under a plot pixel, and the part of it there. */
+    at(x: number, y: number): { id: string; part: string | null } | null {
+        return this.port?.drawingAt?.(x, y) ?? null;
+    }
+
+    /** The drawing the pointer is over right now, and the part of it there. */
+    hovered(): { id: string; part: string | null } | null {
+        return this.port?.hoveredDrawing?.() ?? null;
+    }
+
+    /** Add a source of magnet targets (an indicator's values, round prices, another drawing's
+     *  points). Returns the function that removes it. */
+    addSnapSource(source: DrawingSnapSource): Unsubscribe {
+        this.snapSources.add(source);
+        this.port?.setSnapSources?.([...this.snapSources]);
+        return () => {
+            if (this.snapSources.delete(source)) this.port?.setSnapSources?.([...this.snapSources]);
+        };
+    }
+
     // ── persistence (works regardless of renderer support) ──
     toJSON(): DrawingsDocument {
         return this.store.serialize();
@@ -523,6 +615,7 @@ export class DrawingController {
     destroy(): void {
         for (const u of this.subs) u();
         this.subs.length = 0;
+        this.typesDirty = false; // a registry follow-up still queued finds nothing to do
     }
 
     // ── internals ──
@@ -551,7 +644,8 @@ export class DrawingController {
 
     /** Restore a history snapshot, reconciling selection against what survived. */
     private restoreSnapshot(doc: DrawingsDocument): void {
-        this.store.load(doc); // fires onChange → sync() + autoscale
+        // Groups are not undo steps: the current ones stay, over the drawings the step leaves.
+        this.store.load({ ...doc, groups: this.store.groups() }); // fires onChange → sync() + autoscale
         this.selectedIds = this.selectedIds.filter((id) => this.store.has(id));
         this.announceSelection();
     }
@@ -716,7 +810,13 @@ export class DrawingController {
             case 'tool-finished':
                 // Most tools are one-shot (revert to the pointer once placed); brush-family tools
                 // always stay armed, and stay-in-drawing-mode keeps every tool armed.
-                if (!this.stayInDrawingMode && i.type !== 'freehand' && i.type !== 'highlighter') this.setTool(null);
+                if (!this.stayInDrawingMode && !getDrawingType(i.type)?.staysArmed) this.setTool(null);
+                break;
+            case 'hover':
+                this.events.emit('drawing:hover', { id: i.id, part: i.part });
+                break;
+            case 'click':
+                this.events.emit('drawing:click', { id: i.id, part: i.part, time: i.time, price: i.price });
                 break;
             case 'undo':
                 this.undo();

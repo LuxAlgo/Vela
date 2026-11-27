@@ -613,7 +613,8 @@ they work from the very first keystroke, before any click.
   row it covers, and a pick made in the panel selects the same drawings on the chart.
 - **Data window** — the other docked panel: the date and time of the bar under the crosshair,
   its OHLCV tinted with the bar's direction, then one section per indicator showing each plot's
-  value in its own color. It follows the crosshair and falls back to the latest bar when the
+  value in its own color, and one per drawing that reports values (a
+  [custom drawing tool](./drawing-tools.md#custom-tools) can). It follows the crosshair and falls back to the latest bar when the
   pointer leaves the chart. The two panels share the dock, so opening one closes the other.
 - **The dock** — the column both panels live in, and the one plugins extend
   ([`registerSidePanel`](../contributing/plugin-sdk.md#side-panels--registersidepanel)): every
@@ -761,6 +762,7 @@ Entries come from one shared vocabulary:
 | Entry | What it is |
 | --- | --- |
 | `'symbol'` | The symbol button (opens the search). |
+| `'compare'` | The Compare symbol button (`+` beside the symbol button — opens the comparison picker, or a plugin's [slot override](../contributing/plugin-sdk.md#replacing-a-built-in-button--slot-overrides)). Omitting it removes the button, the mobile menu row, and skips building the comparison picker. |
 | `'timeframes'` | The favorite chips + timeframe dropdown group. |
 | `'style'` | The chart-style dropdown. |
 | `'layout'` | The layout dropdown (renders on multi-chart shells only). |

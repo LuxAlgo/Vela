@@ -2,13 +2,17 @@
 // (price axis / time axis / chart body) and current renderer feature states; the menu
 // itself is the kit ContextMenu, opened at the pointer.
 import type { Vela } from '../Vela';
+import type { SerializedDrawing } from '../core/drawings';
 import { textOf } from '../core/i18n/text';
 import type { MenuItemDescriptor } from '@luxalgo/vela-ui/dropdown-menu';
 import { ContextMenu } from '@luxalgo/vela-ui/context-menu';
-import { widgetActions, type ContextMenuPointer, type WidgetContext } from './contributions';
+import { drawingActions, widgetActions, type ContextMenuPointer, type WidgetContext } from './contributions';
 import {
+    DRAWING_ACTION_PREFIX,
     bodyItems,
     composeMenu,
+    drawingMenuActions,
+    drawingMenuItems,
     invertWrite,
     paneScaleAt,
     priceAxisItems,
@@ -55,6 +59,9 @@ export class ChartContextMenu {
     private lastZone: Zone = 'body';
     /** The pane whose scale the open price-axis menu targets (null ⇒ the main scale). */
     private lastPane: PaneScaleInfo | null = null;
+    /** The drawing under the pointer when the menu opened on the chart body: the one its
+     *  drawing rows act on. Kept by id, as an edit replaces the drawing's record. */
+    private drawingId: string | null = null;
     /** The rows for this right-click, read from where it landed. */
     private readonly itemsAt = (e: MouseEvent | PointerEvent): readonly MenuItemDescriptor[] | null => {
         e.preventDefault();
@@ -62,6 +69,8 @@ export class ChartContextMenu {
         this.pointer = this.crosshair;
         this.lastZone = this.zoneOf(e);
         this.lastPane = this.lastZone === 'price-axis' ? this.paneAt(e) : null;
+        const drawings = this.chart.drawings;
+        this.drawingId = this.lastZone === 'body' && drawings.supported ? (drawings.hovered()?.id ?? null) : null;
         return this.itemsFor(this.lastZone);
     };
 
@@ -129,11 +138,19 @@ export class ChartContextMenu {
         }));
     }
 
+    /** The drawing the open menu is about, as it is now. */
+    private drawing(): SerializedDrawing | undefined {
+        const id = this.drawingId;
+        return id == null ? undefined : this.chart?.drawings.all().find((d) => d.id === id);
+    }
+
     private itemsFor(zone: Zone): MenuItemDescriptor[] {
         const builtins = this.builtinItems(zone);
+        // A drawing action runs on the shell's context: without one its row would do nothing.
+        const leading = this.cbs.getContext ? drawingMenuItems(drawingActions(), this.drawing(), this.chart?.i18n) : [];
         // A contributed row takes its zone's look: one icon in an icon-free menu (the axis
         // menus, all checkmarks) would push every label right of an empty icon column.
-        return composeMenu(zone, builtins, this.contributed(zone, builtins.some((i) => i.icon)));
+        return composeMenu(zone, builtins, this.contributed(zone, builtins.some((i) => i.icon)), leading);
     }
 
     private builtinItems(zone: Zone): MenuItemDescriptor[] {
@@ -148,6 +165,8 @@ export class ChartContextMenu {
                 axisLabels: this.flag('axisLabels'),
                 priceLabel: this.flag('priceLabel'),
                 countdown: this.flag('countdown'),
+                indicatorValueLabels: this.flag('indicatorValueLabels'),
+                indicatorNameLabels: this.flag('indicatorNameLabels'),
                 priceLine: this.flag('currentPriceLine'),
             }, this.chart?.i18n);
         }
@@ -166,6 +185,12 @@ export class ChartContextMenu {
     private run(id: string): void {
         const chart = this.chart;
         if (!chart) return;
+        if (id.startsWith(DRAWING_ACTION_PREFIX)) {
+            const ctx = this.context();
+            const drawing = this.drawing();
+            if (ctx && drawing) drawingMenuActions(drawingActions(), drawing).find((a) => a.id === id.slice(DRAWING_ACTION_PREFIX.length))?.run(ctx, drawing);
+            return;
+        }
         if (id.startsWith('action:')) {
             const ctx = this.context();
             if (ctx) widgetActions(`context:${this.lastZone}`, ctx).find((a) => a.id === id.slice('action:'.length))?.run(ctx);
