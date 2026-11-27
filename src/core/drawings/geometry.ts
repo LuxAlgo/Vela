@@ -6,6 +6,7 @@
  * same invariant Pine drawings get from `xloc:'bar_time'`.
  */
 
+import type { PriceSteps } from './measureText';
 import type { DrawingSeriesState } from './series';
 
 /** A drawing anchor in DATA space (epoch-ms time + data-space price). */
@@ -53,6 +54,8 @@ export interface Projector {
     yOf(price: number, paneId: string): number | null;
     /** Known price precision for this pane, when supplied by the renderer. */
     priceDecimals?(paneId: string): number | undefined;
+    /** The symbol's tick size (and pip, for a currency pair) on this pane, when known. */
+    priceSteps?(paneId: string): PriceSteps | undefined;
     /** Inverse — pixel → data point on a pane (used on create/drag commit). */
     pxToPoint(x: number, y: number, paneId: string): DrawingPoint;
     /** Which pane owns a pixel y, or `null` outside every pane. */

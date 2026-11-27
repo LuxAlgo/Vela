@@ -1,7 +1,7 @@
 import type { Unsubscribe } from '../util/types';
 import { Drawing, type SerializedDrawing } from './Drawing';
 import { deserializeDrawing } from './registry';
-import { migrate, type DrawingsDocument, DRAWINGS_DOC_VERSION } from './document';
+import { clonePlain, migrate, sanitizeGroups, type DrawingGroup, type DrawingsDocument, DRAWINGS_DOC_VERSION } from './document';
 import { sanitizeShowOn } from './visibility';
 
 /**
@@ -12,6 +12,8 @@ import { sanitizeShowOn } from './visibility';
  */
 export class DrawingStore {
     private readonly byId = new Map<string, Drawing>();
+    /** The drawings' groups, always over drawings the store holds (see {@link setGroups}). */
+    private groupList: DrawingGroup[] = [];
     private seq = 0;
     private zCounter = 1;
     private readonly listeners = new Set<() => void>();
@@ -35,7 +37,10 @@ export class DrawingStore {
 
     remove(id: string): boolean {
         const ok = this.byId.delete(id);
-        if (ok) this.emit();
+        if (ok) {
+            this.pruneGroups();
+            this.emit();
+        }
         return ok;
     }
 
@@ -113,14 +118,32 @@ export class DrawingStore {
         }
     }
 
+    /** Remove every drawing and every group, the empty ones included. */
     clear(): void {
-        if (this.byId.size === 0) return;
+        if (this.byId.size === 0 && this.groupList.length === 0) return;
         this.byId.clear();
+        this.groupList = [];
         this.emit();
     }
 
+    /** The groups, as copies. */
+    groups(): DrawingGroup[] {
+        return clonePlain(this.groupList);
+    }
+
+    /** Replace the groups. Members that are not drawings here are left out. Returns whether
+     *  the groups changed. Groups only describe drawings, so no `onChange` fires. */
+    setGroups(groups: unknown): boolean {
+        const next = sanitizeGroups(groups, new Set(this.byId.keys()));
+        if (JSON.stringify(next) === JSON.stringify(this.groupList)) return false;
+        this.groupList = next;
+        return true;
+    }
+
     serialize(): DrawingsDocument {
-        return { version: DRAWINGS_DOC_VERSION, drawings: this.all().map((d) => d.serialize()) };
+        const doc: DrawingsDocument = { version: DRAWINGS_DOC_VERSION, drawings: this.all().map((d) => d.serialize()) };
+        if (this.groupList.length > 0) doc.groups = clonePlain(this.groupList);
+        return doc;
     }
 
     /** Replace all drawings from a (validated) document. Unknown types are skipped. */
@@ -136,12 +159,18 @@ export class DrawingStore {
             this.zCounter = Math.max(this.zCounter, d.zIndex) + 1;
             this.bumpSeqPast(d.id);
         }
+        this.groupList = sanitizeGroups(valid.groups, new Set(this.byId.keys()));
         this.emit();
     }
 
     onChange(cb: () => void): Unsubscribe {
         this.listeners.add(cb);
         return () => this.listeners.delete(cb);
+    }
+
+    /** Drop members that are gone, and the groups that held only them. */
+    private pruneGroups(): void {
+        if (this.groupList.length > 0) this.groupList = sanitizeGroups(this.groupList, new Set(this.byId.keys()));
     }
 
     /** Keep `nextId()` from colliding with a loaded `dw-N` id. */

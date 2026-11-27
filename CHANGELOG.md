@@ -4,11 +4,18 @@ All notable changes to Vela, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- **Place a horizontal line's or ray's label left, in the middle or on the right, above or below the line.** The **Label** section of a Horizontal Line's and a Horizontal Ray's settings now has the **Position** (Left, Middle, Right) and **Side** (Above, Below) choices the trend line already had. A line's label sits at the left edge, the middle or the right edge of the chart; a ray's runs from its anchor to the right edge. A ray's label used to start right on its anchor, under the line; it now starts just past the anchor, above the line, like a horizontal line's. A horizontal line's existing label stays beside its handle until you pick a position. Either label stays whole on the chart: one that would run past the chart's side slides back in (a line's label follows its handle only as far as the edge), one that would be cut off at the top or bottom of its pane moves to the other side of the line, and a ray that starts past the chart's right edge shows no label until it comes into view.
+
 ### Fixed
 
 - **Timeframe shortcuts respect the active symbol.** Unavailable favorites stay saved
   and reappear on symbols that support them. Quick entry explains when a valid
   timeframe is unavailable and stays open so you can choose another.
+
+- **The measure ruler and the Date & Price Range drawing read moves at the symbol's own precision, in pips or ticks.** The price change used to be rounded to two decimals on every market, so a move on a currency pair or a low-priced coin read `-0.00`. The label now leads with the move and its percent, then a quieter line with the pips (on a currency pair) or the ticks (elsewhere), the bars and the time: `−0.00219 · −0.20%` over `−21.9 pips · 5 bars · 5h`. Large numbers are grouped, a rise on a series below zero reads as a positive percent, the ruler's label stays inside the chart at its edges, and Arabic and Hebrew labels read right to left with every number intact. A data source sets the pip size with `SymbolInfo.pipsize`; on a symbol whose `type` is `'forex'` it defaults to 0.0001, or 0.01 for a pair quoted to two or three decimals. _(Breaking for hosts that reword this label through `messages`: its text now comes from `drawing.measure.headline`, `drawing.measure.pips`, `drawing.measure.ticks` and `drawing.measure.bars`, which replace the `drawing.ruler.*` and `drawing.measure.priceChange` / `barsAndDuration` messages.)_
+- **Object tree groups are saved with the chart.** Groups you make in the object tree used to live only as long as the page: a reload, a switch between saved workspaces or `applyState` brought the drawings back ungrouped. The groups now travel in the drawings document (`drawings.toJSON().groups`), so they're saved and restored wherever the drawings are, including a workspace's saved state. `chart.drawings.groups()` and `setGroups()` read and replace them, and the new `drawing:groups` event says when they change. Undo and redo leave the groups as they are.
 
 ## [0.10.19]
 

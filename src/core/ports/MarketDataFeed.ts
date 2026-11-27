@@ -61,6 +61,13 @@ export interface SymbolInfo {
      * bars. State it here: the chart never guesses it from the symbol's type or its bars.
      */
     ohlc?: boolean;
+    /**
+     * One pip, for a symbol quoted in pips: the measure tools then count a move in pips
+     * instead of ticks. Absent on a symbol whose `type` is `'forex'` ⇒ derived from
+     * `mintick`: 0.0001, or 0.01 for a pair quoted to two or three decimals; a pair quoted to
+     * fewer decimals gets none and counts in ticks.
+     */
+    pipsize?: number;
     [key: string]: unknown;
 }
 
@@ -75,6 +82,8 @@ export interface SymbolFacts {
     ohlc?: boolean;
     /** `false`: the source has no volume for this symbol. */
     volume?: boolean;
+    /** One pip, for a symbol quoted in pips (see {@link SymbolInfo.pipsize}). */
+    pipsize?: number;
 }
 
 /**
