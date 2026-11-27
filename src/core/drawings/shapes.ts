@@ -308,6 +308,69 @@ export function reportDrawingError(type: string, hook: string, err: unknown): vo
     console.error(`[vela] drawing type "${type}": ${hook} failed`, err);
 }
 
+const present = (value: unknown): boolean => value != null;
+const listOf = (value: unknown): boolean => Array.isArray(value) && value.every(present);
+
+/** Whether a shape holds what the painter, the hit-test and the bounds read without looking:
+ *  its kind, and the points, lists and text of that kind. Numbers are not checked: a
+ *  coordinate that is not one paints nothing and is hit by nothing. */
+function isDrawable(s: DrawingShape): boolean {
+    switch (s.kind) {
+        case 'line':
+        case 'rect':
+            return present(s.from) && present(s.to);
+        case 'path':
+            return listOf(s.points);
+        case 'ellipse':
+            return present(s.center);
+        case 'curve':
+            return listOf(s.d);
+        case 'band':
+            return listOf(s.upper) && listOf(s.lower);
+        case 'rows':
+            return listOf(s.rows);
+        case 'text':
+            return present(s.at) && typeof s.text === 'string';
+        case 'marker':
+            return present(s.at);
+        case 'image':
+            return present(s.at) && typeof s.src === 'string';
+        case 'tag':
+            return (s.axis === 'price' || s.axis === 'time') && typeof s.value === 'number';
+        case 'drawing':
+            return typeof s.type === 'string' && listOf(s.anchors);
+        default:
+            return false;
+    }
+}
+
+/**
+ * What a drawing's `shapes()` returned, kept to the shapes the chart can use. A host's tool
+ * can return anything: no list, a shape whose point is not placed yet, a number where the
+ * text goes. Those are left out and reported once for the tool, so the paint, the hit-test
+ * and the bounds only ever read shapes of a known form. The list itself is handed back when
+ * every shape is usable.
+ */
+export function usableShapes(type: string, returned: unknown): DrawingShape[] {
+    if (!Array.isArray(returned)) {
+        reportDrawingError(type, 'shapes', new TypeError('shapes() did not return a list of shapes'));
+        return [];
+    }
+    const list = returned as DrawingShape[];
+    let kept: DrawingShape[] | null = null;
+    for (let i = 0; i < list.length; i += 1) {
+        const s = list[i];
+        if (s != null && typeof s === 'object' && isDrawable(s)) {
+            kept?.push(s);
+            continue;
+        }
+        kept ??= list.slice(0, i);
+        const kind = s != null && typeof s === 'object' ? String((s as { kind?: unknown }).kind) : String(s);
+        reportDrawingError(type, 'shapes', new TypeError(`shapes() returned a shape the chart cannot draw, at index ${i} (kind: ${kind})`));
+    }
+    return kept ?? list;
+}
+
 /** What a context carries when no renderer supplied a theme (a hit-test, a headless read). */
 const DEFAULT_THEME: ShapeTheme = { text: NEUTRAL, background: '#ffffff', font: 'sans-serif', up: BULLISH, down: BEARISH };
 

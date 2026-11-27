@@ -57,7 +57,7 @@ import { resolveIndicators, type IndicatorManifest, type ResolvedIndicator } fro
 import { DrawingToolbar } from '../renderers/native/drawings/DrawingToolbar';
 import { applyAttributionMarkTheme, createAttributionMark, createCustomMark, relabelAttributionMark } from '../renderers/native/chrome/AttributionMark';
 import { rendererDefaults } from '../core/renderer-defaults';
-import { buildToolbar, type DrawingTypeKey, type SerializedDrawing, type SnapMode, type ToolbarDefinition } from '../core/drawings';
+import { buildToolbar, getDrawingType, type DrawingTypeKey, type SerializedDrawing, type SnapMode, type ToolbarDefinition } from '../core/drawings';
 import { timeframeToMs } from '../data/timeframe';
 import { timeframeLabel } from '../widget/timeframe';
 import { registerBuiltinChartTypes } from '../chart-types/builtins';
@@ -2254,9 +2254,15 @@ export class VelaWorkspace {
         // toggled in any cell re-applies to every other cell (and the shared bar), and
         // the mirror is what `getState()` persists.
         chart.on('drawing:favorites', ({ favorites }) => {
-            this.favs = favorites;
+            // A chart reports the stars of the tools it knows. One whose tool is not
+            // registered yet (a plugin that loads after the saved state) stays in the set
+            // the workspace saves and hands the other cells, so it is starred everywhere
+            // once the tool exists, and a save made meanwhile does not drop it.
+            const waiting = this.favs.filter((type) => !favorites.includes(type) && getDrawingType(type) == null);
+            const all = waiting.length > 0 ? [...favorites, ...waiting] : favorites;
+            this.favs = all;
             for (const other of this.cellsById.values()) {
-                if (other !== cell) other.chart.drawings.setFavorites(favorites as never[]);
+                if (other !== cell) other.chart.drawings.setFavorites(all as never[]);
             }
             this.drawToolbar?.setFavorites(favorites as never[]);
             this.markStateDirty();

@@ -11,7 +11,7 @@ export { LINE_FIELDS, BORDER_FIELDS, FILL_FIELDS, LINE_STYLE_OPTIONS, TEXT_FIELD
 export { priceFromUnit, priceInUnit, priceUnits, type PriceUnit } from './units';
 export { Drawing, setByPath } from './Drawing';
 export type { BuiltinDrawingType, DrawingHit, DrawingHost, DrawingReadoutRow, SnapTarget } from './Drawing';
-export { MAX_EMBED_DEPTH, ellipsePoints, flattenCurve, hitShapes, lineValueAt, reportDrawingError, shapeContext, shapeFontSize, shapesBounds, textAngle } from './shapes';
+export { MAX_EMBED_DEPTH, ellipsePoints, flattenCurve, hitShapes, lineValueAt, reportDrawingError, shapeContext, shapeFontSize, shapesBounds, textAngle, usableShapes } from './shapes';
 export type {
     BandShape,
     CurveShape,

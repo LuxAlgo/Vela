@@ -29,6 +29,8 @@ export interface ShapePaintEnv {
     embedded(shape: EmbeddedShape): void;
     /** An image once it has loaded, else null (the caller repaints when it lands). */
     image(src: string): CanvasImageSource | null;
+    /** A shape could not be painted (the canvas refused a color, a dash, a gradient). */
+    failed(err: unknown): void;
 }
 
 type Ctx = CanvasRenderingContext2D;
@@ -415,19 +417,32 @@ function paintOne(ctx: Ctx, s: DrawingShape, env: ShapePaintEnv, dy: number): vo
     }
 }
 
-/** Paint a drawing's shape list, in order. Each shape starts from a clean context state. */
+/**
+ * Paint a drawing's shape list, in order. Each shape starts from a clean context state.
+ * The list comes from a host's tool, and the canvas throws on what it cannot read (a color
+ * stop that is no color, a dash that is no list): such a shape is reported through
+ * `env.failed` and left unpainted, and the shapes after it, the drawings after this one and
+ * the rest of the frame paint as they would without it.
+ */
 export function paintShapes(ctx: Ctx, shapes: readonly DrawingShape[], env: ShapePaintEnv): void {
-    const offsets = avoidOffsets(ctx, shapes, env);
+    let offsets: Map<DrawingShape, number>;
+    try {
+        offsets = avoidOffsets(ctx, shapes, env);
+    } catch (err) {
+        env.failed(err);
+        offsets = new Map();
+    }
     for (const s of shapes) {
         if (s.kind === 'tag') continue;
         const front = s.front === true;
         if ((env.pass === 'body' && front) || (env.pass === 'front' && !front)) continue;
+        // The shape's state must not stay on the context for what is painted after it.
         ctx.save();
-        // A shape that fails to paint (a malformed one from a host's tool) must not leave
-        // its state on the context for the shapes and the drawings painted after it.
         try {
             if (s.opacity !== undefined) ctx.globalAlpha *= Math.min(1, Math.max(0, s.opacity));
             paintOne(ctx, s, env, offsets.get(s) ?? 0);
+        } catch (err) {
+            env.failed(err);
         } finally {
             ctx.restore();
         }

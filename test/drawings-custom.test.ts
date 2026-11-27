@@ -276,6 +276,210 @@ describe('defineDrawing', () => {
         errors.mockRestore();
     });
 
+    it('paints the rest of the chart when a tool returns shapes it cannot draw', () => {
+        const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+        // What a tool under development returns by mistake: a point that is not placed yet,
+        // a number where the text goes, a hole in a path, a kind that does not exist.
+        const bad = [
+            { kind: 'line', from: [10, 10], to: undefined },
+            { kind: 'text', at: [10, 10], text: 42 },
+            { kind: 'path', points: [[0, 0], null, [5, 5]] },
+            { kind: 'rows', x: 0, rows: [null] },
+            { kind: 'band', upper: [[0, 0]], lower: undefined },
+            { kind: 'drawing', type: 'hline', anchors: undefined },
+            { kind: 'tag', axis: 'price', value: 'high' },
+            { kind: 'hexagon' },
+            null,
+        ] as unknown as DrawingShape[];
+        define({ type: 'test.malformed', label: 'Malformed', shapes: () => [...bad, { kind: 'marker', at: [50, 50], shape: 'square' }] });
+        define({ type: 'test.nolist', label: 'No list', shapes: () => undefined as unknown as DrawingShape[] });
+        const malformed = createDrawing('test.malformed', { paneId: 'price', anchors })!;
+        const nolist = createDrawing('test.nolist', { paneId: 'price', anchors })!;
+        const line = createDrawing('hline', { paneId: 'price', anchors: [anchors[0]!] })!;
+        const painter = new DrawingPainter();
+        const rec = recordingCtx();
+
+        expect(() => painter.paintAll(rec.ctx, [malformed, nolist, line], projector(), theme)).not.toThrow();
+        expect(() => painter.paintAxisTags(rec.ctx, [malformed, nolist], projector(), theme, String)).not.toThrow();
+        expect(rec.count('rect')).toBeGreaterThan(0); // the tool's one good shape is painted
+        expect(rec.count('lineTo')).toBe(1); // and so is the line after the two tools
+        expect(rec.count('save')).toBe(rec.count('restore'));
+        // The pointer path reads the same lists.
+        expect(malformed.hitTest(50, 50, projector(), 4)).toBe(true);
+        expect(malformed.hitTest(10, 10, projector(), 4)).toBe(false);
+        expect(nolist.hitTest(10, 10, projector(), 4)).toBe(false);
+        expect(() => malformed.bounds(projector())).not.toThrow();
+        // Said once per tool, not on every frame.
+        painter.paintAll(recordingCtx().ctx, [malformed, nolist], projector(), theme);
+        expect(errors.mock.calls.filter(([message]) => String(message).includes('test.malformed'))).toHaveLength(1);
+        expect(errors.mock.calls.filter(([message]) => String(message).includes('test.nolist'))).toHaveLength(1);
+        errors.mockRestore();
+    });
+
+    it('paints the shapes after one the canvas refuses', () => {
+        const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+        define({
+            type: 'test.refused',
+            label: 'Refused',
+            shapes: () => [
+                { kind: 'rect', from: [0, 0], to: [10, 10], fill: { gradient: { from: [0, 0], to: [10, 10], stops: [[0, 'not a color']] } } },
+                { kind: 'marker', at: [50, 50], shape: 'triangle' },
+            ],
+        });
+        const d = createDrawing('test.refused', { paneId: 'price', anchors })!;
+        const line = createDrawing('hline', { paneId: 'price', anchors: [anchors[0]!] })!;
+        const rec = recordingCtx();
+        // A canvas throws on a color stop it cannot read.
+        (rec.ctx as unknown as { createLinearGradient: () => unknown }).createLinearGradient = () => ({
+            addColorStop: () => {
+                throw new SyntaxError('The value provided could not be parsed as a color.');
+            },
+        });
+        expect(() => new DrawingPainter().paintAll(rec.ctx, [d, line], projector(), theme)).not.toThrow();
+        expect(rec.count('closePath')).toBeGreaterThan(0); // the triangle after the refused rectangle
+        expect(rec.count('save')).toBe(rec.count('restore'));
+        expect(errors).toHaveBeenCalledTimes(1);
+        errors.mockRestore();
+    });
+
+    it('carries on when a hook of a tool throws', () => {
+        const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const boom = (): never => {
+            throw new Error('state is not there yet');
+        };
+        define({
+            type: 'test.hooks',
+            label: 'Hooks',
+            shapes: (c) => (c.points.length === 2 ? [{ kind: 'line', from: c.points[0]!, to: c.points[1]! }] : []),
+            handles: boom,
+            place: boom,
+            placed: boom,
+            constrain: boom,
+            translate: boom,
+            timeExtent: boom,
+            priceRange: boom,
+            valueAt: boom,
+            readout: boom,
+            snapTargets: boom,
+            click: boom,
+        });
+        const d = createDrawing('test.hooks', { paneId: 'price', anchors })!;
+        const proj = projector();
+        const point = { time: 60, price: 40 };
+
+        expect(d.handlePoints(proj)).toHaveLength(2); // the two points keep their grips
+        expect(d.hitHandle(20, 20, proj, 4)).toBe(0);
+        expect(d.placeAnchor(1, point, proj, false)).toEqual(point);
+        expect(() => d.onPlaced(proj)).not.toThrow();
+        expect(() => d.constrainHandleDrag(0)).not.toThrow();
+        expect(d.translateBody(10, 5, anchors)).toEqual([
+            { time: 30, price: 85 },
+            { time: 130, price: 35 },
+        ]);
+        expect(d.timeExtent()).toEqual({ min: 20, max: 120 });
+        expect(d.priceRange()).toEqual({ min: 30, max: 80 });
+        expect(d.valueAt(70, proj)).toBeNull();
+        expect(d.readout()).toEqual([]);
+        expect(d.snapTargets()).toEqual([]);
+        expect(d.onClick(null)).toBe(false);
+        // Each hook is reported once, however often it runs.
+        d.readout();
+        d.priceRange();
+        expect(errors.mock.calls.filter(([message]) => String(message).includes('readout'))).toHaveLength(1);
+        expect(errors.mock.calls.filter(([message]) => String(message).includes('priceRange'))).toHaveLength(1);
+        errors.mockRestore();
+    });
+
+    it('leaves out what a hook returns in the wrong form', () => {
+        define({
+            type: 'test.wrongform',
+            label: 'Wrong form',
+            shapes: () => [],
+            handles: () => [null, { at: undefined }, { at: { time: 70, price: 55 }, drag: () => undefined }] as never,
+            readout: () => 'slope 2' as never,
+            snapTargets: () => ({ price: 80 }) as never,
+            translate: () => undefined as never,
+        });
+        const d = createDrawing('test.wrongform', { paneId: 'price', anchors })!;
+        expect(d.handlePoints(projector())).toEqual([
+            [20, 20],
+            [120, 70],
+            [70, 45],
+        ]);
+        expect(d.readout()).toEqual([]);
+        expect(d.snapTargets()).toEqual([]);
+        expect(d.translateBody(10, 5, anchors)).toEqual([
+            { time: 30, price: 85 },
+            { time: 130, price: 35 },
+        ]);
+    });
+
+    describe('an image shape', () => {
+        /** A stand-in for the browser's image: records how it was asked for, and lets the test answer. */
+        class FakeImage {
+            static made: FakeImage[] = [];
+            crossOrigin: string | null = null;
+            /** The CORS setting at the moment the request went out. */
+            requestedWith: string | null | undefined;
+            onload: (() => void) | null = null;
+            onerror: (() => void) | null = null;
+            private url = '';
+            constructor() {
+                FakeImage.made.push(this);
+            }
+            set src(value: string) {
+                this.url = value;
+                this.requestedWith = this.crossOrigin;
+            }
+            get src(): string {
+                return this.url;
+            }
+        }
+        afterEach(() => {
+            FakeImage.made = [];
+            vi.unstubAllGlobals();
+        });
+        function imageTool(type: string, src: string): Drawing {
+            define({ type, label: 'Image', anchors: 1, shapes: (c) => [{ kind: 'image', at: c.points[0]!, w: 32, h: 32, src }] });
+            return createDrawing(type, { paneId: 'price', anchors: [anchors[0]!] })!;
+        }
+
+        it('is asked for with CORS, so one from another origin cannot taint the chart', () => {
+            vi.stubGlobal('Image', FakeImage);
+            const d = imageTool('test.image.cors', 'https://cdn.example/logo-cors.png');
+            const painter = new DrawingPainter();
+            let repaints = 0;
+            painter.onAsset = () => (repaints += 1);
+            const rec = recordingCtx();
+            painter.paintAll(rec.ctx, [d], projector(), theme);
+            expect(FakeImage.made).toHaveLength(1);
+            expect(FakeImage.made[0]!.requestedWith).toBe('anonymous');
+            expect(rec.count('drawImage')).toBe(0); // not loaded yet
+
+            FakeImage.made[0]!.onload?.();
+            expect(repaints).toBe(1);
+            painter.paintAll(rec.ctx, [d], projector(), theme);
+            expect(rec.count('drawImage')).toBe(1);
+        });
+
+        it('paints nothing, and says why once, when the image cannot be loaded', () => {
+            vi.stubGlobal('Image', FakeImage);
+            const warnings = vi.spyOn(console, 'warn').mockImplementation(() => {});
+            const d = imageTool('test.image.refused', 'https://cdn.example/logo-no-cors.png');
+            const painter = new DrawingPainter();
+            const rec = recordingCtx();
+            painter.paintAll(rec.ctx, [d], projector(), theme);
+            FakeImage.made[0]!.onerror?.();
+            painter.paintAll(rec.ctx, [d], projector(), theme);
+            painter.paintAll(rec.ctx, [d], projector(), theme);
+            expect(rec.count('drawImage')).toBe(0);
+            expect(FakeImage.made).toHaveLength(1); // not asked for again on every frame
+            expect(warnings).toHaveBeenCalledTimes(1);
+            expect(String(warnings.mock.calls[0]![0])).toContain('logo-no-cors.png');
+            warnings.mockRestore();
+        });
+    });
+
     it('keeps the frame of a built-in text label off the layer under the series', () => {
         const label = createDrawing('text', { id: 't', paneId: 'price', anchors: [anchors[0]!], text: { value: 'hi', size: 'normal', hAlign: 'left', vAlign: 'top' } })!;
         const painter = new DrawingPainter();

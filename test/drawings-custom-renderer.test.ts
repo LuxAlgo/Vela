@@ -317,6 +317,10 @@ describe('shape painting details', () => {
         pass: 'all',
         embedded: () => {},
         image: () => null,
+        // No shape of these tests may fail to paint.
+        failed: (err) => {
+            throw err;
+        },
         ...over,
     });
 

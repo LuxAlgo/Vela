@@ -5,7 +5,7 @@ import { FILL_FIELDS, LINE_FIELDS } from '../schema';
 import { handleAt } from '../hittest';
 import { clonePlain } from '../document';
 import { defaultStyle, defaultText, type DrawingStyle, type DrawingText } from '../style';
-import { MAX_EMBED_DEPTH, hitShapes, reportDrawingError, shapeContext, shapesBounds, type DrawingData, type DrawingShape, type ShapeBar, type ShapeContext, type ShapePoint } from '../shapes';
+import { MAX_EMBED_DEPTH, hitShapes, reportDrawingError, shapeContext, shapesBounds, usableShapes, type DrawingData, type DrawingShape, type ShapeBar, type ShapeContext, type ShapePoint } from '../shapes';
 import { createDrawing, drawingTypeEntry, registerDrawingType, unregisterDrawingType, type DrawingTypeMeta } from '../registry';
 import { svg24 } from '../../icons';
 import type { MessageLike } from '../../i18n/types';
@@ -192,7 +192,7 @@ export abstract class ShapeDrawing<P extends object = Record<string, unknown>, S
      *  throws has no shapes: the pointer path must not fail on every move. */
     private resolve(proj: Projector): DrawingShape[] {
         try {
-            return this.shapes(shapeContext(this.shapeData(proj), proj));
+            return usableShapes(this.type, this.shapes(shapeContext(this.shapeData(proj), proj)));
         } catch (err) {
             reportDrawingError(this.type, 'shapes', err);
             return [];
@@ -428,6 +428,20 @@ export function defineDrawing<P extends object = Record<string, unknown>, S = un
     const schema = slotsOf(def.anchors);
     const style: DrawingStyle = { ...defaultStyle(), ...def.style };
 
+    // The definition's hooks run inside the paint, the pointer path, the autoscale and the
+    // data window, on every frame or every move. One that throws (it read a `state` that
+    // `compute` has not returned yet) is reported once for the tool and answers `undefined`:
+    // the caller then does what it does for a tool without that hook.
+    const hook = <T>(name: string, call: () => T): T | undefined => {
+        try {
+            return call();
+        } catch (err) {
+            reportDrawingError(def.type, name, err);
+            return undefined;
+        }
+    };
+    const isPoint = (p: unknown): p is DrawingPoint => p != null && typeof (p as DrawingPoint).time === 'number' && typeof (p as DrawingPoint).price === 'number';
+
     class Defined extends ShapeDrawing<P, S> {
         readonly type = def.type;
         private finished = false;
@@ -458,22 +472,25 @@ export function defineDrawing<P extends object = Record<string, unknown>, S = un
         }
 
         override placeAnchor(index: number, point: DrawingPoint, proj: Projector, preview: boolean): DrawingPoint {
-            if (!def.place) return point;
-            const out = def.place({
-                index,
-                point,
-                anchors: this.anchors.slice(0, index),
-                props: this.props,
-                preview,
-                bars: (from, to) => proj.barsInRange?.(from, to) ?? [],
-                set: (patch) => {
-                    if (!preview) this.props = { ...this.props, ...patch };
-                },
-                finish: () => {
-                    if (!preview) this.finished = true;
-                },
-            });
-            return out ?? point;
+            const place = def.place;
+            if (!place) return point;
+            const out = hook('place', () =>
+                place({
+                    index,
+                    point,
+                    anchors: this.anchors.slice(0, index),
+                    props: this.props,
+                    preview,
+                    bars: (from, to) => proj.barsInRange?.(from, to) ?? [],
+                    set: (patch) => {
+                        if (!preview) this.props = { ...this.props, ...patch };
+                    },
+                    finish: () => {
+                        if (!preview) this.finished = true;
+                    },
+                }),
+            );
+            return isPoint(out) ? out : point;
         }
 
         override placementFinished(): boolean {
@@ -481,25 +498,34 @@ export function defineDrawing<P extends object = Record<string, unknown>, S = un
         }
 
         override onPlaced(proj: Projector): void {
-            const patch = def.placed?.(this.shapeData(proj));
+            const placed = def.placed;
+            const patch = placed && hook('placed', () => placed(this.shapeData(proj)));
             if (patch) this.props = { ...this.props, ...patch };
         }
 
         override constrainHandleDrag(index: number): void {
-            def.constrain?.(index, this.anchors, this.props);
+            const constrain = def.constrain;
+            if (constrain) hook('constrain', () => constrain(index, this.anchors, this.props));
         }
 
         override translateBody(dt: number, dp: number, orig: DrawingPoint[]): DrawingPoint[] {
-            return def.translate ? def.translate(dt, dp, orig) : super.translateBody(dt, dp, orig);
+            const translate = def.translate;
+            const moved = translate && hook('translate', () => translate(dt, dp, orig));
+            // Not a point per anchor: the drawing moves as one without the hook does.
+            return Array.isArray(moved) && moved.length === orig.length && moved.every(isPoint) ? moved : super.translateBody(dt, dp, orig);
         }
 
         override timeExtent(): { min: number; max: number } | null {
-            if (def.timeExtent === 'all') return null;
-            return def.timeExtent ? def.timeExtent(this.shapeData()) : super.timeExtent();
+            const extent = def.timeExtent;
+            if (extent === 'all') return null;
+            const own = extent && hook('timeExtent', () => extent(this.shapeData()));
+            return own === undefined ? super.timeExtent() : own;
         }
 
         override priceRange(): { min: number; max: number } | null {
-            return def.priceRange ? def.priceRange(this.shapeData()) : super.priceRange();
+            const range = def.priceRange;
+            const own = range && hook('priceRange', () => range(this.shapeData()));
+            return own === undefined ? super.priceRange() : own;
         }
 
         override autoscales(): boolean {
@@ -507,26 +533,38 @@ export function defineDrawing<P extends object = Record<string, unknown>, S = un
         }
 
         override valueAt(time: number, proj?: Projector | null): number | null {
-            return def.valueAt?.(time, this.shapeData(proj), proj ?? null) ?? null;
+            const valueAt = def.valueAt;
+            return (valueAt && hook('valueAt', () => valueAt(time, this.shapeData(proj), proj ?? null))) ?? null;
         }
 
         override readout(): DrawingReadoutRow[] {
-            return def.readout?.(this.shapeData()) ?? [];
+            const readout = def.readout;
+            const rows = readout && hook('readout', () => readout(this.shapeData()));
+            return Array.isArray(rows) ? rows.filter((row) => row != null) : [];
         }
 
         override snapTargets(): SnapTarget[] {
-            return def.snapTargets?.(this.shapeData()) ?? [];
+            const snapTargets = def.snapTargets;
+            const targets = snapTargets && hook('snapTargets', () => snapTargets(this.shapeData()));
+            return Array.isArray(targets) ? targets.filter((target) => target != null) : [];
         }
 
         override onClick(part: string | null): boolean {
-            const patch = def.click?.(part, this.shapeData());
+            const click = def.click;
+            const patch = click && hook('click', () => click(part, this.shapeData()));
             if (!patch) return false;
             this.props = { ...this.props, ...patch };
             return true;
         }
 
         protected override handles(data: DrawingData<P, S>): ShapeHandle<P>[] {
-            return def.handles?.(data) ?? [];
+            const handles = def.handles;
+            const list = handles && hook('handles', () => handles(data));
+            if (!Array.isArray(list)) return [];
+            // A grip needs a point to sit at; its drag runs on every pointer move.
+            return list
+                .filter((h) => h != null && isPoint(h.at))
+                .map((h) => ({ at: h.at, drag: (point) => hook('handle drag', () => h.drag(point)) }));
         }
 
         override schema(): SettingsSchema {

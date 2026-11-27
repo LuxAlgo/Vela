@@ -199,7 +199,7 @@ if (range) console.log(chart.drawings.valueAt(range.id, bars[30]!.time), chart.d
 | `rows` | histogram rows from one x | `x`, `rows: [{ y, h, w, fill? }]` |
 | `text` | text | `at`, `text`, `color`, `size`, `align`, `baseline`, `plate`, `avoid` |
 | `marker` | a mark of fixed pixel size | `at`, `shape` or `glyph`, `size` |
-| `image` | an image centered on a point | `at`, `w`, `h`, `src` (a URL the page may load) |
+| `image` | an image centered on a point | `at`, `w`, `h`, `src` (a URL or `data:` URI; another origin must send CORS headers) |
 | `tag` | a chip on the price or time axis | `axis`, `value`, `text`, `color` |
 | `drawing` | another registered drawing, as a part | `type`, `anchors`, `style`, `props` |
 
@@ -228,6 +228,9 @@ or a hatch.
 - `handles(data)`: extra grips, each `{ at: { time, price }, drag: (pt) => propsToChange }`.
 - `valueAt`, `readout`, `snapTargets`, `autoscale: true` (the pane's price scale keeps the
   drawing in view; off by default), `click(part, data)` (return props to change).
+- A hook that throws is logged once and counts as absent for that call, and a shape the chart
+  cannot draw is left out of the list: guard `data.state`, which is `undefined` until
+  `compute` returns its first result.
 - `registerDrawingGroup({ id, label, icon?, showEmpty? })` names a toolbar group of your own.
   With `showEmpty: true` the group is on the bar before its first tool, as soon as its menu
   has a row: `registerWidgetAction({ id, target: 'drawings', group: id, label, icon, run })`

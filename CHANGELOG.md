@@ -22,7 +22,10 @@ All notable changes to Vela, newest first.
   group of your own (`registerDrawingGroup`), and its type key works wherever a built-in
   key does: `setTool`, `add`, the `drawings` option, favorites and saved styles. A tool
   registered, replaced or removed while charts are open reaches them at once, and the new
-  `drawing:types` event tells a toolbar of your own to refresh. For a tool that extends a
+  `drawing:types` event tells a toolbar of your own to refresh. A tool that goes wrong does
+  not take the chart with it: a function of the tool that throws, or a shape the chart cannot
+  draw, is skipped and reported once in the console. An image a tool paints from another
+  origin must be served with CORS headers. For a tool that extends a
   family Vela already draws, such as a new Fibonacci tool or harmonic pattern, the base
   classes are exported too.
 - **Drawing values, readouts, hover and click.** `chart.drawings.valueAt(id, time)` returns

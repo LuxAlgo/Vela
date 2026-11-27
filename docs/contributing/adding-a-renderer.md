@@ -177,7 +177,9 @@ knowledge of the tool:
   `drawing.shapes(shapeContext(drawing.shapeData(proj), proj, env))` returns its shapes for the
   frame, in plot pixels. `shapeContext` builds the context from the drawing's data and your
   `Projector`; `env` adds what only you know: the interaction state (`view`), the chart's
-  colors (`theme`) and a price formatter (`price`). Draw the list in order. Shapes marked
+  colors (`theme`) and a price formatter (`price`). The list comes from a host's tool: pass
+  it through `usableShapes(drawing.type, list)`, which leaves out what is not a shape of a known
+  form, and catch a `shapes` that throws, so one tool cannot stop your frame. Draw the list in order. Shapes marked
   `front` go over the series even when the drawing sits under them, and `tag` shapes are chips
   on the price or time axis, outside the plot.
 - **Call `drawing.mount({ prev, invalidate })`** on every instance you build in `syncDrawings`.
@@ -194,7 +196,7 @@ knowledge of the tool:
   `onClick`, `snapTargets()` for the magnet, and `autoscales()` with `priceRange()` when you fit
   a pane's scale.
 
-`shapeContext`, `hitShapes`, `shapesBounds` and the shape types are exported from
+`shapeContext`, `usableShapes`, `hitShapes`, `shapesBounds` and the shape types are exported from
 `@luxalgo/vela/plugin`.
 
 ### Depth — the optional `drawingDepth` flag

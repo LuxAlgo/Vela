@@ -1,6 +1,6 @@
 import type { Drawing, Projector, DrawingStyle, DrawingShape } from '../../../core/drawings';
 import { paintShapes } from './ShapePainter';
-import { createDrawing, shapeContext, reportDrawingError, MAX_EMBED_DEPTH, Box, SegmentDrawing, TrendLine, FibRatios, RadialFib, FibSpiral, GannSquare, GANN_SQUARE_ARCS, DedekindTessellation, MachFigure, MeasureBox, PositionTool, PatternDrawing, CalloutBase, Callout, Comment, PriceNote, Signpost, Note, PriceLabel, ArrowMark, GlyphStamp, RegressionChannel, AnchoredVwap, FixedRangeVolumeProfile, Magnifier, PriceActionZone, Liquidity, magnifierTimeframeLabel, lineSegmentIntersection, effectiveFillColor, VALID_FILL, INVALID_FILL, DEFAULT_DRAWING_COLOR } from '../../../core/drawings';
+import { createDrawing, shapeContext, reportDrawingError, usableShapes, MAX_EMBED_DEPTH, Box, SegmentDrawing, TrendLine, FibRatios, RadialFib, FibSpiral, GannSquare, GANN_SQUARE_ARCS, DedekindTessellation, MachFigure, MeasureBox, PositionTool, PatternDrawing, CalloutBase, Callout, Comment, PriceNote, Signpost, Note, PriceLabel, ArrowMark, GlyphStamp, RegressionChannel, AnchoredVwap, FixedRangeVolumeProfile, Magnifier, PriceActionZone, Liquidity, magnifierTimeframeLabel, lineSegmentIntersection, effectiveFillColor, VALID_FILL, INVALID_FILL, DEFAULT_DRAWING_COLOR } from '../../../core/drawings';
 import type { VelaTheme } from '../../../core/options';
 import { contrastColor, dashPattern, extendEndpoints, namedFontSize, labelLineHeight, TEXT_FRAME_INSET, TEXT_FRAME_RISE, uprightLineAngle } from '../../shared/drawing-geometry';
 import { BEARISH, BULLISH, NEUTRAL, SLATE, SLATE_DEEP } from '../../../core/palette';
@@ -102,7 +102,16 @@ function loadImage(src: string, onReady: () => void): CanvasImageSource | null {
             created.waiting.clear();
         };
         // An image that cannot load is never painted, and nobody waits for it.
-        img.onerror = () => created.waiting.clear();
+        img.onerror = () => {
+            created.waiting.clear();
+            const shown = src.length > 120 ? `${src.slice(0, 120)}…` : src;
+            console.warn(`[vela] a drawing's image could not be loaded: ${shown} (an image from another origin must be served with CORS headers)`);
+        };
+        // Asked for with CORS, before the request goes out: an image from another origin
+        // painted without it taints the canvas for good, and the layer upload of the WebGL
+        // backend and the PNG export both throw from then on. One its server sends without
+        // `Access-Control-Allow-Origin` fails to load here instead.
+        img.crossOrigin = 'anonymous';
         img.src = src;
     }
     if (entry.ready) return entry.img;
@@ -317,18 +326,22 @@ export class DrawingPainter {
         return shapes;
     }
 
-    /** A tool whose `shapes()` throws paints nothing this frame: the drawings after it, and
-     *  the frames after this one, are not its to break. */
+    /** A tool whose `shapes()` throws paints nothing this frame, and a shape it returns in a
+     *  form the chart cannot draw is left out: the drawings after it, and the frames after
+     *  this one, are not its to break. */
     private buildShapes(d: Drawing, proj: Projector, theme: VelaTheme): DrawingShape[] {
         const t = this.shapeTargets;
         const hovered = t.hovered === d.id;
         try {
-            return d.shapes!(
-                shapeContext(d.shapeData(proj), proj, {
-                    view: { selected: t.selected?.has(d.id) ?? false, hovered, part: hovered ? (t.hoverPart ?? null) : null, placing: this.placing },
-                    theme: { text: theme.textColor, background: theme.background, font: theme.fontFamily, up: theme.upColor, down: theme.downColor },
-                    price: (p) => this.i18n.format.price(p, { decimals: proj.priceDecimals?.(d.paneId) ?? valueDecimals(p), grouping: true, surface: 'drawing' }),
-                }),
+            return usableShapes(
+                d.type,
+                d.shapes!(
+                    shapeContext(d.shapeData(proj), proj, {
+                        view: { selected: t.selected?.has(d.id) ?? false, hovered, part: hovered ? (t.hoverPart ?? null) : null, placing: this.placing },
+                        theme: { text: theme.textColor, background: theme.background, font: theme.fontFamily, up: theme.upColor, down: theme.downColor },
+                        price: (p) => this.i18n.format.price(p, { decimals: proj.priceDecimals?.(d.paneId) ?? valueDecimals(p), grouping: true, surface: 'drawing' }),
+                    }),
+                ),
             );
         } catch (err) {
             reportDrawingError(d.type, 'shapes', err);
@@ -365,6 +378,7 @@ export class DrawingPainter {
                 }
             },
             image: (src) => loadImage(src, this.assetReady),
+            failed: (err) => reportDrawingError(d.type, 'paint', err),
         });
     }
 

@@ -210,6 +210,7 @@ export {
     shapeContext,
     hitShapes,
     shapesBounds,
+    usableShapes,
     lineValueAt,
     distToSegment,
     distToPolyline,

@@ -842,7 +842,7 @@ every frame, so keep it to geometry and move anything heavier to `compute`.
 | `rows` | Horizontal histogram rows from one x (a profile) | `x`, `rows`: `{ y, h, w, fill? }` each. A negative `w` grows to the left. |
 | `text` | Text | `at`, `text`, `color` (`'auto'`: readable over its plate), `size` (pixels or `'tiny'` … `'huge'`), `bold`, `italic`, `align`, `baseline`, `angle`, `upright`, `plate` (a box behind it), `maxWidth` (wraps), `halo`, `avoid` (moves clear of the drawing's other `avoid` texts) |
 | `marker` | A mark of a fixed pixel size | `at`, `shape` (`circle`, `square`, `diamond`, `triangle`, `triangleDown`, `cross`, `plus`, `arrowUp`, `arrowDown`) or `glyph` (a character), `size` |
-| `image` | An image centered on a point | `at`, `w`, `h`, `src`: a URL the page may load, or a `data:` URI. It paints once it has loaded. |
+| `image` | An image centered on a point | `at`, `w`, `h`, `src`: a URL or a `data:` URI. It paints once it has loaded. An image from another origin is requested with CORS, so its server must send `Access-Control-Allow-Origin`; one that does not is never painted, and the console says so once. |
 | `tag` | An axis tag: a chip on the price axis or on the time axis | `axis` (`'price'`, `'time'`), `value` (a price, or a time in epoch ms), `text` (default: the formatted value), `color` (default: the line color) |
 | `drawing` | Another registered drawing, as a part of this one | `type`, `anchors` (time and price), `style`, `text`, `props` |
 
@@ -905,7 +905,23 @@ other hooks as `data.state`.
   result that lands after a newer run started is ignored.
 - **A run that throws or rejects keeps the previous result.** The chart logs the error once
   for the tool and runs `compute` again when the points, the `props` or the bars next change.
-  A `shapes` that throws paints nothing for that frame, and the other drawings are unaffected.
+
+### When a hook fails
+
+Your hooks run inside the chart's paint, its pointer handling and its autoscale, so the chart
+contains what they do wrong. Each failure is logged once per tool and hook, not on every frame.
+
+- **A `shapes` that throws paints nothing for that frame.** The other drawings and the rest of
+  the chart are unaffected.
+- **A shape the chart cannot draw is left out, and the rest of the list is painted.** That
+  covers a result that is not a list, a shape without the points, list or text of its kind
+  (`{ kind: 'line', from: c.points[0], to: c.points[1] }` before the second point is placed),
+  an unknown `kind`, and a shape the canvas refuses, such as a gradient stop that is not a color.
+- **Any other hook that throws counts as absent for that call.** `readout` reports no rows,
+  `handles` adds no grips, `valueAt` answers `null`, `click` leaves the settings bar to open,
+  `place` keeps the pointer's point, and `translate`, `timeExtent` and `priceRange` fall back
+  to the drawing's points. The usual cause is reading `data.state` before `compute` has
+  returned its first result: it is `undefined` until then.
 
 ```ts
 defineDrawing<Record<string, never>, { slope: number }>({
