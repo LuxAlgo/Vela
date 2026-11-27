@@ -39,6 +39,8 @@ export class CachingDataFeed implements MarketDataFeed {
     /** Loads in flight, keyed by series + depth: charts loading the same series at once (a
      *  workspace's first boot, symbol- or timeframe-synced cells) share one request. */
     private readonly loadInflight = new Map<string, Promise<OHLCV[]>>();
+    /** Live upstreams by series key, with the listeners riding each (see {@link subscribe}). */
+    private readonly live = new Map<string, { listeners: Set<(bar: OHLCV) => void>; stop: Unsubscribe }>();
 
     constructor(
         private readonly inner: MarketDataFeed,
@@ -245,8 +247,47 @@ export class CachingDataFeed implements MarketDataFeed {
         return { bars, coveredDownTo: walkedOut ? range.from : bars[0]?.time };
     }
 
+    /**
+     * Live updates, one upstream per series: charts showing the same series ride one provider
+     * stream (or poll) and each gets every bar as its own copy. The upstream stops with its
+     * last listener.
+     */
     subscribe(cfg: MarketConfig, onBar: (bar: OHLCV) => void): Unsubscribe {
-        return this.inner.subscribe(cfg, onBar);
+        if (cfg.data && cfg.data.length > 0) return this.inner.subscribe(cfg, onBar);
+        const key = cacheKey(cfg.symbol ?? 'TEST', cfg.timeframe ?? '60', cfg.session);
+        let live = this.live.get(key);
+        if (!live) {
+            const listeners = new Set<(bar: OHLCV) => void>();
+            const created: { listeners: Set<(bar: OHLCV) => void>; stop: Unsubscribe } = { listeners, stop: () => {} };
+            this.live.set(key, created);
+            created.stop = this.inner.subscribe(cfg, (bar) => {
+                for (const listener of [...listeners]) {
+                    // One chart's failing handler must not cost the others this bar; the
+                    // error still surfaces, as it did when each chart had its own upstream.
+                    try {
+                        listener({ ...bar });
+                    } catch (err) {
+                        setTimeout(() => {
+                            throw err;
+                        });
+                    }
+                }
+            });
+            live = created;
+        }
+        const entry = live;
+        const listener = (bar: OHLCV): void => onBar(bar);
+        entry.listeners.add(listener);
+        let stopped = false;
+        return () => {
+            if (stopped) return;
+            stopped = true;
+            entry.listeners.delete(listener);
+            if (entry.listeners.size === 0 && this.live.get(key) === entry) {
+                this.live.delete(key);
+                entry.stop();
+            }
+        };
     }
 
     symbolInfo(cfg: MarketConfig): SymbolInfo | undefined {

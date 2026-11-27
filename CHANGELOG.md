@@ -84,6 +84,10 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Charts on the same market share one live price feed.** Several charts in a workspace
+  showing the same symbol and timeframe each opened their own live connection, so they
+  used more connections than needed and could briefly show different latest prices. They
+  now share one feed and always show the same price.
 - **A closed symbol search no longer loads symbol icons.** With a custom symbol ranking
   registered, closing the search before its results finished ranking still rebuilt the
   hidden list and loaded about a hundred icons nobody could see. The list now rebuilds

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { CachingDataFeed } from '../src/data/CachingDataFeed';
 import { BarStore, seriesKey } from '../src/data/BarStore';
 import type { MarketDataFeed, BarRange } from '../src/core/ports/MarketDataFeed';
@@ -382,6 +382,86 @@ describe('CachingDataFeed', () => {
 
         await cf.load({ ...main, symbol: 'SOLUSDT' }); // chart symbol changes
         expect(store.get(secKey)).toBeUndefined(); // now dropped
+    });
+});
+
+describe('CachingDataFeed live updates', () => {
+    /** An inner feed that counts upstream subscriptions and lets the test push bars. */
+    function liveFeed(): { feed: MarketDataFeed; upstreams: { cfg: MarketConfig; push: (b: OHLCV) => void; stopped: boolean }[] } {
+        const upstreams: { cfg: MarketConfig; push: (b: OHLCV) => void; stopped: boolean }[] = [];
+        const feed: MarketDataFeed = {
+            load: () => Promise.resolve([]),
+            subscribe: (cfg, onBar) => {
+                const up = { cfg, push: onBar, stopped: false };
+                upstreams.push(up);
+                return () => {
+                    up.stopped = true;
+                };
+            },
+        };
+        return { feed, upstreams };
+    }
+    const bar = (close: number): OHLCV => ({ time: 1_700_000_000_000, open: close, high: close, low: close, close, volume: 1 });
+
+    it('charts showing the same series share one live upstream, and each gets every bar', () => {
+        const { feed, upstreams } = liveFeed();
+        const cf = new CachingDataFeed(feed, new BarStore());
+        const a: OHLCV[] = [];
+        const b: OHLCV[] = [];
+        cf.subscribe(CFG, (x) => a.push(x));
+        cf.subscribe(CFG, (x) => b.push(x));
+
+        expect(upstreams).toHaveLength(1);
+        upstreams[0]!.push(bar(101));
+        expect(a.map((x) => x.close)).toEqual([101]);
+        expect(b.map((x) => x.close)).toEqual([101]);
+        expect(a[0]).not.toBe(b[0]); // separate copies
+    });
+
+    it('the upstream keeps running for the remaining charts and stops with the last one', () => {
+        const { feed, upstreams } = liveFeed();
+        const cf = new CachingDataFeed(feed, new BarStore());
+        const a: OHLCV[] = [];
+        const offA = cf.subscribe(CFG, (x) => a.push(x));
+        const b: OHLCV[] = [];
+        const offB = cf.subscribe(CFG, (x) => b.push(x));
+
+        offA();
+        offA(); // a second call is a no-op
+        expect(upstreams[0]!.stopped).toBe(false);
+        upstreams[0]!.push(bar(102));
+        expect(a).toHaveLength(0);
+        expect(b).toHaveLength(1);
+
+        offB();
+        expect(upstreams[0]!.stopped).toBe(true);
+        cf.subscribe(CFG, () => {}); // a later chart opens a fresh upstream
+        expect(upstreams).toHaveLength(2);
+    });
+
+    it('a chart whose handler throws does not cost the other charts the bar', () => {
+        vi.useFakeTimers();
+        const { feed, upstreams } = liveFeed();
+        const cf = new CachingDataFeed(feed, new BarStore());
+        const got: OHLCV[] = [];
+        cf.subscribe(CFG, () => {
+            throw new Error('chart A failed');
+        });
+        cf.subscribe(CFG, (x) => got.push(x));
+
+        upstreams[0]!.push(bar(103));
+        expect(got.map((x) => x.close)).toEqual([103]);
+        expect(() => vi.runAllTimers()).toThrow('chart A failed'); // still reported
+        vi.useRealTimers();
+    });
+
+    it('different timeframes or symbols get their own upstreams', () => {
+        const { feed, upstreams } = liveFeed();
+        const cf = new CachingDataFeed(feed, new BarStore());
+        cf.subscribe(CFG, () => {});
+        cf.subscribe({ ...CFG, timeframe: '15' }, () => {});
+        cf.subscribe({ ...CFG, symbol: 'binance:ETHUSDT' }, () => {});
+        expect(upstreams).toHaveLength(3);
     });
 });
 
