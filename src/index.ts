@@ -4,9 +4,10 @@ export type { VelaDeps, RunIndicatorResult } from './Vela';
 export { RendererControl } from './core/RendererControl';
 // The second pulse behind time displays — share one between a host clock and
 // `chart.renderer.setWallClock` so the countdown chip never reads a different second.
-// A host clock display reads `clockCorrection.now()`, the time the chips use: this
-// device's clock corrected by what live candles prove about it.
-export { SecondClock, ClockCorrection, clockCorrection, type WallClock } from './core/util/wall-clock';
+// A host clock display reads `clockCorrection.now()`, the time the chips use: the server's
+// time once `clockCorrection.setServerTimeSource` is given one, else this device's clock
+// corrected by what live candles prove about it.
+export { SecondClock, ClockCorrection, clockCorrection, type WallClock, type ServerTimeSource } from './core/util/wall-clock';
 export { NativeRenderer } from './renderers/native/NativeRenderer';
 // The drawing-toolbar VIEW as a standalone component — a workspace shell mounts ONE
 // shared bar (dock:'static') and routes it to the active chart's `chart.drawings`.

@@ -632,7 +632,10 @@ they work from the very first keystroke, before any click.
   in UTC — and in a multi-chart grid every cell reads its own market's clock. The bar's
   clock and offset show the active cell's zone. The chart settings' Time zone row (Symbol
   tab) is the same picker, Exchange included; picking a fixed zone anywhere switches the
-  whole workspace back to that zone.
+  whole workspace back to that zone. The clock reads the same time as the price axis's
+  countdown: your server's time once the page passes one to
+  `clockCorrection.setServerTimeSource`, so a computer clock that runs fast or slow moves
+  neither.
 - **Context menus** — right-click the chart body for reset view, removing all drawings or all
   indicators, and the settings dialog; the price axis for that pane's own scale (autoscale,
   scale price chart only on the main price scale, invert, regular/percent/indexed/logarithmic, and the label and level toggles); the time axis
