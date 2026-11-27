@@ -80,6 +80,10 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Timeframe shortcuts respect the active symbol.** Unavailable favorites stay saved
+  and reappear on symbols that support them. Quick entry explains when a valid
+  timeframe is unavailable and stays open so you can choose another.
+
 - **Anchored VWAP panning.** Drag inside the shaded band to pan the chart and keep the anchor in
   place. Use the VWAP line, a visible band stroke, or the anchor handle to move the drawing.
 - **An indicator removed while its script is still being prepared leaves nothing behind.** When an indicator came off the chart before its engine finished preparing the script, the chart still put up its legend row, with loading dots that never cleared, and its pane. Nothing ran the script and nothing took the row off again. A host that applies a saved state while the chart is still loading takes its scripts off and puts them back, so every slow script showed twice: the stuck row and the copy that loads. Scripts whose preparation is a network round trip, such as a server-side engine's, were the ones affected. A preparation that fails after its indicator was removed no longer reports an `indicator:error` either.

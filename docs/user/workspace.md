@@ -152,6 +152,11 @@ a pane). Tapping the lit stop restores the view.
 
 ### A timeframe the source never serves
 
+Timeframe menus dim choices the active symbol cannot serve. Favorite shortcuts hide
+those choices while keeping them saved for other symbols. Quick entry stays open with
+an explanation when the active symbol cannot serve a typed timeframe, including one
+outside the configured presets.
+
 When a cell's data source refuses the requested timeframe for good — a monthly economic
 series asked for hourly bars, which a provider signals with a `DataUnavailableError` (see
 [Adding a data provider](../contributing/adding-a-data-provider.md#failures-transient-or-permanent))

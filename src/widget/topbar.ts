@@ -318,7 +318,7 @@ export class Topbar {
         return textOf(this.i18n, m, values);
     }
 
-    constructor(host: HTMLElement, opts: TopbarOptions) {
+    constructor(host: HTMLElement, opts: TopbarOptions, private readonly onFavoriteTimeframe?: TopbarOptions['onTimeframe']) {
         this.opts = opts;
         this.host = host;
         this.timeframe = opts.timeframe;
@@ -562,10 +562,11 @@ export class Topbar {
         this.renderTfChips();
     }
 
-    /** Reflect the timeframes the current symbol's source cannot serve (greyed in the menu). */
+    /** Grey out unavailable choices in the menu and omit them from the favorite chips. */
     setUnavailableTimeframes(unavailable: readonly string[] = []): void {
         this.unavailableTimeframes = new Set(unavailable);
         this.tfMenu.setItems(this.tfItems());
+        this.renderTfChips();
     }
 
     /** Reflect the favorite-timeframe set — the quick-switch chips and the dropdown stars. */
@@ -575,12 +576,12 @@ export class Topbar {
         this.tfMenu.setItems(this.tfItems());
     }
 
-    /** Rebuild the quick-switch chips (current value changed, or the favorite set did). */
+    /** Rebuild the quick-switch chips when the current choice, favorites or availability change. */
     private renderTfChips(): void {
         const doc = this.el.ownerDocument;
         this.tfChipsHost.replaceChildren();
         const stars = this.opts.onTimeframeFavorite !== undefined;
-        const chips = stars ? favoriteTimeframeChips(this.tfFavs) : [];
+        const chips = stars ? favoriteTimeframeChips(this.tfFavs.filter((tf) => !this.unavailableTimeframes.has(tf))) : [];
         const currentIsFav = chips.includes(this.timeframe);
         // Unstarred current sits next to the caret so the favorite row never jumps.
         const shown = currentIsFav || chips.length === 0 ? chips : [...chips, this.timeframe];
@@ -594,7 +595,7 @@ export class Topbar {
                 b.setAttribute('aria-current', 'true');
             } else {
                 b.setAttribute('aria-label', this.t(TEXT.switchTimeframe, { timeframe: label }));
-                b.addEventListener('click', () => this.opts.onTimeframe(tf));
+                b.addEventListener('click', () => (this.onFavoriteTimeframe ?? this.opts.onTimeframe)(tf));
             }
             this.tfChipsHost.appendChild(b);
         }

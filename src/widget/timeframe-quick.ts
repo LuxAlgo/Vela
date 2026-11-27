@@ -39,6 +39,7 @@ const TEXT = {
     // The codes are what the field accepts, typed as is in every language.
     example: msg('widget.timeframeQuick.example', 'e.g. 15, 4H, D, 3M'),
     invalid: msg('widget.timeframeQuick.invalid', 'Not a timeframe'),
+    unavailable: msg('widget.topbar.timeframeUnavailable', 'Not available for this symbol'),
 };
 
 export interface TimeframeQuickOptions {
@@ -54,12 +55,13 @@ export class TimeframeQuick {
     private readonly input: HTMLInputElement;
     private readonly hint: HTMLElement;
     private readonly i18n: Translator | null;
+    private submission = 0;
 
     private t(text: MessageLike): string {
         return textOf(this.i18n, text);
     }
 
-    constructor(opts: TimeframeQuickOptions) {
+    constructor(opts: TimeframeQuickOptions, isAvailable?: (canonical: string) => Promise<boolean | undefined>) {
         this.i18n = opts.i18n ?? null;
         const doc = (opts.host ?? document.body).ownerDocument;
         injectChromeStyles(STYLE_ID, CSS, doc);
@@ -68,6 +70,7 @@ export class TimeframeQuick {
         this.input.setAttribute('spellcheck', 'false');
         this.hint = doc.createElement('div');
         this.hint.className = 'vela-tq-hint';
+        this.hint.setAttribute('aria-live', 'polite');
         this.dialog = new Dialog({
             title: this.t(TEXT.title),
             ...(this.i18n ? { i18n: this.i18n } : {}),
@@ -83,10 +86,20 @@ export class TimeframeQuick {
             this.input.setSelectionRange(selectionStart, selectionEnd);
             this.renderHint();
         });
-        this.input.addEventListener('keydown', (e) => {
+        this.input.addEventListener('keydown', async (e) => {
             if (e.key !== 'Enter') return;
             const parsed = parseTimeframe(this.input.value);
             if (parsed.valid && parsed.canonical !== undefined) {
+                if (isAvailable) {
+                    const submission = ++this.submission;
+                    const available = await isAvailable(parsed.canonical);
+                    if (submission !== this.submission || !this.isOpen || available === undefined) return;
+                    if (!available) {
+                        this.hint.textContent = this.t(TEXT.unavailable);
+                        this.hint.dataset.invalid = '1';
+                        return;
+                    }
+                }
                 this.close();
                 opts.onApply(parsed.canonical);
             }
@@ -131,10 +144,12 @@ export class TimeframeQuick {
     }
 
     destroy(): void {
+        ++this.submission;
         this.dialog.destroy();
     }
 
     private renderHint(): void {
+        ++this.submission;
         const raw = this.input.value.trim();
         const parsed = parseTimeframe(raw, this.i18n);
         if (!raw) {
