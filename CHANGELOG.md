@@ -154,6 +154,8 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Viewport-aware native indicators draw when added.** They receive the chart's
+  current visible range when they start, including after a timeframe change.
 - **A closed symbol search no longer loads symbol icons.** With a custom symbol ranking
   registered, closing the search before its results finished ranking still rebuilt the
   hidden list and loaded about a hundred icons nobody could see. The list now rebuilds
