@@ -2443,6 +2443,11 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
             record.engine = engine;
 
             const prepared = await engine.prepare(source, id);
+            // Removed while preparing (a host re-applying a saved chart takes its scripts off
+            // and puts them back): a placeholder mounted now would be a loading row no one
+            // owns, never run and never removed. A server-side engine's prepare is a network
+            // round trip, so this window is real.
+            if (this.registry.get(id) !== record) return;
             // An updateCode that landed during this prepare owns the record now — the
             // original source must not overwrite the replacement's schema and session.
             if (record.source !== source) return;
@@ -2462,6 +2467,8 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
             this.mountLoadingPlaceholder(id, record);
             this.executeIndicator(id, handle);
         } catch (err) {
+            // A removed indicator's failure is nobody's to report.
+            if (this.handles.get(id) !== handle) return;
             this.fail(id, handle, err);
         }
     }

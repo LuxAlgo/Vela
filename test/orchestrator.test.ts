@@ -1744,6 +1744,93 @@ function realOverlayModel(id: string, overlay: boolean, title = 'My Overlay'): I
     };
 }
 
+/** Holds every prepare until released: a server-side engine whose prepare is a network round trip. */
+class SlowPrepareEngine extends MockEngine {
+    private held: Array<() => void> = [];
+    executed: string[] = [];
+    override prepare(source: string, instanceId: string): Promise<PreparedScript> {
+        return new Promise((resolve, reject) => {
+            this.held.push(() => { super.prepare(source, instanceId).then(resolve, reject); });
+        });
+    }
+    override execute(req: ExecutionRequest, handlers: ExecutionHandlers): ExecutionSession {
+        this.executed.push((req.prepared.token as { instanceId: string }).instanceId);
+        return super.execute(req, handlers);
+    }
+    /** Let every held prepare answer. */
+    release(): void {
+        const run = this.held;
+        this.held = [];
+        for (const answer of run) answer();
+    }
+}
+
+describe('EngineOrchestrator — an indicator removed while its script is being prepared', () => {
+    it('leaves nothing behind: no loading row, no pane, no run', async () => {
+        const renderer = new FakeRenderer();
+        const engine = new SlowPrepareEngine();
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [engine], dataFeed: new MockDataFeed() });
+
+        const ind = chart.addIndicator('//@version=5\nindicator("Server toolkit")\nplot(close)');
+        await chart.ready();
+        await flush();
+        expect(renderer.mountedModels).toHaveLength(0); // still preparing
+
+        ind.remove();
+        engine.release();
+        await flush();
+
+        expect(renderer.mountedModels.filter((m) => m.id === ind.id)).toHaveLength(0);
+        expect(renderer.statuses.filter((s) => s.id === ind.id)).toHaveLength(0);
+        expect(renderer.panes.filter((p) => p.id !== 'price')).toHaveLength(0);
+        expect(engine.executed).not.toContain(ind.id);
+        expect(chart.indicators()).toHaveLength(0);
+    });
+
+    it('lets the copy added in its place load as the only one', async () => {
+        const renderer = new FakeRenderer();
+        const engine = new SlowPrepareEngine();
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [engine], dataFeed: new MockDataFeed() });
+        const source = '//@version=5\nindicator("Server toolkit")\nplot(close)';
+
+        // A saved workspace applied twice before its script answered: the first copy comes
+        // off the chart and the same script goes back on.
+        const first = chart.addIndicator(source);
+        await chart.ready();
+        await flush();
+        first.remove();
+        const second = chart.addIndicator(source);
+        await flush();
+        engine.release();
+        await flush();
+
+        const rows = new Set(renderer.mountedModels.map((m) => m.id));
+        expect([...rows]).toEqual([second.id]);
+        expect(engine.executed).toEqual([second.id]);
+        expect(chart.indicators().map((h) => h.id)).toEqual([second.id]);
+    });
+
+    it('reports no error for a removed indicator whose prepare then fails', async () => {
+        const renderer = new FakeRenderer();
+        const engine = new SlowPrepareEngine();
+        const chart = new Vela({} as unknown as HTMLElement, { live: false, volume: false }, { renderer, engines: [engine], dataFeed: new MockDataFeed() });
+        const errors: string[] = [];
+        chart.on('indicator:error', (e) => errors.push(e.id));
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+        const ind = chart.addIndicator('//@version=5\nindicator("Server toolkit")\nplot(close) // broken');
+        await chart.ready();
+        await flush();
+        ind.remove();
+        engine.release();
+        await flush();
+
+        expect(errors).toHaveLength(0);
+        expect(consoleError).not.toHaveBeenCalled();
+        consoleError.mockRestore();
+    });
+});
+
 describe('EngineOrchestrator — a no-output first model never finalizes routing', () => {
     it('keeps the prepared pane + loading state when the first run produced no output on a bar-less chart; the later real model lands normally', async () => {
         const renderer = new FakeRenderer();
