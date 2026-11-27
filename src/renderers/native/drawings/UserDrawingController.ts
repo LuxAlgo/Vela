@@ -6,9 +6,13 @@ import type { VelaTheme } from '../../../core/options';
 import type {
     Drawing,
     DrawingIntent,
+    DrawingHit,
     DrawingMode,
     DrawingPoint,
+    DrawingReadoutRow,
     DrawingSeriesGateway,
+    DrawingSnapSource,
+    SnapTarget,
     DrawingToolDefaults,
     DrawingToolTemplate,
     DrawingTypeKey,
@@ -18,7 +22,8 @@ import type {
     SnapMode,
     ToolbarDefinition,
 } from '../../../core/drawings';
-import { applyToolDefaults, captureToolDefaults, deserializeDrawing, getDrawingType, resetDrawingSettings, shownOnTimeframe, Callout, Magnifier, TextLabel } from '../../../core/drawings';
+import { applyToolDefaults, captureToolDefaults, deserializeDrawing, getDrawingType, reportDrawingError, resetDrawingSettings, reviveDrawing, shownOnTimeframe, Callout, Magnifier, TextLabel } from '../../../core/drawings';
+import { formatTimeStamp } from '../chrome/ticks';
 import type { Unsubscribe } from '../../../core/util/types';
 import type { DrawingActionView } from '../../../core/ports/IChartRenderer';
 import { contrastColor, namedFontSize, labelLineHeight, TEXT_FRAME_INSET, TEXT_FRAME_RISE } from '../../shared/drawing-geometry';
@@ -84,8 +89,8 @@ export interface UserDrawingDeps {
     i18n?(): Translator;
 }
 
-/** No interaction targets on the interleave layers — handles always paint in front. */
-const EMPTY_TARGETS: PaintTargets = {};
+/** How near the pointer a host's snap target (or another drawing's) has to be to take the point. */
+const SNAP_TARGET_PX = 8;
 
 /**
  * Which interleave layer a drawing belongs to: the first series boundary at-or-above its z —
@@ -122,6 +127,10 @@ export class UserDrawingController implements IDrawingsRendererPort {
     private lastBounds = new Map<string, readonly number[]>();
     private selectedIds = new Set<string>(); // selected drawings (handles shown); [first] drives the popup
     private hoveredId: string | null = null; // the drawing under the cursor (its handles show)
+    private hoverPart: string | null = null; // the named part of it under the cursor
+    private hoverCursor: string | null = null; // that part's cursor, when it names one
+    private hoverTip: { text: string; x: number; y: number } | null = null; // that part's tip, at the pointer
+    private snapSources: DrawingSnapSource[] = []; // the host's extra magnet targets
     private activeTool: DrawingTypeKey | null = null;
     private activeToolDefaults: DrawingToolDefaults | undefined; // the armed tool's remembered settings (seed the placement ghost)
     private toolTemplates: Readonly<Partial<Record<DrawingTypeKey, DrawingToolTemplate[]>>> = {}; // saved styles, per tool
@@ -207,10 +216,125 @@ export class UserDrawingController implements IDrawingsRendererPort {
                 this.syncLift(); // a live drag paints its drawing on top, out of the series stack
                 this.render();
             },
-            openSettings: (id, x, y) => this.openSettingsById(id, x, y),
-            snap: (pt, paneId, mode, cursorPx) => this.deps.snap(pt, paneId, mode, cursorPx),
+            openSettings: (id, x, y) => this.onDrawingClick(id, x, y),
+            snap: (pt, paneId, mode, cursorPx, skipId) => this.snapPoint(pt, paneId, mode, cursorPx, skipId),
             toolDefaults: () => this.activeToolDefaults,
         });
+        this.painter.onAsset = this.invalidate;
+    }
+
+    /** Something a drawing paints from arrived late (a computed result, an image): repaint
+     *  both this layer and the layers under the series. */
+    private readonly invalidate = (): void => {
+        this.invalidateSlices();
+        this.render();
+    };
+
+    /** Core push: the host's extra magnet targets. */
+    setSnapSources(sources: readonly DrawingSnapSource[]): void {
+        this.snapSources = [...sources];
+    }
+
+    /**
+     * The magnet, with more to snap to than the candles: the host's sources and the points
+     * the other drawings offer. A target takes the point from close by, in weak and strong
+     * mode alike, and only when it is nearer than the candle point the magnet found. A level
+     * (a price alone) or a time alone snaps that axis and leaves the other to the candle.
+     */
+    private snapPoint(pt: DrawingPoint, paneId: string, mode: SnapMode, cursorPx?: { x: number; y: number }, skipId?: string): DrawingPoint {
+        const candle = this.deps.snap(pt, paneId, mode, cursorPx);
+        if (mode === 'off') return candle;
+        const targets: SnapTarget[] = [];
+        // A source or a tool that throws offers nothing: the pointer path must not fail on it.
+        for (const source of this.snapSources) {
+            try {
+                targets.push(...source({ paneId, time: pt.time, price: pt.price }));
+            } catch (err) {
+                reportDrawingError('snap source', 'targets', err);
+            }
+        }
+        for (const d of this.onScreen()) {
+            if (!d.visible || d.paneId !== paneId || d.id === skipId) continue;
+            try {
+                targets.push(...d.snapTargets());
+            } catch (err) {
+                reportDrawingError(d.type, 'snapTargets', err);
+            }
+        }
+        if (targets.length === 0) return candle;
+        const proj = this.deps.projector();
+        const cx = cursorPx?.x ?? proj.xOf(pt.time);
+        const cy = cursorPx?.y ?? proj.yOf(pt.price, paneId) ?? 0;
+        const snapped = candle.time !== pt.time || candle.price !== pt.price;
+        const candleY = proj.yOf(candle.price, paneId);
+        let best = candle;
+        let bestDist = snapped && candleY != null ? Math.hypot(proj.xOf(candle.time) - cx, candleY - cy) : Infinity;
+        for (const t of targets) {
+            const y = t.price !== undefined ? proj.yOf(t.price, paneId) : cy;
+            if (y == null) continue;
+            const dist = Math.hypot(t.time !== undefined ? proj.xOf(t.time) - cx : 0, y - cy);
+            // Written so a target that is not a number (NaN compares false) is left out too.
+            if (!(dist <= SNAP_TARGET_PX) || !(dist < bestDist)) continue;
+            best = { time: t.time ?? candle.time, price: t.price ?? candle.price };
+            bestDist = dist;
+        }
+        return best;
+    }
+
+    /** A click on a drawing (press and release, no drag): tell the host where it landed,
+     *  let the drawing act on it, and otherwise open its settings bar. */
+    private onDrawingClick(id: string, x: number, y: number): void {
+        const proj = this.deps.projector();
+        const hit = this.drawings.find((d) => d.id === id);
+        if (!hit) return;
+        const part = hit.hitInfo(x, y, proj, HIT_TOLERANCE)?.part ?? null;
+        const pt = proj.pxToPoint(x, y, hit.paneId);
+        this.emit({ kind: 'click', id, part, time: pt.time, price: pt.price });
+        // A listener may have edited the drawing: the instance is then a new one.
+        const d = this.drawings.find((x) => x.id === id);
+        if (!d) return;
+        if (!d.locked && d.onClick(part)) {
+            this.render();
+            this.emit({ kind: 'edit', doc: d.serialize() });
+            return;
+        }
+        this.openSettingsById(id, x, y);
+    }
+
+    /** The drawing under a plot pixel and the part of it there. */
+    drawingAt(x: number, y: number): { id: string; part: string | null } | null {
+        const proj = this.deps.projector();
+        const hit = topDrawingAt(this.onScreen(), x, y, proj, HIT_TOLERANCE);
+        return hit ? { id: hit.id, part: hit.hitInfo(x, y, proj, HIT_TOLERANCE)?.part ?? null } : null;
+    }
+
+    hoveredDrawing(): { id: string; part: string | null } | null {
+        return this.hoveredId ? { id: this.hoveredId, part: this.hoverPart } : null;
+    }
+
+    /** A drawing's price at a time, from the instance painted here (it holds what the
+     *  drawing computed from the chart's bars). */
+    drawingValueAt(id: string, time: number): number | null {
+        return this.drawings.find((d) => d.id === id)?.valueAt(time, this.deps.projector()) ?? null;
+    }
+
+    drawingReadout(id: string): DrawingReadoutRow[] {
+        return this.drawings.find((d) => d.id === id)?.readout() ?? [];
+    }
+
+    /** The values the visible drawings report, one group per drawing that reports any. */
+    readoutGroups(): Array<{ name: string; rows: Array<{ label: string; value: string; color: string }> }> {
+        const out: Array<{ name: string; rows: Array<{ label: string; value: string; color: string }> }> = [];
+        for (const d of this.onScreen()) {
+            if (!d.visible) continue;
+            const rows = d.readout();
+            if (rows.length === 0) continue;
+            out.push({
+                name: getDrawingType(d.type, this.i18n())?.label ?? d.type,
+                rows: rows.map((r) => ({ label: this.t(r.label), value: r.value, color: r.color ?? '' })),
+            });
+        }
+        return out;
     }
 
     /** The chart's translator (English until the renderer hands one over). */
@@ -287,7 +411,14 @@ export class UserDrawingController implements IDrawingsRendererPort {
     }
 
     syncDrawings(docs: readonly SerializedDrawing[]): void {
-        this.drawings = docs.map((d) => deserializeDrawing(d)).filter((d): d is Drawing => d != null);
+        // Every drawing is rebuilt from its record (one of an unregistered type as a
+        // placeholder); each new instance is handed the one it replaces, so what a drawing
+        // computed from the chart's bars is not computed again for a re-sync.
+        const prev = new Map(this.drawings.map((d) => [d.id, d]));
+        this.drawings = docs.map((doc) => reviveDrawing(doc));
+        for (const d of this.drawings) d.mount({ prev: prev.get(d.id) ?? null, invalidate: this.invalidate });
+        // The drawing under the pointer can vanish from under it (deleted, undone, replaced).
+        if (this.hoveredId && !this.drawings.some((d) => d.id === this.hoveredId)) this.setHover(null, null, 0, 0);
         // The edited drawing can vanish from under the editor (deleted, erased, undone) — take the
         // editor with it instead of leaving a live textarea over nothing.
         if (this.textEditor && !this.editedDrawing(this.textEditor.id)) this.closeTextEditor();
@@ -307,22 +438,35 @@ export class UserDrawingController implements IDrawingsRendererPort {
     /**
      * Union of the visible drawings' price ranges on `paneId` whose time extent
      * intersects [fromTime, toTime]. Hidden drawings and full-width references
-     * (hline → null extent) are handled too. Kept as the seam for a future
-     * per-drawing autoscale opt-in — the renderer does not fold this in today.
+     * (hline → null extent) are handled too. `only` narrows it to some of the drawings.
+     * The pane's scale does not use this as it is (see {@link autoscaleRangeForPane}): it
+     * answers "what do the drawings span", for a caller that wants to frame them.
      */
-    priceRangeForPane(paneId: string, fromTime: number, toTime: number): { min: number; max: number } | null {
+    priceRangeForPane(paneId: string, fromTime: number, toTime: number, only?: (d: Drawing) => boolean): { min: number; max: number } | null {
         let lo = Infinity;
         let hi = -Infinity;
         for (const d of this.drawings) {
-            if (!d.visible || d.paneId !== paneId) continue;
+            if (!d.visible || d.paneId !== paneId || (only && !only(d))) continue;
             const ext = d.timeExtent();
             if (ext && (ext.max < fromTime || ext.min > toTime)) continue; // off-screen in time
             const pr = d.priceRange();
-            if (!pr) continue;
+            // A range that is not two numbers (a tool's own, computed from nothing) spans nothing.
+            if (!pr || !Number.isFinite(pr.min) || !Number.isFinite(pr.max)) continue;
             if (pr.min < lo) lo = pr.min;
             if (pr.max > hi) hi = pr.max;
         }
         return lo <= hi ? { min: lo, max: hi } : null;
+    }
+
+    /**
+     * What the pane's price scale has to keep in view for its drawings: the range of the
+     * ones that ask for it (`Drawing.autoscales()`) and show on this timeframe. An ordinary
+     * drawing never widens the scale: placing one in the empty margin must not pull the
+     * window after the cursor.
+     */
+    autoscaleRangeForPane(paneId: string, fromTime: number, toTime: number): { min: number; max: number } | null {
+        const barMs = this.deps.chartBarMs();
+        return this.priceRangeForPane(paneId, fromTime, toTime, (d) => d.autoscales() && shownOnTimeframe(d.showOn, barMs));
     }
 
     setActiveTool(type: DrawingTypeKey | null, lastStyle?: SerializedDrawing['style'], defaults?: DrawingToolDefaults): void {
@@ -404,6 +548,10 @@ export class UserDrawingController implements IDrawingsRendererPort {
     }
 
     setSelection(ids: readonly string[]): void {
+        // A shape drawing painted under the series shows its selected state there, and that
+        // layer only repaints with the data.
+        const changed = [...ids.filter((id) => !this.selectedIds.has(id)), ...[...this.selectedIds].filter((id) => !ids.includes(id))];
+        if (changed.some((id) => this.underSeries(id))) this.invalidateSlices();
         this.selectedIds = new Set(ids);
         // A multi-selection gets ONE bar for all of its drawings; when it shrinks back to a single
         // drawing that drawing's own bar takes over, and an emptied selection takes the bar away.
@@ -557,20 +705,46 @@ export class UserDrawingController implements IDrawingsRendererPort {
      *  selected, so a hovered candidate doesn't already read as selected. */
     private updateHover(x: number, y: number, mod = false): void {
         let id: string | null = null;
+        let info: DrawingHit | null = null;
         if (!mod && this.activeTool == null && !this.interaction.isPlacing() && !this.interaction.isDragging()) {
-            id = topDrawingAt(this.onScreen(), x, y, this.deps.projector(), HIT_TOLERANCE)?.id ?? null;
+            const proj = this.deps.projector();
+            const hit = topDrawingAt(this.onScreen(), x, y, proj, HIT_TOLERANCE);
+            id = hit?.id ?? null;
+            info = hit ? hit.hitInfo(x, y, proj, HIT_TOLERANCE) : null;
         }
-        if (id !== this.hoveredId) {
+        this.setHover(id, info, x, y);
+    }
+
+    /** Record what the pointer is over: the drawing, the part of it, and that part's cursor
+     *  and tip. A change of drawing or part is reported upstream; a tip follows the pointer. */
+    private setHover(id: string | null, info: DrawingHit | null, x: number, y: number): void {
+        const part = info?.part ?? null;
+        const hadTip = this.hoverTip != null;
+        this.hoverCursor = info?.cursor ?? null;
+        this.hoverTip = info?.tip ? { text: info.tip, x, y } : null;
+        const changed = id !== this.hoveredId || part !== this.hoverPart;
+        if (changed) {
+            const before = this.hoveredId;
             this.hoveredId = id;
-            this.render();
+            this.hoverPart = part;
+            // A drawing painted under the series shows its hover state there: that layer
+            // only repaints with the data.
+            if (this.underSeries(before) || this.underSeries(id)) this.invalidateSlices();
+            this.intentCb?.({ kind: 'hover', id, part });
         }
+        if (changed || hadTip || this.hoverTip) this.render();
+    }
+
+    /** Whether the drawing paints (as shapes) on a layer under the series. */
+    private underSeries(id: string | null): boolean {
+        const d = id ? this.drawings.find((x) => x.id === id) : null;
+        return !!d && typeof d.shapes === 'function' && this.isInterleaved(d);
     }
 
     /** Drop the hover (its handles) — the pointer no longer reaches the drawings. */
     clearHover(): void {
-        if (this.hoveredId == null) return;
-        this.hoveredId = null;
-        this.render();
+        if (this.hoveredId == null && !this.hoverTip) return;
+        this.setHover(null, null, 0, 0);
     }
 
     pointerUp(x: number, y: number, snap: SnapMode = 'off'): void {
@@ -810,7 +984,8 @@ export class UserDrawingController implements IDrawingsRendererPort {
     cursorAt(x: number, y: number): string | null {
         if (this.eraserMode) return 'pointer'; // signal "click to delete" while erasing
         if (this.activeTool == null && this.magnifierChipAt(x, y)) return 'pointer'; // the chip is clickable
-        return this.interaction.cursorAt(x, y);
+        const cursor = this.interaction.cursorAt(x, y);
+        return cursor && this.hoverCursor ? this.hoverCursor : cursor; // a part may name its own
     }
 
     /** Right-click: an explicit escape back to the pointer. Cancels an in-progress
@@ -1029,7 +1204,14 @@ export class UserDrawingController implements IDrawingsRendererPort {
             sctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
             this.painter.seriesLook = this.deps.seriesLook();
             this.painter.i18n = this.i18n();
-            this.painter.paintAll(sctx, drawings, proj, theme, EMPTY_TARGETS);
+            // The body only: handles and the shapes marked `front` paint on the top canvas.
+            // A shape drawing still reads its selection and hover state here.
+            this.painter.bodyOnly = true;
+            try {
+                this.painter.paintAll(sctx, drawings, proj, theme, { selected: this.selectedIds, hovered: this.hoveredId, hoverPart: this.hoverPart }, false);
+            } finally {
+                this.painter.bodyOnly = false;
+            }
             const slices = out.get(paneId) ?? [];
             slices.push({ beforeZ, canvas });
             out.set(paneId, slices);
@@ -1056,6 +1238,7 @@ export class UserDrawingController implements IDrawingsRendererPort {
         const targets: PaintTargets = {
             selected: this.selectedIds,
             hovered: this.hoveredId,
+            hoverPart: this.hoverPart,
             dragged: this.interaction.activeDragId(),
             mutedLabel: edited instanceof TextLabel ? edited.id : null,
         };
@@ -1067,7 +1250,9 @@ export class UserDrawingController implements IDrawingsRendererPort {
         const onTop = (d: Drawing) => !this.isInterleaved(d) || this.lifted.has(d.id);
         const shown = this.onScreen();
         this.painter.paintAll(ctx, shown.filter(onTop), proj, this.deps.theme(), targets);
-        this.painter.paintHighlights(ctx, shown.filter((d) => !onTop(d)), proj, handleIdsFor(targets));
+        const under = shown.filter((d) => !onTop(d));
+        this.painter.paintFront(ctx, under, proj, this.deps.theme(), targets);
+        this.painter.paintHighlights(ctx, under, proj, handleIdsFor(targets));
         // A Ctrl-drag moves COPIES that are not in the store yet: paint them here, in full and with
         // handles, so they read as the real drawings they are about to become.
         const clones = this.interaction.dragClones();
@@ -1082,7 +1267,12 @@ export class UserDrawingController implements IDrawingsRendererPort {
         this.emitDraft(ghost);
         // Armed-tool placement prompt (a type's `placementHint`): a bottom-center pill
         // telling the user what gesture to perform; it clears once placement starts.
-        if (this.activeTool && !ghost) {
+        // A tool placed in several steps may prompt each one; that prompt stays up while
+        // placing, since it tells the next click apart from the last.
+        const step = this.interaction.placingStep();
+        const stepHint = step ? step.draft.stepHint(step.index) : null;
+        if (stepHint) this.painter.paintPlacementHint(ctx, this.t(stepHint), this.deps.theme(), proj.width, proj.height);
+        else if (this.activeTool && !ghost) {
             const hint = getDrawingType(this.activeTool, this.i18n())?.placementHint;
             if (hint) this.painter.paintPlacementHint(ctx, hint, this.deps.theme(), proj.width, proj.height);
         }
@@ -1098,6 +1288,11 @@ export class UserDrawingController implements IDrawingsRendererPort {
         if (this.measure.isActive()) this.measure.paint(ctx, proj, this.deps.theme(), this.i18n());
         const marquee = this.interaction.marqueeRect();
         if (marquee) this.painter.paintMarquee(ctx, marquee);
+        // Axis tags sit in the price gutter and on the time strip, outside every pane's clip.
+        const zone = this.deps.timeZone?.() ?? 'UTC';
+        const barMs = this.deps.chartBarMs();
+        this.painter.paintAxisTags(ctx, shown, proj, this.deps.theme(), (time) => formatTimeStamp(time, zone, barMs, this.i18n().format), targets);
+        if (this.hoverTip) this.painter.paintTip(ctx, this.hoverTip.text, this.hoverTip.x, this.hoverTip.y, this.deps.theme(), proj.width);
     }
 
     destroy(): void {

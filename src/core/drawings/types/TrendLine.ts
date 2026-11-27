@@ -4,6 +4,7 @@ import type { Projector } from '../geometry';
 import type { SettingsSchema } from '../schema';
 import { LINE_FIELDS, TEXT_FIELDS } from '../schema';
 import { distToSegment, extendRay, handleAt } from '../hittest';
+import { lineValueAt } from '../shapes';
 
 /** A two-point trend line. Both endpoints move freely on time + price; either end can run on
  *  to the chart edge. */
@@ -28,6 +29,11 @@ export class TrendLine extends Drawing {
     extension(): 'none' | 'left' | 'right' | 'both' {
         const { extendLeft: l, extendRight: r } = this.style;
         return l && r ? 'both' : l ? 'left' : r ? 'right' : 'none';
+    }
+
+    override valueAt(time: number, proj?: Projector | null): number | null {
+        const [a, b] = this.anchors;
+        return a && b ? lineValueAt(a, b, time, { extend: this.extension(), paneId: this.paneId, proj }) : null;
     }
 
     hitTest(px: number, py: number, proj: Projector, tol: number): boolean {

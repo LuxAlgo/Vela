@@ -8,7 +8,9 @@
 import { msg } from '../i18n/message';
 import type { MessageLike } from '../i18n/types';
 
-export type FieldKind = 'color' | 'number' | 'select' | 'lineStyle' | 'boolean' | 'text' | 'opacity';
+/** `'readout'` is a read-only row: it shows the value at its path (`'results.<key>'`) and
+ *  never writes. */
+export type FieldKind = 'color' | 'number' | 'select' | 'lineStyle' | 'boolean' | 'text' | 'opacity' | 'readout';
 
 export interface SettingsField {
     /** Dot-path into the drawing, e.g. `'style.lineColor'`, `'text.value'`, `'locked'`. */
@@ -16,6 +18,16 @@ export interface SettingsField {
     /** What the settings show; a message reads in the chart's language. */
     label: MessageLike;
     kind: FieldKind;
+    /** A number field whose stored value is a PRICE: the settings dialog adds a unit switch
+     *  (price, points, percent, ticks) beside the input, and what is typed in any unit is
+     *  written back as a price. `base` is the path of the reference price on the drawing
+     *  (for example `'anchors.0.price'`). */
+    unit?: { base: string };
+    /** The title of a block of its own in the settings dialog: fields naming the same
+     *  section share it, in the order the sections first appear. */
+    section?: MessageLike;
+    /** Also show this control on the quick-settings bar. */
+    quick?: boolean;
     /** number/opacity bounds. */
     min?: number;
     max?: number;

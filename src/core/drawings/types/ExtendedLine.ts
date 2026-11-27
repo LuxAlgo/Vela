@@ -1,5 +1,6 @@
 import type { Projector } from '../geometry';
 import { distToSegment, extendRay } from '../hittest';
+import { lineValueAt } from '../shapes';
 import { TwoPointLine } from './TwoPointLine';
 
 /** A straight line through two anchors, extended to both chart edges. */
@@ -11,6 +12,11 @@ export class ExtendedLine extends TwoPointLine {
         if (!p) return false;
         const [ex1, ey1, ex2, ey2] = extendRay(p[0], p[1], p[2], p[3], 'both', proj.width, proj.height);
         return distToSegment(px, py, ex1, ey1, ex2, ey2) <= tol;
+    }
+
+    override valueAt(time: number, proj?: Projector | null): number | null {
+        const [a, b] = this.anchors;
+        return a && b ? lineValueAt(a, b, time, { extend: 'both', paneId: this.paneId, proj }) : null;
     }
 
     // Spans the full width in both directions → never cull by time.

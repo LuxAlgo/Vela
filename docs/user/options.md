@@ -104,17 +104,20 @@ the bar while still driving drawings from code, or an object to customize which 
 | Field | Type | Effect |
 |---|---|---|
 | `toolbar` | boolean | Show/hide the bar (default `true`). |
-| `tools` | `DrawingTypeKey[]` | Allow-list of tools; each is bucketed into its own group. |
-| `groups` | `{ id, label, tools }[]` | Explicit, custom-labelled groups (unregistered/empty groups are dropped). |
+| `tools` | `DrawingTypeKey[]` | Allow-list of tools; each is bucketed into its own group. The key of a [custom tool](./drawing-tools.md#custom-tools) works here like a built-in one, and a custom tool the list leaves out stays off the toolbar. |
+| `groups` | `{ id, label, tools }[]` | Explicit, custom-labelled groups (a tool that is not registered is left out, and a group left empty is dropped). Custom tool keys work here too. |
 | `clearOnSymbolChange` | boolean | The drawings belong to the chart's symbol: switching to another symbol removes them all (default `false`: they stay). See [Drawings per symbol](./drawing-tools.md#drawings-per-symbol). |
 
 ```js
 // hide the bar but keep the programmatic API:
 new Vela('#chart', { data: bars, drawings: false });
 
-// only a few tools:
-new Vela('#chart', { data: bars, drawings: { tools: ['trendline', 'hline', 'box'] } });
+// only a few tools, one of them registered by your app:
+new Vela('#chart', { data: bars, drawings: { tools: ['trendline', 'hline', 'box', 'acme.spiral'] } });
 ```
+
+A key in `tools` or `groups` whose tool is not registered yet is left out, and joins the toolbar
+when the tool registers.
 
 See [Drawing tools](./drawing-tools.md) for the full catalogue and the `chart.drawings` API.
 

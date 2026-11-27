@@ -80,19 +80,23 @@ export interface LegendActionView {
 
 /**
  * One HOST-CONTRIBUTED action of a drawing, resolved by the shell for one drawing: an icon
- * button on the drawing's selection toolbar and a labelled button in its settings dialog.
- * Plain data plus a bound `run` thunk, like {@link LegendActionView}.
+ * button on the drawing's selection toolbar, a labelled button in its settings dialog, a
+ * row of the toolbar's overflow menu. Plain data plus a bound `run` thunk, like
+ * {@link LegendActionView}.
  */
 export interface DrawingActionView {
     id: string;
     /** Icon id in the core icon registry (`registerIcon`). */
     icon: string;
-    /** The toolbar button's tooltip and accessible name, and the settings dialog button's text. */
+    /** The toolbar button's tooltip and accessible name, and the text of the settings dialog
+     *  button and of the menu row. */
     label: string;
     /** Show it on the selection toolbar. */
     toolbar: boolean;
     /** Show it in the settings dialog. */
     settings: boolean;
+    /** Show it as a row of the selection toolbar's overflow menu. */
+    menu: boolean;
     run(): void;
 }
 

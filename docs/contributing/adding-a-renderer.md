@@ -106,7 +106,7 @@ The descriptor covers these fields. Some are tri-state (for example `native` / `
 | Trade markers (`trades` flag) | no | optional — inside the **Drawings** tier family: paints `IndicatorModel.trades` (order-fill arrows + labels + fill-price ticks on the price pane) and honors the `tradeMarkers` feature; absent/false ⇒ the channel is carried but never painted |
 | Inputs UI (you provide the in-chart settings dialog) | no | optional — **Inputs UI** tier |
 | Contributed legend actions (`setLegendActions?`) | no | optional — inside the **Inputs UI** tier: the shells wire `registerLegendAction` through it; without it those buttons simply never show |
-| Contributed drawing actions (`setDrawingActions?`) | no | optional — inside the **Drawings** tier family: the shells wire `registerDrawingAction` through it, and the renderer shows the actions on its selected-drawing toolbar and settings dialog; without it those buttons simply never show |
+| Contributed drawing actions (`setDrawingActions?`) | no | optional — inside the **Drawings** tier family: the shells wire `registerDrawingAction` through it, and the renderer shows the actions on its selected-drawing toolbar, in that toolbar's overflow menu and in its settings dialog, as each action's `toolbar`, `menu` and `settings` flags say; without it those buttons simply never show |
 | Legend overview override (`setLegendOverviewAction?`) | no | optional — inside the **Inputs UI** tier: a multi-chart shell replaces the legend's fold toggle with its own indicator-overview entry point; without it the inline fold stays |
 | Per-indicator settings opener (`openIndicatorSettings?`) | no | optional — inside the **Inputs UI** tier: host chrome (the object tree's action menu) opens one indicator's settings dialog programmatically; without it that menu entry never shows |
 
@@ -130,17 +130,30 @@ round-trips regardless, because the model is **core-owned** (see
 [ADR 0005](../architecture/adr/0005-core-owns-user-drawings.md)).
 
 To support it, declare the `userDrawings` capability and expose a **second port**,
-`IDrawingsRendererPort` (distinct from the main renderer port). The contract is small and, like the
-rest of the system, **JSON-only**:
+`IDrawingsRendererPort` (distinct from the main renderer port). The contract is small, and a
+drawing crosses it only as a **plain JSON record**:
 
 - **Commands down** — the core calls `setToolbar` (an inert toolbar definition: groups + tools + SVG
   icon strings), `showToolbar`, `syncDrawings` (an array of flat `SerializedDrawing` records),
   `setActiveTool`, and `setSelection`. You **rehydrate** each `SerializedDrawing` into something you
   can paint and hit-test, and discard it on the next sync — you hold no authoritative model state.
+  The toolbar definition is pushed again whenever a host registers or removes a drawing tool, so
+  render it each time it arrives. One optional command joins them: `setSnapSources` hands you
+  the host's extra magnet targets, functions you ask for points and levels near the pointer
+  while a drawing is placed or reshaped. Omit it if you have no magnet.
 - **One channel up** — a single `onDrawingIntent` callback through which you report every user
   gesture as a discriminated-union intent (arm a tool, create, edit, edit-many, delete, select,
   reorder, undo/redo, copy/paste/duplicate). The core applies it to the store and syncs back down.
-  The loop is one-directional; you never mutate the model yourself.
+  The loop is one-directional; you never mutate the model yourself. Two intents carry no change
+  to the model and are optional: `hover` (the pointer moved onto a drawing, onto another part
+  of it, or off the drawings) and `click` (a press and release on a drawing, with the part and
+  the time and price under the pointer). The core re-emits them as `drawing:hover` and
+  `drawing:click`.
+- **Four optional queries** — `drawingAt(x, y)` and `hoveredDrawing()` return the drawing under
+  a plot pixel or under the pointer and the part of it there. `drawingValueAt(id, time)` and
+  `drawingReadout(id)` answer from the instance you paint, which holds what the drawing computed
+  from the chart's bars. Without the first two, `chart.drawings.at()` and `hovered()` return
+  `null`; without the last two, the core answers `valueAt()` and `readout()` from its own model.
 - **The `Projector` seam** — you supply data↔pixel closures (time/price ↔ x/y). The model's anchors
   are **data-space only** (epoch-ms + price); you resolve pixels on demand each frame and store
   none, so drawings survive pan/zoom/reload. This mirrors the coordinate/time resolution you already
@@ -149,6 +162,42 @@ rest of the system, **JSON-only**:
 Everything else — the interaction state machine, hit-testing, the toolbar DOM, the per-drawing
 settings popup, the magnet/eraser/measure modes — lives **behind your port**, on your side, and is
 yours to build however suits your surface. Nothing about it crosses into the core.
+
+### Tools a host registers
+
+A host can add drawing tools of its own
+([`defineDrawing`](./plugin-sdk.md#drawing-tools--definedrawing)). Their records cross the port
+like any other, with a type key you have never seen. To show them, your renderer needs no
+knowledge of the tool:
+
+- **Rehydrate with `reviveDrawing(record)`.** It returns the real drawing for a registered
+  type, and for any other a placeholder that keeps the record and paints as a dashed outline.
+  It never returns `null`, so no drawing drops out of your paint.
+- **Paint the shape list.** A drawing that has a `shapes` method describes itself:
+  `drawing.shapes(shapeContext(drawing.shapeData(proj), proj, env))` returns its shapes for the
+  frame, in plot pixels. `shapeContext` builds the context from the drawing's data and your
+  `Projector`; `env` adds what only you know: the interaction state (`view`), the chart's
+  colors (`theme`) and a price formatter (`price`). The list comes from a host's tool: pass
+  it through `usableShapes(drawing.type, list)`, which leaves out what is not a shape of a known
+  form, and catch a `shapes` that throws, so one tool cannot stop your frame. Draw the list in order. Shapes marked
+  `front` go over the series even when the drawing sits under them, and `tag` shapes are chips
+  on the price or time axis, outside the plot.
+- **Call `drawing.mount({ prev, invalidate })`** on every instance you build in `syncDrawings`.
+  `prev` is the instance of the same drawing you are replacing, or `null`: the new one takes
+  over what the old one computed instead of computing it again. `invalidate` is your repaint
+  request, called when an asynchronous result lands.
+- **Feed the projector.** A tool's `compute` reads the chart's bars through
+  `Projector.barsInRange`, and runs again when `Projector.barsKey` changes: a fingerprint of the
+  bars (`count|firstTime|lastTime|series|lastBar`, where `series` changes each time the whole
+  series is set, so another symbol on the same time grid reads as a reset). Without `barsKey` a computed drawing never
+  follows new bars. `Projector.barMs` is one chart bar in milliseconds.
+- **Use the drawing's own answers** for the rest: `hitTest` and `hitInfo` (the part, its
+  cursor and its tip), `handlePoints` and `dragHandle`, `placeAnchor` for each placement step,
+  `onClick`, `snapTargets()` for the magnet, and `autoscales()` with `priceRange()` when you fit
+  a pane's scale.
+
+`shapeContext`, `usableShapes`, `hitShapes`, `shapesBounds` and the shape types are exported from
+`@luxalgo/vela/plugin`.
 
 ### Depth — the optional `drawingDepth` flag
 
@@ -231,7 +280,7 @@ That alone gives you candles, panes, and basic indicator plots — a usable char
 - **Tables** — engine-emitted table dashboards via the table overlay. Flips the `Tables` flag.
 - **Inputs UI** — the in-chart settings dialog, the input-change events it raises, and the programmatic-input-sync path from group 4 (reuse the shared inputs UI). Flips the `Inputs UI` flag.
 - **External crosshair** — the optional `setExternalCrosshair(time, price?)` method: draw a dimmed **ghost crosshair** at a data-space position pushed from outside (multi-chart sync). Detected by presence (no capability flag); the one contract rule: a ghost must **never** re-emit `onCrosshairMove` — that one-way flow is what keeps the sync loop-free.
-- **Data-window readout** — the optional `getDataWindowReadout()` method: hand back the bar under the crosshair (the latest bar when the cursor is off the plot) with its values already formatted on the scale of the pane each one belongs to, grouped per indicator. Detected by presence (no capability flag); host panels such as the widget's data window read it through `chart.renderer.dataWindowReadout()` and simply show nothing without it.
+- **Data-window readout** — the optional `getDataWindowReadout()` method: hand back the bar under the crosshair (the latest bar when the cursor is off the plot) with its values already formatted on the scale of the pane each one belongs to, grouped per indicator. The native renderer adds one group per user drawing that reports values (`drawing.readout()`), after the indicators. Detected by presence (no capability flag); host panels such as the widget's data window read it through `chart.renderer.dataWindowReadout()` and simply show nothing without it.
 - **Loading affordance** — the optional `setLoading(loading)` method: the core raises it while a market load is in flight with **no bars painted yet** (the first load, and every symbol/timeframe switch — the core blanks the old series first), and drops it with the first series it hands over, or when a load fails or parks. Show something subtle (the native renderer pulses three small dots at the plot center), and hide content that does **not** ride the bar series — corner-anchored tables stay painted through an emptied chart unless you hide them, while bar-mapped content vanishes with the series on its own. Plugins get the same window as the `load:start` / `load:end` chart events. Without the method the chart is simply blank while loading. Detected by presence (no capability flag).
 - **Wall clock** — the optional `setWallClock(clock)` method, for a renderer with time-of-day chrome (the native renderer's countdown-to-bar-close chip): subscribe your once-a-second repaint to the host's `WallClock` pulse instead of your own timer, so the chip and a host clock display read the same second; `null` means run your own pulse again (use the exported `SecondClock`, which fires just past each second boundary). Detected by presence (no capability flag).
 - **Animations / polish** — transitions and presentation refinements.

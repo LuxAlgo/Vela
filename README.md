@@ -57,7 +57,7 @@ touching the rest.
   menus, dialogs, drawers, tooltips), form primitives and data components. Next to it, the
   `KeymapManager`. Upgrading from 0.9? See [Upgrading](docs/user/upgrading.md).
 - **`@luxalgo/vela/plugin`**: the extension SDK. Chart types, renderer layers, native
-  indicators.
+  indicators, drawing tools.
 - **`@luxalgo/vela/providers/*`**: data providers (Binance, Coinbase, Hyperliquid),
   ready to register. Or supply your own bars and stay fully offline.
 
@@ -150,7 +150,7 @@ new VelaWorkspace('#chart', {
 
 ## Extending (plugin SDK)
 
-Custom chart types and canvas layers register through the public SDK, no fork needed:
+Custom chart types, canvas layers and drawing tools register through the public SDK, no fork needed:
 
 ```ts
 import { registerChartType, registerRendererLayer } from '@luxalgo/vela/plugin';
@@ -171,7 +171,9 @@ registerRendererLayer({
 ```
 
 A registered chart type automatically appears in the workspace's style dropdown, and a
-chart type's `dataEngine` pushes to its layer's channel with zero extra wiring. See
+chart type's `dataEngine` pushes to its layer's channel with zero extra wiring. A drawing
+tool registered with `defineDrawing` joins the drawing toolbar the same way: you describe the
+shapes it paints, and placement, handles, settings, undo and saving follow. See
 [docs/contributing/plugin-sdk.md](docs/contributing/plugin-sdk.md).
 
 ## Documentation

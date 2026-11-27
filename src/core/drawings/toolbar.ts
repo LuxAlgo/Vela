@@ -2,7 +2,7 @@ import { msg } from '../i18n/message';
 import type { DrawingTypeKey } from './Drawing';
 import { textOf } from '../i18n/text';
 import type { MessageLike, Translator } from '../i18n/types';
-import { drawingTypeEntries, drawingTypeEntry } from './registry';
+import { drawingGroupEntries, drawingGroupEntry, drawingTypeEntries, drawingTypeEntry, isBuiltinDrawingType } from './registry';
 
 /**
  * Inert, renderer-neutral toolbar data. The core builds it from the type registry;
@@ -24,12 +24,26 @@ export interface ToolSection {
     tools: ToolDefinition[];
 }
 
+/** A row at the foot of a group's menu that runs a command instead of arming a tool. The
+ *  shell that owns the bar adds them; the core's own definitions carry none. */
+export interface ToolGroupAction {
+    id: string;
+    label: string;
+    /** Icon id from the icon registry. */
+    icon?: string;
+    run: () => void;
+}
+
 export interface ToolGroup {
     id: string;
     label: string;
+    /** Empty for a host group kept on the bar before its first tool (`showEmpty`). */
     tools: ToolDefinition[];
     /** When set, the flyout renders non-clickable headers between sections. */
     sections?: ToolSection[];
+    /** Inline SVG markup for the group's button while it has no tool. */
+    icon?: string;
+    actions?: ToolGroupAction[];
 }
 
 export interface ToolbarDefinition {
@@ -40,7 +54,7 @@ export interface ToolbarDefinition {
  *  language whenever it hands the toolbar out ({@link resolveToolbar}). */
 type ToolSource = Omit<ToolDefinition, 'label'> & { label: MessageLike };
 type ToolSectionSource = { label: MessageLike; tools: ToolSource[] };
-type ToolGroupSource = Omit<ToolGroup, 'label' | 'tools' | 'sections'> & { label: MessageLike; tools: ToolSource[]; sections?: ToolSectionSource[] };
+type ToolGroupSource = Omit<ToolGroup, 'label' | 'tools' | 'sections' | 'actions'> & { label: MessageLike; tools: ToolSource[]; sections?: ToolSectionSource[] };
 export interface ToolbarSource {
     groups: ToolGroupSource[];
 }
@@ -197,24 +211,71 @@ function resolveSection(source: SectionSource, byGroup: Map<string, ToolSource[]
     return source.types.map((type) => toolMap.get(type)).filter((t): t is ToolSource => t != null);
 }
 
-/** Build the canonical seven-group toolbar, optionally restricted to a type subset. */
+/** Where a host's tool lands when it names one of the built-in registry groups: the layout
+ *  group and the section of it that lists that kind of tool. */
+const SECTION_OF_GROUP: Readonly<Record<string, readonly [group: string, section: number]>> = {
+    fibonacci: ['fibonacci-gann', 0],
+    priceaction: ['fibonacci-gann', 1],
+    geometry: ['fibonacci-gann', 3],
+    patterns: ['patterns-waves-harmonics', 0],
+    measure: ['measurements', 0],
+    shapes: ['brushes-arrows-shapes', 2],
+    annotations: ['text', 0],
+    stamps: ['icons', 0],
+};
+
+/** A group id as a name, for a group nobody labelled (`'my-tools'` → `'My tools'`). */
+function groupName(id: string): string {
+    const words = id.replace(/[-_.]+/g, ' ').trim();
+    return words ? words.charAt(0).toUpperCase() + words.slice(1) : id;
+}
+
+/** Build the canonical seven-group toolbar, optionally restricted to a type subset. Tools a
+ *  host registered join the section their `group` names, or a group of their own after the
+ *  built-in ones. */
 function assembleToolbar(allowed?: ReadonlySet<DrawingTypeKey>): ToolbarSource {
+    // A type kept off the toolbar is left out, unless the caller's own list names it.
+    const offToolbar = new Set(allowed ? [] : drawingTypeEntries().filter((meta) => meta.toolbar === false).map((meta) => meta.type));
     const byGroup = toolsByRegistryGroup(allowed);
+    for (const [group, tools] of byGroup) byGroup.set(group, tools.filter((tool) => !offToolbar.has(tool.type)));
     const toolMap = new Map<DrawingTypeKey, ToolSource>();
     for (const tools of byGroup.values()) {
         for (const tool of tools) toolMap.set(tool.type, tool);
     }
+    // A host's tools, by the registry group they name. The sections filled from a registry
+    // group list them already; the fixed lists and unknown groups are handled below.
+    const hosted = new Map<string, ToolSource[]>();
+    for (const meta of drawingTypeEntries()) {
+        if (isBuiltinDrawingType(meta.type) || (allowed && !allowed.has(meta.type))) continue;
+        const tool = toolMap.get(meta.type);
+        if (!tool) continue;
+        if (!hosted.has(meta.group)) hosted.set(meta.group, []);
+        hosted.get(meta.group)!.push(tool);
+    }
+    const placed = new Set<string>();
 
     const groups: ToolGroupSource[] = [];
     for (const layout of TOOLBAR_LAYOUT) {
         const sections: ToolSectionSource[] = [];
         const flat: ToolSource[] = [];
-        for (const source of layout.sections) {
-            const tools = resolveSection(source, byGroup, toolMap);
-            if (tools.length === 0) continue;
+        layout.sections.forEach((source, at) => {
+            const tools = [...resolveSection(source, byGroup, toolMap)];
+            if ('registryGroup' in source) placed.add(source.registryGroup);
+            for (const [group, target] of Object.entries(SECTION_OF_GROUP)) {
+                if (target[0] !== layout.id || target[1] !== at) continue;
+                tools.push(...(hosted.get(group) ?? []));
+                placed.add(group);
+            }
+            // A tool that names the toolbar group itself (its id) joins the group's first
+            // section: a second group under the same id would shadow this one.
+            if (at === 0 && !placed.has(layout.id)) {
+                tools.push(...(hosted.get(layout.id) ?? []));
+                placed.add(layout.id);
+            }
+            if (tools.length === 0) return;
             sections.push({ label: source.label, tools });
             flat.push(...tools);
-        }
+        });
         if (flat.length === 0) continue;
         groups.push({
             id: layout.id,
@@ -223,7 +284,24 @@ function assembleToolbar(allowed?: ReadonlySet<DrawingTypeKey>): ToolbarSource {
             sections: sections.length > 0 ? sections : undefined,
         });
     }
+    // A registered group keeps its place by registration order, with or without tools, so
+    // its button does not move when its first tool arrives. Groups nobody registered follow.
+    for (const group of new Set([...drawingGroupEntries().map((entry) => entry.id), ...hosted.keys()])) {
+        if (placed.has(group)) continue;
+        const source = hostGroup(group, hosted.get(group) ?? []);
+        if (source) groups.push(source);
+    }
     return { groups };
+}
+
+/** A host's group as the toolbar lists it, or null when it has no tool and is not kept
+ *  on the bar empty. */
+function hostGroup(id: string, tools: ToolSource[], label?: MessageLike): ToolGroupSource | null {
+    const entry = drawingGroupEntry(id);
+    if (tools.length === 0 && !entry?.showEmpty) return null;
+    const source: ToolGroupSource = { id, label: label ?? entry?.label ?? groupName(id), tools };
+    if (entry?.icon) source.icon = entry.icon;
+    return source;
 }
 
 /** Group a flat list of type keys into the canonical seven-group layout (drops unregistered types). */
@@ -235,12 +313,13 @@ function groupTools(tools: readonly DrawingTypeKey[]): ToolbarSource {
     return assembleToolbar(allowed);
 }
 
-/** Build explicit groups from developer config (drops unregistered/empty entries). */
+/** Build explicit groups from developer config (drops unregistered types, and empty groups
+ *  unless the group is registered to stay on the bar empty). */
 function resolveGroups(groups: readonly ToolbarGroupConfig[]): ToolbarSource {
     const out: ToolGroupSource[] = [];
     for (const g of groups) {
-        const tools = g.tools.map(toolFor).filter((t): t is ToolSource => t != null);
-        if (tools.length > 0) out.push({ id: g.id, label: g.label, tools });
+        const source = hostGroup(g.id, g.tools.map(toolFor).filter((t): t is ToolSource => t != null), g.label);
+        if (source) out.push(source);
     }
     return { groups: out };
 }
@@ -258,12 +337,16 @@ export function resolveToolbar(source: ToolbarSource, i18n?: Translator | null):
         return out;
     };
     return {
-        groups: source.groups.map((g) => ({
-            id: g.id,
-            label: textOf(i18n, g.label),
-            tools: g.tools.map(tool),
-            sections: g.sections?.map((s) => ({ label: textOf(i18n, s.label), tools: s.tools.map(tool) })),
-        })),
+        groups: source.groups.map((g) => {
+            const group: ToolGroup = {
+                id: g.id,
+                label: textOf(i18n, g.label),
+                tools: g.tools.map(tool),
+                sections: g.sections?.map((s) => ({ label: textOf(i18n, s.label), tools: s.tools.map(tool) })),
+            };
+            if (g.icon) group.icon = g.icon;
+            return group;
+        }),
     };
 }
 

@@ -163,6 +163,16 @@ export interface VelaEventMap extends Record<string, unknown> {
   "drawing:groups": { groups: DrawingGroup[] };
   /** The user requested a drawing's settings popup. */
   "drawing:settings": { id: string };
+  /** The pointer moved onto a drawing, onto another part of it, or off the drawings
+   *  (`id` null). `part` names the part under it (a level, a label), null over the
+   *  plain body or for a type without parts. */
+  "drawing:hover": { id: string | null; part: string | null };
+  /** A click on a drawing (press and release, no drag), with the part it landed on and
+   *  the time and price under the pointer. */
+  "drawing:click": { id: string; part: string | null; time: number; price: number };
+  /** The drawing types changed: one was registered, replaced or unregistered, and the
+   *  toolbar and the placed drawings have followed. */
+  "drawing:types": Record<string, never>;
   /** A timeline-mark glyph was clicked — `ids` lists every mark under it (a cluster). Fires
    *  before the popup opens; a mark without content opens none, so this is the host's hook. */
   "mark:click": MarkClickEvent;

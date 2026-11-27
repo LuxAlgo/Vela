@@ -3,6 +3,7 @@ import type { Projector } from '../geometry';
 import type { SettingsSchema } from '../schema';
 import { LINE_FIELDS, TEXT_FIELDS } from '../schema';
 import { distToSegment, extendRay, handleAt } from '../hittest';
+import { lineValueAt } from '../shapes';
 
 /** A ray: a line through two anchors that extends to the right chart edge. */
 export class Ray extends Drawing {
@@ -20,6 +21,11 @@ export class Ray extends Drawing {
         const y2 = proj.yOf(b.price, this.paneId);
         if (y1 == null || y2 == null) return null;
         return [proj.xOf(a.time), y1, proj.xOf(b.time), y2];
+    }
+
+    override valueAt(time: number, proj?: Projector | null): number | null {
+        const [a, b] = this.anchors;
+        return a && b ? lineValueAt(a, b, time, { extend: 'right', paneId: this.paneId, proj }) : null;
     }
 
     hitTest(px: number, py: number, proj: Projector, tol: number): boolean {

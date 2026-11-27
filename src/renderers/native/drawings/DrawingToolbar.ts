@@ -188,8 +188,10 @@ export class DrawingToolbar {
     }
 
     setDefinition(def: ToolbarDefinition): void {
-        this.def = def;
-        for (const g of def.groups) {
+        this.closeFlyout(); // it lists the previous definition's rows, anchored to a cell rebuilt below
+        // A group with no tool and no action has nothing to arm and nothing to list.
+        this.def = { groups: def.groups.filter((g) => g.tools.length > 0 || (g.actions?.length ?? 0) > 0) };
+        for (const g of this.def.groups) {
             const first = g.tools[0];
             if (first && !this.lastUsed.has(g.id)) this.lastUsed.set(g.id, first.type);
         }
@@ -348,12 +350,16 @@ export class DrawingToolbar {
     }
 
     private makeGroupCell(g: ToolGroup): HTMLElement {
-        const multi = g.tools.length > 1;
+        // The chevron opens the menu beside an icon that arms a tool. Without a tool the icon
+        // opens the menu itself, so it needs none.
+        const multi = g.tools.length > 0 && g.tools.length + (g.actions?.length ?? 0) > 1;
         const { cell, icon } = this.makeCell(this.t(g.label), {
             multi,
             onIcon: () => this.onGroupIconClick(g),
             onArrow: multi ? () => this.onArrowClick(g) : undefined,
         });
+        if (g.tools.length === 0) icon.setAttribute('aria-haspopup', 'menu');
+        cell.dataset.group = g.id; // a host finds a group's cell by id, never by its label
         this.groupCells.set(g.id, cell);
         this.groupIcons.set(g.id, icon);
         return cell;
@@ -380,10 +386,22 @@ export class DrawingToolbar {
         this.onArm(null);
     }
 
-    /** Clicking the icon arms the group's last-used tool (it does NOT open the flyout). */
+    /** Clicking the icon arms the group's last-used tool (it does NOT open the flyout). A
+     *  group with no tool yet has only its menu to offer, so there the icon toggles it. */
     private onGroupIconClick(group: ToolGroup): void {
-        const type = this.lastUsed.get(group.id) ?? group.tools[0]?.type;
+        if (group.tools.length === 0) {
+            this.onArrowClick(group);
+            return;
+        }
+        const type = this.toolOf(group)?.type;
         if (type) this.onArm(type);
+    }
+
+    /** The tool the group's icon shows and arms: its last-used one while that tool is still
+     *  listed, else its first. */
+    private toolOf(group: ToolGroup): ToolGroup['tools'][number] | undefined {
+        const type = this.lastUsed.get(group.id);
+        return group.tools.find((t) => t.type === type) ?? group.tools[0];
     }
 
     /** Clicking the chevron toggles the group's flyout (same group → close; another → switch). */
@@ -543,7 +561,10 @@ export class DrawingToolbar {
         if (!cell) return;
         const fly = this.beginFlyout(group.id, cell);
         const sections: ToolSection[] = group.sections ?? [{ label: '', tools: group.tools }];
-        const badge = sections.some((s) => s.tools.some((tool) => !!tool.icon));
+        const actions = group.actions ?? [];
+        const badge = sections.some((s) => s.tools.some((tool) => !!tool.icon)) || actions.some((a) => !!a.icon);
+        // Without a tool the menu would open on bare commands: the group's name says whose.
+        if (group.tools.length === 0) fly.appendChild(this.flyoutHeader(this.t(group.label)));
         for (let si = 0; si < sections.length; si++) {
             const section = sections[si]!;
             if (section.label) {
@@ -566,6 +587,21 @@ export class DrawingToolbar {
                     }),
                 );
             }
+        }
+        if (actions.length > 0 && group.tools.length > 0) fly.appendChild(this.flyoutSeparator());
+        for (const action of actions) {
+            fly.appendChild(
+                this.makeFlyoutItem({
+                    icon: action.icon ? icon(action.icon) : undefined,
+                    badge,
+                    label: action.label,
+                    action: action.id,
+                    onSelect: () => {
+                        this.closeFlyout();
+                        action.run();
+                    },
+                }),
+            );
         }
         announceSurface(fly, true, 'menu', cell);
     }
@@ -626,6 +662,8 @@ export class DrawingToolbar {
         onSelect: () => void;
         /** Star toggle (tool rows only — mode rows have no favorites). */
         favorite?: { type: DrawingTypeKey; toggle: () => void };
+        /** A command row's action id, written as `data-action`: what tells it from a tool row. */
+        action?: string;
     }): HTMLButtonElement {
         const t = this.theme;
         const item = document.createElement('button');
@@ -637,6 +675,7 @@ export class DrawingToolbar {
         const box = badged ? 'gap:10px;padding:4px 10px 4px 6px;' : 'gap:8px;padding:5px 10px 5px 8px;';
         item.style.cssText = `display:flex;align-items:center;${box}cursor:pointer;color:${t.textColor};border-radius:var(--vela-radius-sm);font:13px ${t.fontFamily};white-space:nowrap;min-width:148px;`;
         if (opts.selected) item.dataset.selected = '1';
+        if (opts.action) item.dataset.action = opts.action;
         if (badged) {
             const badge = document.createElement('span');
             badge.className = 'vela-dtb-badge';
@@ -715,9 +754,8 @@ export class DrawingToolbar {
     private paintGroupIcon(group: ToolGroup): void {
         const iconBtn = this.groupIcons.get(group.id);
         if (!iconBtn) return;
-        const type = this.lastUsed.get(group.id) ?? group.tools[0]?.type;
-        const tool = group.tools.find((t) => t.type === type) ?? group.tools[0];
-        iconBtn.innerHTML = hitHtml(tool?.icon ?? '');
+        const tool = this.toolOf(group);
+        iconBtn.innerHTML = hitHtml(tool?.icon ?? group.icon ?? EMPTY_GROUP_ICON);
         // The tip names the tool the icon arms (the group's last-used), not the group label.
         const cell = this.groupCells.get(group.id);
         if (cell) this.tipText.set(cell, this.t(tool?.label ?? group.label));
@@ -826,6 +864,8 @@ const SYNC_ICON = icon('pen-sync');
 const ERASER_ICON = icon('eraser');
 /** A right-pointing chevron for the group/magnet flyout arrow (beside the icon). */
 const ARROW_ICON = icon('chevron-right');
+/** A host group kept on the bar empty, registered without an icon of its own. */
+const EMPTY_GROUP_ICON = icon('plus');
 /** A check mark for the selected entry in a flyout (e.g. the current magnet strength). */
 const CHECK_ICON = icon('check');
 const STAR_ICON = icon('star');

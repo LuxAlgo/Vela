@@ -2,11 +2,12 @@ import type { VelaTheme } from '../../../core/options';
 import { msg } from '../../../core/i18n/message';
 import { textOf } from '../../../core/i18n/text';
 import type { MessageLike, Translator } from '../../../core/i18n/types';
-import type { Drawing, DrawingToolDefaults, DrawingToolTemplate, SerializedDrawing, SettingsField } from '../../../core/drawings';
+import type { Drawing, DrawingToolDefaults, DrawingToolTemplate, PriceUnit, SerializedDrawing, SettingsField } from '../../../core/drawings';
 import {
     DEFAULT_DRAWING_COLOR,
     FIB_PRESETS,
     FibLevels,
+    FibRatios,
     FibRetracement,
     FixedRangeVolumeProfile,
     MachFigure,
@@ -20,6 +21,9 @@ import {
     getDrawingType,
     magnifierTimeframesBelow,
     matchFibPreset,
+    priceFromUnit,
+    priceInUnit,
+    priceUnits,
     timeframeBandOf,
 } from '../../../core/drawings';
 import { applyChromeTokens } from '../../shared/theme-tokens';
@@ -115,7 +119,14 @@ const TEXT = {
     styleName: msg('drawing.settings.styleName', 'Style name'),
     save: msg('drawing.settings.save', 'Save'),
     normal: msg('drawing.settings.normal', 'Normal'),
+    unit: msg('drawing.settings.unit', '{field} unit'),
+    unitPrice: msg('drawing.settings.unitPrice', 'Price'),
+    unitPoints: msg('drawing.settings.unitPoints', 'Points'),
+    unitPercent: msg('drawing.settings.unitPercent', 'Percent'),
+    unitTicks: msg('drawing.settings.unitTicks', 'Ticks'),
 };
+
+const UNIT_LABELS: Record<PriceUnit, MessageLike> = { price: TEXT.unitPrice, points: TEXT.unitPoints, percent: TEXT.unitPercent, ticks: TEXT.unitTicks };
 
 
 /** What the panel needs from the chart beyond the drawing itself. */
@@ -143,6 +154,9 @@ const MIN_ROOM = 200;
 /** Paths the rich sections own, kept out of the generic rows. */
 const POSITION_PATHS = new Set(['riskPercent', 'accountBalance', 'quantity', 'direction', 'entryPrice', 'stopPrice', 'targetPrice', 'showText', 'showHeader', 'showLossSize', 'showTargetLabel', 'showStopLabel', 'showPrices']);
 const LEVEL_PATHS = new Set(['showRatios']);
+/** The built-in levelled tools, whose levels block carries options of its own. A levelled
+ *  tool registered from outside has only the grid: its fields all stay generic rows. */
+const builtinLevels = (d: Drawing): boolean => d instanceof FibRatios || d instanceof MachFigure;
 
 /** "Show on" shortcuts, as timeframe bands. */
 const INTRADAY = ['s', '1', '5', '15', '60', '240'];
@@ -153,7 +167,7 @@ type ShowMode = 'all' | 'intraday' | 'higher' | 'custom';
 const openFolds = new Map<string, Set<string>>();
 
 const STYLE_ID = 'vela-dsp-styles';
-const STYLE_REV = '1';
+const STYLE_REV = '2';
 
 const CHEVRON = '<svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m4.5 2.5 3.5 3.5-3.5 3.5"/></svg>';
 const CHEVRON_DOWN = '<svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m2.5 4.5 3.5 3.5 3.5-3.5"/></svg>';
@@ -191,6 +205,8 @@ function ensureStyles(): void {
 .vela-dsp-lab { flex: 0 0 96px; color: ${t.fg.muted}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .vela-dsp-row > .vela-dsp-lab + * { min-width: 0; }
 .vela-dsp-spacer { flex: 1; }
+.vela-dsp-out { color: ${t.fg.bright}; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vela-dsp-unit { display: flex; align-items: center; gap: 8px; }
 .vela-dsp-fold-h { all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 8px; padding: 11px 16px; cursor: pointer; }
 .vela-dsp-fold-h:hover { background: ${t.hover}; }
 .vela-dsp-fold-h:focus-visible { outline: 2px solid ${t.selected.bg}; outline-offset: -2px; }
@@ -485,6 +501,7 @@ export class DrawingSettingsPanel {
         if (d instanceof FixedRangeVolumeProfile) out.push(this.richBlock(this.t(TEXT.profile), (grid) => buildProfileSection(grid, d, b.actions, this.theme, (m, v) => this.t(m, v))));
         const own = this.optionsBlock(b, fields, d);
         if (own) out.push(own);
+        out.push(...this.sectionBlocks(b, fields, d));
         if (!schema.textIsContent && fields.some((f) => f.path.startsWith('text.'))) out.push(this.textFold(b, has));
         const points = this.pointsFold(b);
         if (points) out.push(points);
@@ -534,17 +551,55 @@ export class DrawingSettingsPanel {
         return rows.length ? block(null, ...rows) : null;
     }
 
-    /** The tool's own options — every schema field the shared look and the rich sections
-     *  don't cover, each as the control its kind calls for. */
-    private optionsBlock(b: Build, fields: readonly SettingsField[], d: Drawing): HTMLElement | null {
+    /** The schema fields the shared look and the rich sections don't cover. */
+    private ownFields(fields: readonly SettingsField[], d: Drawing): SettingsField[] {
         const skip = (f: SettingsField): boolean =>
             f.path.startsWith('style.') ||
             f.path.startsWith('text.') ||
             f.path.startsWith('frvp.') ||
             (d instanceof PositionTool && POSITION_PATHS.has(f.path)) ||
-            (d.editableLevels() != null && LEVEL_PATHS.has(f.path));
+            (builtinLevels(d) && LEVEL_PATHS.has(f.path));
+        return fields.filter((f) => !skip(f));
+    }
+
+    /** The tool's own options — every field of its own that names no section, each as the
+     *  control its kind calls for. */
+    private optionsBlock(b: Build, fields: readonly SettingsField[], d: Drawing): HTMLElement | null {
+        const rows = this.fieldRows(b, this.ownFields(fields, d).filter((f) => !f.section));
+        // Level numbers and their labels have their own sizes (fib-family tools).
+        if (d instanceof FibRatios) {
+            const sizes = TEXT_SIZE_OPTIONS.map((o) => ({ value: o.value, html: this.t(o.label) }));
+            const fib = (): FibRatios => b.live() as FibRatios;
+            rows.push(row(this.t(TEXT.numbers), this.seg(b, this.t(TEXT.numbersSize), sizes, () => fib().numbersSize ?? 'small', (v) => b.edit({ numbersSize: v }), true)));
+            rows.push(row(this.t(TEXT.labels), this.seg(b, this.t(TEXT.labelsSize), sizes, () => fib().labelsSize ?? 'normal', (v) => b.edit({ labelsSize: v }), true)));
+        }
+        return rows.length ? block(null, ...rows) : null;
+    }
+
+    /** The fields that name a section: one titled block per section, in the order the
+     *  sections first appear. */
+    private sectionBlocks(b: Build, fields: readonly SettingsField[], d: Drawing): HTMLElement[] {
+        // Grouped by the section's own identity (a message's id, or the string as written),
+        // never by the text shown: two sections may read alike in some language.
+        const groups = new Map<string, { title: string; fields: SettingsField[] }>();
+        for (const f of this.ownFields(fields, d)) {
+            if (!f.section) continue;
+            const key = typeof f.section === 'string' ? f.section : f.section.id;
+            const group = groups.get(key) ?? { title: this.t(f.section), fields: [] };
+            group.fields.push(f);
+            groups.set(key, group);
+        }
+        const out: HTMLElement[] = [];
+        for (const { title, fields: list } of groups.values()) {
+            const rows = this.fieldRows(b, list);
+            if (rows.length) out.push(block(title, ...rows));
+        }
+        return out;
+    }
+
+    /** One row per field, a pair of fields sharing theirs. */
+    private fieldRows(b: Build, own: readonly SettingsField[]): HTMLElement[] {
         const rows: HTMLElement[] = [];
-        const own = fields.filter((f) => !skip(f));
         for (let i = 0; i < own.length; i += 1) {
             const f = own[i]!;
             const next = own[i + 1];
@@ -566,12 +621,7 @@ export class DrawingSettingsPanel {
             if (cond) b.watch(() => (r.hidden = !cond.in.includes(readPath(b.live(), cond.path))));
             rows.push(r);
         }
-        // Level numbers and their labels have their own sizes (fib-family tools).
-        const props = d.serialize().props ?? {};
-        const sizes = TEXT_SIZE_OPTIONS.map((o) => ({ value: o.value, html: this.t(o.label) }));
-        if ('numbersSize' in props) rows.push(row(this.t(TEXT.numbers), this.seg(b, this.t(TEXT.numbersSize), sizes, () => (b.live().serialize().props?.numbersSize as string) ?? 'small', (v) => b.edit({ numbersSize: v }), true)));
-        if ('labelsSize' in props) rows.push(row(this.t(TEXT.labels), this.seg(b, this.t(TEXT.labelsSize), sizes, () => (b.live().serialize().props?.labelsSize as string) ?? 'normal', (v) => b.edit({ labelsSize: v }), true)));
-        return rows.length ? block(null, ...rows) : null;
+        return rows;
     }
 
     /** The label of the one row a field shares with the next: a color and its line style, or
@@ -594,8 +644,19 @@ export class DrawingSettingsPanel {
             case 'boolean':
                 return this.switch(b, () => read() !== false && read() != null, (v) => b.edit({ [f.path]: v }));
             case 'number':
+                if (f.unit) return this.unitNumber(b, f, f.unit.base);
+                return this.number(b, this.t(f.label), () => Number(read() ?? 0), f.path, f);
             case 'opacity':
                 return this.number(b, this.t(f.label), () => Number(read() ?? 0), f.path, f);
+            case 'readout': {
+                const out = document.createElement('span');
+                out.className = 'vela-dsp-out';
+                b.watch(() => {
+                    const v = read();
+                    out.textContent = v == null || v === '' ? '–' : String(v);
+                });
+                return out;
+            }
             case 'select': {
                 // Only timeframes below the chart's own make sense for a lower-timeframe inset.
                 const choices = f.path === 'magnifier.timeframe' ? magnifierTimeframesBelow(this.env.chartBarMs()) : (f.options ?? []);
@@ -641,7 +702,9 @@ export class DrawingSettingsPanel {
             last = key();
             disposeWithin(grid);
             grid.replaceChildren();
-            const free = b.live() instanceof FibLevels; // horizontal levels may sit at or beyond either anchor
+            // Horizontal levels may sit at or beyond either anchor; what a ratio means on a
+            // tool registered from outside is its own, so any number is one.
+            const free = b.live() instanceof FibLevels || !builtinLevels(b.live());
             (b.live().editableLevels() ?? []).forEach((lv, i) => {
                 const cell = document.createElement('div');
                 cell.className = 'vela-dsp-lv-c';
@@ -1264,6 +1327,76 @@ export class DrawingSettingsPanel {
         });
         return ni.el;
     }
+
+    /** A price field with its unit switch: the input shows the price in the picked unit and
+     *  writes a price back. The unit belongs to the row, never to the drawing, and only the
+     *  units the reference price and the tick size allow are offered. */
+    private unitNumber(b: Build, f: SettingsField, basePath: string): HTMLElement {
+        const title = this.t(f.label);
+        const base = (): number | null => {
+            const v = readPath(b.live(), basePath);
+            return typeof v === 'number' ? v : null;
+        };
+        const tick = (): number | null => {
+            const decimals = this.env.priceDecimals();
+            return decimals == null ? null : 10 ** -decimals;
+        };
+        const units = (): PriceUnit[] => priceUnits(base(), tick());
+        let unit: PriceUnit = 'price';
+        // A price or a distance reads to the symbol's price increment when it is known, like
+        // a point's price; a percentage or a tick count to what fits the field.
+        const shown = (): number => {
+            const v = priceInUnit(Number(readPath(b.live(), f.path) ?? 0), base(), unit, tick());
+            const digits = unit === 'percent' ? 4 : unit === 'ticks' ? 2 : this.env.priceDecimals();
+            return digits == null ? v : Number(v.toFixed(Math.min(digits, 10)));
+        };
+        const wrap = document.createElement('div');
+        wrap.className = 'vela-dsp-unit';
+        // The steppers' step is fixed when the field is built, so a unit change builds another.
+        const field = (): ReturnType<typeof buildFieldControl> =>
+            buildFieldControl({
+                kind: 'number',
+                value: shown(),
+                step: unit === 'ticks' ? 1 : unit === 'percent' ? 0.01 : (f.step ?? tick() ?? undefined),
+                fill: false,
+                commit: 'blur',
+                title,
+                onChange: (v) => {
+                    const price = priceFromUnit(v, base(), unit, tick());
+                    b.edit({ [f.path]: Math.min(f.max ?? Infinity, Math.max(f.min ?? -Infinity, price)) });
+                },
+            });
+        let ni = field();
+        wrap.appendChild(ni.el);
+        let sel: ReturnType<typeof buildFieldControl> | null = null;
+        // A unit the reference price no longer allows (a percent of zero) reads as the price.
+        const pick = (next: PriceUnit): void => {
+            unit = units().includes(next) ? next : 'price';
+            if (unit !== next) sel?.setValue?.(unit);
+            const old = ni;
+            ni = field();
+            old.el.replaceWith(ni.el);
+            old.destroy();
+        };
+        const offered = units();
+        if (offered.length > 1) {
+            sel = buildFieldControl({
+                kind: 'select',
+                options: offered.map((u) => ({ value: u, label: this.t(UNIT_LABELS[u]) })),
+                value: unit,
+                fill: false,
+                theme: this.theme,
+                title: this.t(TEXT.unit, { field: title }),
+                onChange: (v) => pick(v as PriceUnit),
+            });
+            wrap.appendChild(sel.el);
+        }
+        b.watch(() => {
+            if (!units().includes(unit)) pick(unit);
+            if (document.activeElement !== ni.el.querySelector('input')) ni.setValue?.(shown());
+        });
+        return wrap;
+    }
 }
 
 // ── helpers ──
@@ -1329,7 +1462,7 @@ function sizeLabel(size: string | undefined): MessageLike {
 }
 
 /** Read a dotted settings path off a drawing (the read side of `applySettings`). */
-function readPath(d: Drawing, path: string): unknown {
+export function readPath(d: Drawing, path: string): unknown {
     let cur: unknown = d;
     for (const k of path.split('.')) {
         if (cur == null || typeof cur !== 'object') return undefined;

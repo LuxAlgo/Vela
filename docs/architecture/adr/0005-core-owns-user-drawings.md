@@ -63,6 +63,16 @@ tool/selection state). The only things that cross the `IDrawingsRendererPort` ar
 are resolved on demand through the renderer-supplied `Projector`. Rendering is capability-gated;
 the model and its persistence are not.**
 
+## Amendment
+
+*2026-11-25.* The decision stands, but "only JSON crosses the port" no longer lists everything
+that does. A drawing still crosses only as a JSON `SerializedDrawing` record, and the core still
+owns the model. The port now also carries, all of it optional for a renderer: functions the core
+hands down for the renderer to call (the series gateway, the host's magnet targets), and
+read-only queries the core forwards to the host (the drawing under a pixel or the pointer, a
+drawing's value and readout, the pane's stack range). The type registry is open to hosts, and a
+record whose type is not registered is kept as a placeholder instead of being dropped.
+
 ---
 
 See also: [0001 — Neutral model as the cross-layer currency](./0001-neutral-model-as-cross-layer-currency.md), [0002 — Core owns market data](./0002-core-owns-market-data.md). User guide: [Drawing tools](../../user/drawing-tools.md); contributor guides: [Adding a drawing tool](../../contributing/adding-a-drawing-tool.md), [Adding a renderer](../../contributing/adding-a-renderer.md).

@@ -81,6 +81,11 @@ Pick the route by who owns the shape:
   polygon, `'text'` for a label, and `'position'` for a risk/reward box with entry, stop and
   target. Lock one with `chart.drawings.lock(id)` to keep it from being edited. See
   [driving drawings from code](./drawing-tools.md#driving-drawings-from-code).
+- **A shape of your own that the user places and edits** — register a drawing tool with
+  `defineDrawing` from `@luxalgo/vela/plugin`. You describe the tool as a list of shapes (lines,
+  paths, filled areas, text, markers, axis tags), and it joins the toolbar with its own
+  placement, handles, settings, undo and saving. See
+  [custom tools](./drawing-tools.md#custom-tools).
 - **Shapes your script computes** — an indicator script draws boxes, polylines, labels, lines
   and fills through its engine (Pine Script's `box.new`, `polyline.new`, `label.new`, …), and
   they follow the indicator through recomputes, replays and pane moves.

@@ -14,6 +14,7 @@ import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 };
 
 import { VelaWorkspace } from '../src/workspace/VelaWorkspace';
+import { defineDrawing } from '../src/core/drawings';
 
 beforeAll(() => {
     Element.prototype.animate ??= (() => ({ cancel() {}, finish() {}, addEventListener() {} })) as unknown as Element['animate'];
@@ -106,6 +107,27 @@ describe('drawing tool preferences in a workspace', () => {
         const second = mountWorkspace({ layout: '1' });
         second.applyState(saved);
         expect(second.cell('c1')!.chart.drawings.toolTemplates().trendline).toEqual([{ name: 'Weekly', settings }]);
+    });
+
+    it('a favorite whose tool is registered later is kept, saved and starred on every chart', async () => {
+        const ws = mountWorkspace({ layout: '2h' });
+        ws.applyState({ ...JSON.parse(JSON.stringify(ws.getState())), favorites: ['acme.late', 'trendline'] });
+        // The plugin that defines the tool has not loaded: the star waits, and a save made
+        // meanwhile still carries it.
+        expect(ws.cell('c1')!.chart.drawings.favorites()).toEqual(['trendline']);
+        expect(ws.getState().favorites).toEqual(expect.arrayContaining(['acme.late', 'trendline']));
+
+        const off = defineDrawing({ type: 'acme.late', label: 'Late tool', shapes: () => [] });
+        try {
+            await Promise.resolve(); // the charts follow the registry on the next microtask
+            await Promise.resolve();
+            for (const id of ['c1', 'c2']) {
+                expect(ws.cell(id)!.chart.drawings.favorites()).toEqual(expect.arrayContaining(['acme.late', 'trendline']));
+            }
+            expect(ws.getState().favorites).toEqual(expect.arrayContaining(['acme.late', 'trendline']));
+        } finally {
+            off();
+        }
     });
 
     it('untouched preferences add nothing to the saved document', () => {
