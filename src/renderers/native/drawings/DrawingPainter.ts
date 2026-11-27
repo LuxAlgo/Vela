@@ -1,5 +1,7 @@
-import type { Drawing, Projector, DrawingStyle } from '../../../core/drawings';
-import { Box, SegmentDrawing, TrendLine, FibRatios, RadialFib, FibSpiral, GannSquare, GANN_SQUARE_ARCS, DedekindTessellation, MachFigure, MeasureBox, PositionTool, PatternDrawing, CalloutBase, Callout, Comment, PriceNote, Signpost, Note, PriceLabel, ArrowMark, GlyphStamp, RegressionChannel, AnchoredVwap, FixedRangeVolumeProfile, Magnifier, PriceActionZone, Liquidity, magnifierTimeframeLabel, lineSegmentIntersection, effectiveFillColor, VALID_FILL, INVALID_FILL, DEFAULT_DRAWING_COLOR } from '../../../core/drawings';
+import type { Drawing, Projector, DrawingStyle, DrawingShape } from '../../../core/drawings';
+import { isTransparentStrokeColor } from '../../../core/drawings/style';
+import { paintShapes } from './ShapePainter';
+import { createDrawing, shapeContext, reportDrawingError, usableShapes, MAX_EMBED_DEPTH, Box, SegmentDrawing, TrendLine, FibRatios, RadialFib, FibSpiral, GannSquare, GANN_SQUARE_ARCS, DedekindTessellation, MachFigure, MeasureBox, PositionTool, PatternDrawing, CalloutBase, Callout, Comment, PriceNote, Signpost, Note, PriceLabel, ArrowMark, GlyphStamp, RegressionChannel, AnchoredVwap, FixedRangeVolumeProfile, Magnifier, PriceActionZone, Liquidity, magnifierTimeframeLabel, lineSegmentIntersection, effectiveFillColor, VALID_FILL, INVALID_FILL, DEFAULT_DRAWING_COLOR } from '../../../core/drawings';
 import type { VelaTheme } from '../../../core/options';
 import { contrastColor, dashPattern, extendEndpoints, namedFontSize, labelLineHeight, TEXT_FRAME_INSET, TEXT_FRAME_RISE, uprightLineAngle } from '../../shared/drawing-geometry';
 import { BEARISH, BULLISH, NEUTRAL, SLATE, SLATE_DEEP } from '../../../core/palette';
@@ -59,6 +61,8 @@ const MAGNIFIER_MODES: ReadonlyMap<string, 'bars' | 'line' | 'area'> = new Map([
 export interface PaintTargets {
     selected?: ReadonlySet<string>;
     hovered?: string | null;
+    /** The named part of the hovered drawing under the pointer. */
+    hoverPart?: string | null;
     dragged?: string | null;
     mutedLabel?: string | null;
 }
@@ -74,9 +78,67 @@ export function handleIdsFor(targets: PaintTargets): ReadonlySet<string> {
     return ids;
 }
 
+/** The height of an axis tag, the same as the chart's own axis chips. */
+const AXIS_CHIP_H = 16;
+
+/** Images shapes paint, by source: loaded once per page, shared by every chart. */
+const IMAGES = new Map<string, { img: HTMLImageElement; ready: boolean; waiting: Set<() => void> }>();
+/** Sources kept at most: a tool that builds a new URL per frame must not grow this forever. */
+const MAX_IMAGES = 256;
+
+/** The image at `src` once loaded, else null. `onReady` is called when it lands; pass the
+ *  SAME function on every paint, so a painter waits once however many frames it painted. */
+function loadImage(src: string, onReady: () => void): CanvasImageSource | null {
+    let entry = IMAGES.get(src);
+    if (!entry) {
+        if (typeof Image === 'undefined') return null;
+        if (IMAGES.size >= MAX_IMAGES) IMAGES.delete(IMAGES.keys().next().value!);
+        const img = new Image();
+        const created = { img, ready: false, waiting: new Set<() => void>() };
+        entry = created;
+        IMAGES.set(src, created);
+        img.onload = () => {
+            created.ready = true;
+            for (const cb of created.waiting) cb();
+            created.waiting.clear();
+        };
+        // An image that cannot load is never painted, and nobody waits for it.
+        img.onerror = () => {
+            created.waiting.clear();
+            const shown = src.length > 120 ? `${src.slice(0, 120)}…` : src;
+            console.warn(`[vela] a drawing's image could not be loaded: ${shown} (an image from another origin must be served with CORS headers)`);
+        };
+        // Asked for with CORS, before the request goes out: an image from another origin
+        // painted without it taints the canvas for good, and the layer upload of the WebGL
+        // backend and the PNG export both throw from then on. One its server sends without
+        // `Access-Control-Allow-Origin` fails to load here instead.
+        img.crossOrigin = 'anonymous';
+        img.src = src;
+    }
+    if (entry.ready) return entry.img;
+    entry.waiting.add(onReady);
+    return null;
+}
+
 export class DrawingPainter {
     /** The current `paintAll` call's interaction state, visible to the per-type painters. */
     private targets: PaintTargets = {};
+    /** The drawing being painted is a placement ghost. */
+    private placing = false;
+    /** The shape lists of the frame being painted, by drawing instance, and the targets
+     *  object that frame was painted with (see `shapesOf`). */
+    private readonly frame = new Map<Drawing, DrawingShape[]>();
+    private frameTargets: PaintTargets | null = null;
+    /** The frame's interaction state as shape drawings read it (see `setTargets`). */
+    private shapeTargets: PaintTargets = {};
+    private embedDepth = 0;
+    /** Paint only the body of shape drawings: the layer is one under the series, and their
+     *  `front` shapes paint on the top layer instead. */
+    bodyOnly = false;
+    /** Called when an image a shape paints has loaded (the caller repaints). */
+    onAsset: (() => void) | null = null;
+    /** One function for this painter's whole life: what `loadImage` keeps while it waits. */
+    private readonly assetReady = (): void => this.onAsset?.();
 
     /** The chart's translator, pushed by the controller: labels painted on drawings read in
      *  its language and their numbers in its digits. */
@@ -118,14 +180,16 @@ export class DrawingPainter {
         proj: Projector,
         theme: VelaTheme,
         targets: PaintTargets = {},
+        /** `false` paints the bodies alone (a layer under the series: handles go on top). */
+        handles = true,
     ): void {
-        this.targets = targets;
+        this.setTargets(targets);
         for (const d of drawings) {
             if (!d.visible) continue;
             this.paintClipped(ctx, d, proj, () => this.paintOne(ctx, d, proj, theme));
         }
         this.targets = {};
-        this.paintHighlights(ctx, drawings, proj, handleIdsFor(targets));
+        if (handles) this.paintHighlights(ctx, drawings, proj, handleIdsFor(targets));
     }
 
     /** Selection handles alone, for drawings whose body was painted elsewhere: the ones sent
@@ -149,8 +213,12 @@ export class DrawingPainter {
         ctx.beginPath();
         ctx.rect(0, rect.top, proj.width, rect.height);
         ctx.clip();
-        paint();
-        ctx.restore();
+        // The clip must not outlive a paint that throws: every drawing after it would be cut.
+        try {
+            paint();
+        } finally {
+            ctx.restore();
+        }
     }
 
     /** Paint the in-progress drawing (during placing) at reduced opacity. */
@@ -164,7 +232,11 @@ export class DrawingPainter {
             // Outline only while dragging — the finished shape fetches series data, and a
             // placement preview must never kick fetches on every cursor move.
             this.paintMagnifierGhost(ctx, ghost, proj, theme);
-        } else this.paintOne(ctx, ghost, proj, theme);
+        } else {
+            this.placing = true;
+            this.paintOne(ctx, ghost, proj, theme);
+            this.placing = false;
+        }
         ctx.globalAlpha = 1;
     }
 
@@ -236,7 +308,172 @@ export class DrawingPainter {
         ctx.globalAlpha = 1;
     }
 
+    /**
+     * The shapes a drawing paints this frame, with the frame's interaction state and theme.
+     * One frame paints a drawing in up to three passes (its body, its front shapes, its axis
+     * tags), all with the same targets object: the list is built once for them. A ghost is
+     * never kept, since it is rebuilt on every pointer move.
+     */
+    private shapesOf(d: Drawing, proj: Projector, theme: VelaTheme): DrawingShape[] {
+        if (this.placing) return this.buildShapes(d, proj, theme);
+        if (this.frameTargets !== this.shapeTargets) {
+            this.frame.clear();
+            this.frameTargets = this.shapeTargets;
+        }
+        const kept = this.frame.get(d);
+        if (kept) return kept;
+        const shapes = this.buildShapes(d, proj, theme);
+        this.frame.set(d, shapes);
+        return shapes;
+    }
+
+    /** A tool whose `shapes()` throws paints nothing this frame, and a shape it returns in a
+     *  form the chart cannot draw is left out: the drawings after it, and the frames after
+     *  this one, are not its to break. */
+    private buildShapes(d: Drawing, proj: Projector, theme: VelaTheme): DrawingShape[] {
+        const t = this.shapeTargets;
+        const hovered = t.hovered === d.id;
+        try {
+            return usableShapes(
+                d.type,
+                d.shapes!(
+                    shapeContext(d.shapeData(proj), proj, {
+                        view: { selected: t.selected?.has(d.id) ?? false, hovered, part: hovered ? (t.hoverPart ?? null) : null, placing: this.placing },
+                        theme: { text: theme.textColor, background: theme.background, font: theme.fontFamily, up: theme.upColor, down: theme.downColor },
+                        price: (p) => this.i18n.format.price(p, { decimals: proj.priceDecimals?.(d.paneId) ?? valueDecimals(p), grouping: true, surface: 'drawing' }),
+                    }),
+                ),
+            );
+        } catch (err) {
+            reportDrawingError(d.type, 'shapes', err);
+            return [];
+        }
+    }
+
+    /** Set the frame's interaction state. The built-in painters read `targets`; on a layer
+     *  under the series they get none (their frames and handles belong on top), while a shape
+     *  drawing is still told whether it is selected or hovered, wherever its body paints. */
+    private setTargets(targets: PaintTargets): void {
+        this.shapeTargets = targets;
+        this.targets = this.bodyOnly ? {} : targets;
+    }
+
+    /** Paint a drawing that describes itself as shapes: the one branch every such type shares. */
+    private paintShapeList(ctx: CanvasRenderingContext2D, d: Drawing, proj: Projector, theme: VelaTheme, pass: 'all' | 'body' | 'front'): void {
+        paintShapes(ctx, this.shapesOf(d, proj, theme), {
+            style: d.style,
+            theme: { text: theme.textColor, background: theme.background, font: theme.fontFamily },
+            width: proj.width,
+            height: proj.height,
+            pass,
+            embedded: (s) => {
+                // A part that is itself a registered drawing; a type that embeds itself stops here.
+                if (this.embedDepth >= MAX_EMBED_DEPTH) return;
+                const child = createDrawing(s.type, { paneId: d.paneId, anchors: [...s.anchors], style: s.style as DrawingStyle | undefined, text: s.text, props: s.props });
+                if (!child) return;
+                this.embedDepth += 1;
+                try {
+                    this.paintOne(ctx, child, proj, theme);
+                } finally {
+                    this.embedDepth -= 1;
+                }
+            },
+            image: (src) => loadImage(src, this.assetReady),
+            failed: (err) => reportDrawingError(d.type, 'paint', err),
+        });
+    }
+
+    /** The `front` shapes of drawings whose body was painted under the series: they come
+     *  back on the top layer, so a label on a zone behind the candles still reads over them. */
+    paintFront(ctx: CanvasRenderingContext2D, drawings: readonly Drawing[], proj: Projector, theme: VelaTheme, targets: PaintTargets = {}): void {
+        this.setTargets(targets);
+        for (const d of drawings) {
+            if (!d.visible || typeof d.shapes !== 'function') continue;
+            this.paintClipped(ctx, d, proj, () => this.paintShapeList(ctx, d, proj, theme, 'front'));
+        }
+        this.targets = {};
+    }
+
+    /**
+     * The axis tags the visible drawings ask for: a chip in the price gutter at a price, or
+     * on the time strip at a time. They paint outside the plot, so they are drawn here and
+     * not with the shapes (which are clipped to their pane).
+     */
+    paintAxisTags(
+        ctx: CanvasRenderingContext2D,
+        drawings: readonly Drawing[],
+        proj: Projector,
+        theme: VelaTheme,
+        timeText: (time: number) => string,
+        targets: PaintTargets = {},
+    ): void {
+        this.setTargets(targets);
+        ctx.save();
+        ctx.font = `11px ${theme.fontFamily}`;
+        ctx.textBaseline = 'middle';
+        ctx.setLineDash([]);
+        for (const d of drawings) {
+            if (!d.visible || typeof d.shapes !== 'function') continue;
+            // A pane that is gone or hidden shows none of its drawings, tags included.
+            const rect = proj.paneRect ? proj.paneRect(d.paneId) : undefined;
+            if (rect === null || (rect && rect.height <= 0)) continue;
+            for (const s of this.shapesOf(d, proj, theme)) {
+                if (s.kind !== 'tag') continue;
+                const bg = s.color ?? d.style.lineColor;
+                if (s.axis === 'price') {
+                    const y = proj.yOf(s.value, d.paneId);
+                    if (y == null || (rect && (y < rect.top || y > rect.top + rect.height))) continue;
+                    const text = s.text ?? this.i18n.format.price(s.value, { decimals: proj.priceDecimals?.(d.paneId) ?? valueDecimals(s.value), grouping: true, surface: 'drawing' });
+                    this.axisChip(ctx, proj.width + 1, y - AXIS_CHIP_H / 2, text, bg, 'left');
+                } else {
+                    const x = proj.xOf(s.value);
+                    if (x < 0 || x > proj.width) continue;
+                    this.axisChip(ctx, x, proj.height + 1, s.text ?? timeText(s.value), bg, 'center');
+                }
+            }
+        }
+        ctx.restore();
+        this.targets = {};
+    }
+
+    private axisChip(ctx: CanvasRenderingContext2D, x: number, y: number, text: string, bg: string, align: 'left' | 'center'): void {
+        const w = ctx.measureText(text).width + 8;
+        const rx = align === 'left' ? x : x - w / 2;
+        ctx.fillStyle = bg;
+        ctx.fillRect(rx, y, w, AXIS_CHIP_H);
+        ctx.fillStyle = contrastColor(bg);
+        ctx.textAlign = 'center';
+        ctx.fillText(text, rx + w / 2, y + AXIS_CHIP_H / 2 + 1);
+    }
+
+    /** A hovered part's tip: a small plate beside the pointer, kept inside the plot. */
+    paintTip(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, theme: VelaTheme, width: number): void {
+        ctx.save();
+        ctx.font = `11px ${theme.fontFamily}`;
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'left';
+        ctx.setLineDash([]);
+        const w = ctx.measureText(text).width + 12;
+        const h = 20;
+        const left = Math.max(2, Math.min(x + 12, width - w - 2));
+        const top = Math.max(2, y - h - 8);
+        ctx.fillStyle = BADGE_FILL;
+        ctx.strokeStyle = BADGE_STROKE;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        roundRect(ctx, left, top, w, h, 4);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = contrastColor(BADGE_FILL);
+        ctx.fillText(text, left + 6, top + h / 2 + 1);
+        ctx.restore();
+    }
+
     private paintOne(ctx: CanvasRenderingContext2D, d: Drawing, proj: Projector, theme: VelaTheme): void {
+        if (typeof d.shapes === 'function') {
+            this.paintShapeList(ctx, d, proj, theme, this.bodyOnly ? 'body' : 'all');
+            return;
+        }
         if (d.type === 'highlighter' && d instanceof SegmentDrawing) {
             this.paintHighlighter(ctx, d, proj);
             this.paintLabel(ctx, d, proj, theme);
@@ -1293,7 +1530,7 @@ export class DrawingPainter {
 
         const w = d.style.lineWidth;
         const hLine = (show: boolean, color: string, style: DrawingStyle['lineStyle'], y: number | null): void => {
-            if (!show || y == null || isTransparent(color)) return;
+            if (!show || y == null || isTransparentStrokeColor(color)) return;
             this.stroke(ctx, { lineColor: color, lineWidth: w, lineStyle: style }, () => {
                 ctx.moveTo(L.x0, y);
                 ctx.lineTo(L.x1, y);
@@ -1348,7 +1585,7 @@ export class DrawingPainter {
     /** Stroke a connected polyline with a line style (dash + width + color). Skips fully-transparent
      *  colors so the default (hidden) band edges cost nothing. */
     private strokePolyline(ctx: CanvasRenderingContext2D, pts: ReadonlyArray<[number, number]>, style: DrawingStyle): void {
-        if (pts.length < 2 || isTransparent(style.lineColor)) return;
+        if (pts.length < 2 || isTransparentStrokeColor(style.lineColor)) return;
         this.stroke(ctx, style, () => {
             ctx.moveTo(pts[0]![0], pts[0]![1]);
             for (let i = 1; i < pts.length; i += 1) ctx.lineTo(pts[i]![0], pts[i]![1]);
@@ -1874,16 +2111,6 @@ export class DrawingPainter {
         }
     }
 }
-
-/** True when a color is fully transparent (8-digit hex `…00` or an `rgba(…,0)`) — so we can
- *  skip stroking hidden band edges entirely. */
-function isTransparent(color: string): boolean {
-    const c = color.trim().toLowerCase();
-    if (/^#[0-9a-f]{8}$/.test(c)) return c.endsWith('00');
-    const m = /rgba?\([^)]*,\s*([\d.]+)\s*\)$/.exec(c);
-    return m ? parseFloat(m[1]!) === 0 : false;
-}
-
 
 /** Begin a rounded-rectangle path (arcTo-based, no `ctx.roundRect` dependency). */
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {

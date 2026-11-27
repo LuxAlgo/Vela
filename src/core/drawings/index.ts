@@ -7,8 +7,46 @@ export { measureLines, priceMove, type PriceMove, type PriceSteps } from './meas
 export type { DrawingStyle, DrawingText } from './style';
 export { defaultStyle, defaultText, DEFAULT_DRAWING_COLOR } from './style';
 export type { FieldKind, SettingsField, SettingsSchema } from './schema';
-export { LINE_FIELDS, FILL_FIELDS, LINE_STYLE_OPTIONS, TEXT_FIELDS, TEXT_SIZE_OPTIONS } from './schema';
+export { LINE_FIELDS, BORDER_FIELDS, FILL_FIELDS, LINE_STYLE_OPTIONS, TEXT_FIELDS, TEXT_SIZE_OPTIONS } from './schema';
+export { priceFromUnit, priceInUnit, priceUnits, type PriceUnit } from './units';
 export { Drawing, setByPath } from './Drawing';
+export type { BuiltinDrawingType, DrawingHit, DrawingHost, DrawingReadoutRow, SnapTarget } from './Drawing';
+export { MAX_EMBED_DEPTH, ellipsePoints, flattenCurve, hitShapes, lineValueAt, reportDrawingError, shapeContext, shapeFontSize, shapesBounds, textAngle, usableShapes } from './shapes';
+export type {
+    BandShape,
+    CurveShape,
+    DrawingData,
+    DrawingShape,
+    EllipseShape,
+    EmbeddedShape,
+    ImageShape,
+    LineShape,
+    MarkerGlyph,
+    MarkerShape,
+    PathCommand,
+    PathShape,
+    RectShape,
+    RowsShape,
+    ShapeBar,
+    ShapeColor,
+    ShapeCommon,
+    ShapeContext,
+    ShapeDash,
+    ShapeEnv,
+    ShapeFill,
+    ShapeGradient,
+    ShapeHatch,
+    ShapeHitEnv,
+    ShapePoint,
+    ShapeStroke,
+    ShapeTheme,
+    ShapeView,
+    TagShape,
+    TextShape,
+} from './shapes';
+export { ShapeDrawing, defineDrawing } from './types/ShapeDrawing';
+export type { AnchorSpec, BarsChange, ComputeContext, DrawingDefinition, PlacementStep, ShapeHandle } from './types/ShapeDrawing';
+export { UnknownDrawing } from './types/UnknownDrawing';
 export {
     captureToolDefaults,
     applyToolDefaults,
@@ -140,24 +178,32 @@ export { Magnifier, MAGNIFIER_TIMEFRAME_OPTIONS, magnifierTimeframeLabel, magnif
 export type { DrawingSeriesBar, DrawingSeriesState, DrawingSeriesGateway } from './series';
 export {
     registerDrawingType,
+    unregisterDrawingType,
+    registerDrawingGroup,
+    unregisterDrawingGroup,
+    onDrawingTypesChange,
+    isBuiltinDrawingType,
     getDrawingType,
     drawingTypes,
     createDrawing,
     resetDrawingSettings,
     deserializeDrawing,
+    reviveDrawing,
     type DrawingTypeMeta,
+    type DrawingGroupMeta,
 } from './registry';
 export { migrate, isValidSerialized, clonePlain, DRAWINGS_DOC_VERSION, sanitizeGroups, type DrawingsDocument, type DrawingGroup } from './document';
 export { DrawingStore } from './DrawingStore';
 export { DrawingHistory } from './DrawingHistory';
 export * from './hittest';
-export type { DrawingIntent, DrawingMode, IDrawingsRendererPort } from './port';
+export type { DrawingIntent, DrawingMode, DrawingSnapSource, IDrawingsRendererPort } from './port';
 export {
     buildToolbar,
     defaultToolbar,
     type ToolDefinition,
     type ToolSection,
     type ToolGroup,
+    type ToolGroupAction,
     type ToolbarDefinition,
     type ToolbarGroupConfig,
     type DrawingsOption,

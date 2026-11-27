@@ -78,15 +78,16 @@ describe('saved styles for a drawing tool', () => {
         expect(ctrl.toolTemplates()).toEqual({});
     });
 
-    it('the saved styles round-trip to another chart, dropping unknown tools and malformed entries', () => {
+    it('the saved styles round-trip to another chart, dropping malformed entries and keeping a tool that is not registered', () => {
         const a = setup();
         a.ctrl.saveToolTemplate('trendline', 'Weekly', RED);
         const saved = JSON.parse(JSON.stringify(a.ctrl.toolTemplates()));
 
         const b = setup();
-        b.ctrl.setToolTemplates({ ...saved, notatool: [{ name: 'x', settings: RED }], box: [{ name: '' }, 'junk', { name: 'Ok', settings: BLUE }] });
-        expect(b.ctrl.toolTemplates()).toEqual({ trendline: [{ name: 'Weekly', settings: RED }], box: [{ name: 'Ok', settings: BLUE }] });
-        expect(b.announced.sort()).toEqual(['box', 'trendline']);
+        // `latertool` belongs to a plugin that is not loaded here: its styles stay for the day it is.
+        b.ctrl.setToolTemplates({ ...saved, latertool: [{ name: 'x', settings: RED }], box: [{ name: '' }, 'junk', { name: 'Ok', settings: BLUE }] });
+        expect(b.ctrl.toolTemplates()).toEqual({ trendline: [{ name: 'Weekly', settings: RED }], latertool: [{ name: 'x', settings: RED }], box: [{ name: 'Ok', settings: BLUE }] });
+        expect(b.announced.sort()).toEqual(['box', 'latertool', 'trendline']);
     });
 
     it('a saved fib style keeps its levels', () => {

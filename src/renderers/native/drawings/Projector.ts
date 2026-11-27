@@ -34,8 +34,14 @@ export function createProjector(
     seriesInRange?: (timeframe: string, from: number, to: number) => DrawingSeriesState,
     priceDecimals?: (paneId: string) => number | undefined,
     priceSteps?: (paneId: string) => PriceSteps | undefined,
+    /** The chart's bars as a fingerprint, one bar's duration and the chart's time zone (see
+     *  `Projector.barsKey`). */
+    data?: { barsKey: string; barMs: number; timeZone?: string },
 ): Projector {
     return {
+        barsKey: data?.barsKey,
+        barMs: data && data.barMs > 0 ? data.barMs : undefined,
+        timeZone: data?.timeZone,
         xOf: (time: number): number => coords.timeToX(time),
         yOf: (price: number, paneId: string): number | null => {
             const p = paneOf(paneId);

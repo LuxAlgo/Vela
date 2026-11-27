@@ -1,8 +1,8 @@
 # Drawing tools
 
-Vela™ ships an interactive **drawing-tools** layer: a docked toolbar and ~67 on-chart
+Vela™ ships an interactive **drawing-tools** layer: a docked toolbar and 79 on-chart
 tools — trend lines, channels, Fibonacci, harmonic patterns, annotations, and more — that a user
-draws, edits, and keeps on the chart. Drawings are anchored in **data space** (time + price), so
+draws, edits, and keeps on the chart. An app can add [tools of its own](#custom-tools). Drawings are anchored in **data space** (time + price), so
 they stay locked to the bars across pan, zoom, timeframe changes, and reload — the same durability
 a scripting engine's own drawing output gets.
 
@@ -73,7 +73,8 @@ supports — line color/width/style, fill and text. The popup also locks and del
 its overflow menu (the `⋮` button) duplicates it in place, reorders it (bring-to-front /
 send-to-back), or resets its settings. A duplicate lands exactly on its source and becomes the
 selection, ready to drag away. An app built on Vela can add its own buttons to the popup and
-to the settings panel — an alert on the line, for example (see `registerDrawingAction` in the
+to the settings panel — an alert on the line, for example — and its own rows to the overflow
+menu and to the chart's right-click menu over a drawing (see `registerDrawingAction` in the
 [plugin SDK](../contributing/plugin-sdk.md#drawing-actions--registerdrawingaction)).
 
 **The settings panel.** The popup's **gear**, or a double-click on the drawing, opens the full
@@ -221,9 +222,11 @@ drawings among themselves, and the tree keeps them in one block above the series
 
 ## Tool catalogue
 
-**79 tools across 10 groups.** The **Type key** is the string you pass to
+**79 built-in tools across 10 groups.** The **Type key** is the string you pass to
 `chart.drawings.setTool('…')` or [`chart.drawings.add('…')`](#driving-drawings-from-code). Eraser,
 Magnet, Measure, and Stay in drawing mode are toolbar *modes*, not placeable types, so they have no key.
+The toolbar gathers these groups under seven buttons: Lines, Fibonacci, Patterns, Measurements,
+Shapes, Text and Icons.
 
 ### Lines
 
@@ -246,6 +249,7 @@ Magnet, Measure, and Stay in drawing mode are toolbar *modes*, not placeable typ
 | Parallel Channel | `parallelchannel` | A baseline plus a parallel line offset by a third point; optional fill. |
 | Disjoint Channel | `disjointchannel` | Two independent segments forming a channel. |
 | Flat Top/Bottom | `flattopbottom` | A sloped baseline with a flat (constant-price) opposite side. |
+| Linear Regression | `regressionchannel` | A least-squares line fitted to the closes between two times, with a ±2σ band around it and the fit's R² at its start. It follows the bars: the fit updates as an end is dragged or new bars arrive. |
 
 ### Pitchforks
 
@@ -266,6 +270,7 @@ Magnet, Measure, and Stay in drawing mode are toolbar *modes*, not placeable typ
 | Triangle | `triangle` | A three-point filled triangle. |
 | Polyline | `polyline` | A multi-point connected path (finish on Enter/double-click). |
 | Brush | `freehand` | A freehand stroke captured from the drag path. |
+| Highlighter | `highlighter` | A wide, translucent freehand stroke, like a marker over text. Its settings are a color and a width. |
 | Circle | `circle` | A true pixel circle (round at any zoom) from center + edge. |
 | Rotated Rectangle | `rotatedrect` | A box rotated to a baseline plus a width. |
 | Path | `path` | A multi-point path with an end arrowhead. |
@@ -356,6 +361,45 @@ whether it falls in that pattern's ideal Fibonacci band.
 | Date & Price Range | `datepricerange` | A box reporting the time span + price/% change it covers. |
 | Long/Short Position | `position` | An entry/stop/target box: click the entry, then drag in the profit direction (up for a long, down for a short). Shows risk:reward, percentages, the amount lost at the stop, and position size from your risk % and account balance (size is editable and back-solves the risk %). The settings panel has a long/short switch (mirrors the levels across the entry), exact level values in price or points, and per-label display toggles; zone colors and label styling sit on the quick bar. |
 | Magnifier | `magnifier` | A press-drag-release rectangle whose interior shows the same market at a **lower timeframe**, rendered in the chart's own price style *and colors* (candles, bars, line, area, Heikin Ashi; line with markers and step line show as a line, columns as an area; custom chart types fall back to candles) at true time/price positions. The timeframe chip on the rectangle's bottom-left corner is a dropdown — click it to switch — and the same pick leads the quick bar, beside the up/down color overrides and the border style; **Auto** subdivides the chart's timeframe, and both pickers offer only timeframes below the chart's own. The finer bars load in the background and follow live data; when the chart is already at the finest timeframe, or the area needs more bars than the tool will fetch, a notice inside the rectangle says so. Needs a market with a ranged data source (offline `data` arrays have nothing to fetch). |
+| Anchored VWAP | `anchoredvwap` | Click a bar: the volume-weighted average price accumulates from it across every bar to its right, with ±σ bands and a fill between them. It follows the bars: the curve updates as the anchor is dragged or new bars arrive. |
+| Fixed Range Volume Profile | `fixedrangevp` | Two times bound a range, and the volume of its bars is bucketed into equal price rows: a histogram with its point of control, its value area high and low, and optional developing levels. An estimate from the chart's own bars, updated as an end is dragged or new bars arrive. |
+
+In the toolbar, the Measurements button lists the last two under **Volume**.
+
+---
+
+## Custom tools
+
+The catalogue above is what Vela ships. An app or a plugin can register drawing tools of its
+own, without forking Vela:
+
+```js
+import { defineDrawing } from '@luxalgo/vela/plugin';
+
+defineDrawing({
+    type: 'acme.cross',     // the type key: namespace it
+    label: 'Cross',
+    anchors: 1,
+    shapes: (c) => (c.points[0] ? [{ kind: 'marker', at: c.points[0], shape: 'cross', size: 14 }] : []),
+});
+```
+
+- **A custom tool behaves like a built-in one.** It sits in the toolbar, in a built-in group or
+  in a group of its own, and it places, edits, undoes, copies and saves the same way. A tool
+  can also compute from the chart's bars, add handles of its own, define its settings, and
+  name parts that react to the pointer.
+- **Its type key works wherever a built-in key does:** `setTool`, `add`, the `drawings` option's
+  `tools` and `groups`, favorites, remembered settings and saved styles.
+- **Register it before or after the chart is built.** A chart's toolbar follows the tools that
+  are registered, and the chart raises `drawing:types` when they change.
+- **A drawing outlives its tool.** When a saved document holds a drawing whose tool is not
+  registered on the page, the chart keeps it as a placeholder: a dashed outline of its points
+  that you can select, move and delete. `toJSON()` saves it back exactly as it was, and it
+  becomes the real drawing as soon as its tool is registered.
+
+The reference for writing a tool is
+[Drawing tools — `defineDrawing`](../contributing/plugin-sdk.md#drawing-tools--definedrawing) in
+the plugin SDK.
 
 ---
 
@@ -413,12 +457,51 @@ chart.on('drawing:tool', ({ type }) => { /* armed tool changed; null = pointer *
 chart.on('drawing:snap', ({ mode }) => { /* magnet mode changed */ });
 chart.on('drawing:stay', ({ on }) => { /* stay-in-drawing-mode changed */ });
 chart.on('drawing:mode', ({ mode }) => { /* measure/eraser entered or left */ });
+chart.on('drawing:types', () => { /* a tool was registered, replaced or unregistered */ });
 ```
 
 The renderer keeps owning the mutual exclusion — arming a tool exits measure/eraser
 (and vice versa), and the outcome always lands on the events, so an external UI only
 ever mirrors. One-shot tools disarm themselves after placing (back to `null` on
 `drawing:tool`) unless stay-in-drawing-mode is on; the brush family always stays armed.
+`drawing:types` tells a toolbar of your own to rebuild its tool list: read it with
+`drawingTypes()` from `@luxalgo/vela/plugin`, which returns every registered tool with its
+label, icon and group, [custom tools](#custom-tools) included.
+
+## Values, readouts, hover and click
+
+A drawing can give something back to your app: its price at a time, the values it reports,
+and what the pointer does on it.
+
+```js
+// The line's price at a time: null past its ends, and for a tool that reports no value.
+const level = chart.drawings.valueAt(line.id, Date.now());
+if (level != null) alerts.check(level);
+
+chart.drawings.readout(line.id);   // [{ label, value, key?, color? }]: the rows the data window lists
+chart.drawings.at(240, 120);       // { id, part } under a plot pixel, or null
+chart.drawings.hovered();          // { id, part } under the pointer, or null
+
+// More for the magnet to snap to: a point, a price level, or a time.
+const removeSource = chart.drawings.addSnapSource(({ price }) => [{ price: Math.round(price / 100) * 100 }, { price: vwap }]);
+
+chart.on('drawing:hover', ({ id, part }) => { /* id is null when the pointer leaves the drawings */ });
+chart.on('drawing:click', ({ id, part, time, price }) => { /* a press and release on a drawing, without a drag */ });
+```
+
+- **`valueAt`** is what an alert on a drawing compares the price with. The trend line, the ray,
+  the extended line, the horizontal line and the horizontal ray report their level; a line
+  that extends reports it past its points too. A [custom tool](#custom-tools) reports
+  whatever its definition returns. Every other built-in tool returns `null`.
+- **`readout`** returns the values a tool reports. No built-in tool reports any today; a custom
+  tool's rows also show in the data window, one group per drawing, after the indicators.
+- **`addSnapSource`** adds magnet targets from your app: an indicator's values, round prices,
+  a session's open. A target takes the point only from within a few pixels of the pointer, in
+  weak and strong mode alike, and only when it is nearer than the candle point. A price level
+  snaps the price and leaves the time to the candle. With the magnet off nothing snaps. A
+  custom tool can offer its own points and levels the same way.
+- **`part`** names the part of the drawing under the pointer, for a tool that names its parts
+  (a level, a label); it is `null` over a plain body and for every built-in tool.
 
 ## Favorite tools
 
@@ -426,30 +509,35 @@ ever mirrors. One-shot tools disarm themselves after placing (back to `null` on
 chart.drawings.favorites();                     // ['trendline', 'box'] — starred, in star order
 chart.drawings.isFavorite('trendline');         // true
 chart.drawings.setFavorite('ray', true);        // star / unstar one type
-chart.drawings.setFavorites(['ray', 'box']);    // replace the whole set (unknown types dropped)
+chart.drawings.setFavorites(['ray', 'box', 'acme.spiral']);  // replace the whole set
 
 chart.on('drawing:favorites', ({ favorites }) => { /* the set changed (star click or code) */ });
 ```
 
 The shell persists the set with its other state when `persist` is enabled, and restores it on
-the next load.
+the next load. `setFavorites` leaves out a type that is not registered and stars it once it
+is: a [custom tool](#custom-tools) registered after the restore still comes back starred.
 
 ## Persistence, undo & clipboard
 
 - **Save / restore.** `chart.drawings.toJSON()` returns a versioned `DrawingsDocument`; pass it
   back to `chart.drawings.fromJSON(doc)` to restore. The restore path is lenient with untrusted
-  input — malformed or unknown-type entries are dropped, never thrown. Drawings are **not**
-  auto-persisted; storing the document is up to your app.
+  input — malformed entries are dropped, never thrown. A drawing whose type is not registered on
+  the page is **kept**, as a [placeholder](#custom-tools) that saves back unchanged, so a
+  document survives a page that lacks one of its tools. Drawings are **not** auto-persisted;
+  storing the document is up to your app.
 - **Tool settings.** Each tool remembers how its last drawing was styled: its colors, widths, text
   styling (never the words) and its own settings, such as a Fib's levels or a position's account
   size. The next drawing of that type starts from them, whether you style one drawing or several
   at once. `chart.drawings.toolDefaults()` returns them as plain JSON and `setToolDefaults()`
   restores them; the workspace and widget save them in their state document, together with the
   magnet and stay-in-drawing-mode, so a reload keeps them. `resetToolDefaults(type)` sends a tool
-  back to its factory look.
+  back to its factory look. `setToolDefaults()` keeps the settings of a tool that is not
+  registered, for when it is.
 - **Saved styles.** `chart.drawings.toolTemplates()` returns every tool's saved styles and
   `setToolTemplates()` replaces them, and `drawing:templates` follows changes. The workspace and
-  widget keep them with the other tool settings.
+  widget keep them with the other tool settings. The styles of a tool that is not registered are
+  kept too.
 - **Timeframes.** A drawing's `showOn` lists the timeframe bands it shows on (`'s'`, `'1'`, `'5'`,
   `'15'`, `'60'`, `'240'`, `'D'`, `'W'`, `'M'`); a chart on any other timeframe — a custom one
   counts as the band below it — hides it. Leave it unset to show the drawing everywhere.
@@ -508,6 +596,17 @@ renderer** does; a minimal custom adapter may not. When unsupported,
 core-owned methods (`all`, `update`, `remove`, `toJSON`/`fromJSON`, `undo`/`redo`) still work, so a
 document round-trips even without an on-chart toolbar. Placing a drawing (`add`) is interactive and
 returns `null` there; restore drawings with `fromJSON` instead.
+
+The methods that [give something back](#values-readouts-hover-and-click) do not warn there, and
+answer with what the model alone knows:
+
+- `valueAt` reads a line straight in time and price, and has nothing a tool computes from the
+  chart's bars. `readout` returns the rows a tool reports without them.
+- `at` and `hovered` return `null`, and `drawing:hover` and `drawing:click` never fire.
+- `addSnapSource` keeps the source, and nothing asks it.
+
+A custom renderer shows [custom tools](#custom-tools) once it paints their shapes: see
+[Adding a renderer](../contributing/adding-a-renderer.md#user-drawings-interactive).
 
 > **Stability:** the drawing-tools API is young and may change before a 1.0 release. The persisted
 > `DrawingsDocument` is versioned and migrated forward.

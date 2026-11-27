@@ -3,7 +3,8 @@ import { Drawing, type AnchorSlot, type SerializedDrawing } from '../Drawing';
 import type { LineStyle } from '../../model/series';
 import type { Projector } from '../geometry';
 import type { SettingsSchema } from '../schema';
-import { distToSegment, pointInPolygon, handleAt } from '../hittest';
+import { distToSegment, handleAt } from '../hittest';
+import { isTransparentStrokeColor } from '../style';
 import { INFO } from '../../palette';
 
 /** One OHLCV bar the VWAP accumulates over (typical price × volume). */
@@ -172,16 +173,12 @@ export class AnchoredVwap extends Drawing {
         return mid.length > 0 ? { mid, upper, lower } : null;
     }
 
-    /** The band outline polygon (upper edge left→right, then lower edge right→left). */
-    private bandPolygon(L: VwapLayout): Array<[number, number]> {
-        return [...L.upper, ...[...L.lower].reverse()];
-    }
-
     hitTest(px: number, py: number, proj: Projector, tol: number): boolean {
         const L = this.layout(proj);
         if (!L) return false;
-        if (pointInPolygon(px, py, this.bandPolygon(L))) return true;
-        return polylineHit(px, py, L.mid, tol) || polylineHit(px, py, L.upper, tol) || polylineHit(px, py, L.lower, tol);
+        return polylineHit(px, py, L.mid, tol)
+            || (!isTransparentStrokeColor(this.vwap.upperColor) && polylineHit(px, py, L.upper, tol))
+            || (!isTransparentStrokeColor(this.vwap.lowerColor) && polylineHit(px, py, L.lower, tol));
     }
 
     handlePoints(proj: Projector): Array<[number, number]> {

@@ -1,6 +1,6 @@
 import type { Unsubscribe } from '../util/types';
 import { Drawing, type SerializedDrawing } from './Drawing';
-import { deserializeDrawing } from './registry';
+import { reviveDrawing } from './registry';
 import { clonePlain, migrate, sanitizeGroups, type DrawingGroup, type DrawingsDocument, DRAWINGS_DOC_VERSION } from './document';
 import { sanitizeShowOn } from './visibility';
 
@@ -146,21 +146,41 @@ export class DrawingStore {
         return doc;
     }
 
-    /** Replace all drawings from a (validated) document. Unknown types are skipped. */
+    /** Replace all drawings from a (validated) document. A drawing of a type that is not
+     *  registered here is kept as a placeholder holding its record, never dropped: the
+     *  document it came from still saves whole. */
     load(doc: unknown): void {
         const valid = migrate(doc);
         this.byId.clear();
         this.seq = 0;
         this.zCounter = 1;
         for (const record of valid.drawings) {
-            const d = deserializeDrawing(record);
-            if (!d) continue; // unknown type → skip, don't crash
+            const d = reviveDrawing(record);
             this.byId.set(d.id, d);
             this.zCounter = Math.max(this.zCounter, d.zIndex) + 1;
             this.bumpSeqPast(d.id);
         }
         this.groupList = sanitizeGroups(valid.groups, new Set(this.byId.keys()));
         this.emit();
+    }
+
+    /**
+     * The type registry changed: rebuild the drawings whose record now gives another class,
+     * so a placeholder becomes the real drawing once its type exists, a drawing whose type
+     * left becomes a placeholder, and a redefined type takes effect on the drawings already
+     * placed. A change that concerns none of the drawings rebuilds none. Returns whether any
+     * drawing was rebuilt.
+     */
+    refreshTypes(): boolean {
+        let rebuilt = false;
+        for (const [id, d] of this.byId) {
+            const next = reviveDrawing(d.serialize());
+            if (next.constructor === d.constructor) continue;
+            this.byId.set(id, next);
+            rebuilt = true;
+        }
+        if (rebuilt) this.emit();
+        return rebuilt;
     }
 
     onChange(cb: () => void): Unsubscribe {

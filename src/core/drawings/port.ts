@@ -1,5 +1,5 @@
 import type { Unsubscribe } from '../util/types';
-import type { DrawingTypeKey, SerializedDrawing } from './Drawing';
+import type { DrawingReadoutRow, DrawingTypeKey, SerializedDrawing, SnapTarget } from './Drawing';
 import type { SnapMode } from './geometry';
 import type { DrawingSeriesGateway } from './series';
 import type { ToolbarDefinition } from './toolbar';
@@ -58,7 +58,16 @@ export type DrawingIntent =
      *  One undo step. */
     | { kind: 'clone'; docs: SerializedDrawing[] }
     | { kind: 'copy'; ids: string[] }
-    | { kind: 'paste' };
+    | { kind: 'paste' }
+    /** The pointer moved onto a drawing, onto another part of it, or off the drawings
+     *  (`id` null). `part` is the named part under it, null over the plain body. */
+    | { kind: 'hover'; id: string | null; part: string | null }
+    /** A click (press and release, no drag) on a drawing, at a data point. */
+    | { kind: 'click'; id: string; part: string | null; time: number; price: number };
+
+/** A host's extra magnet targets: asked for the points and levels near a pointer position
+ *  while a drawing is placed or reshaped. */
+export type DrawingSnapSource = (query: { paneId: string; time: number; price: number }) => readonly SnapTarget[];
 
 /**
  * The interactive user-drawings surface a renderer optionally implements. Present
@@ -120,6 +129,19 @@ export interface IDrawingsRendererPort {
      * among themselves, on a layer of their own.
      */
     stackRange?(paneId: string): { front: number; back: number; price?: number };
+    /** Push the host's extra magnet targets (every source is asked on each snap). Optional —
+     *  a renderer without a magnet omits it. */
+    setSnapSources?(sources: readonly DrawingSnapSource[]): void;
+    /** The drawing under a plot pixel and the part of it there, or null. Optional. */
+    drawingAt?(x: number, y: number): { id: string; part: string | null } | null;
+    /** The drawing the pointer is over right now and the part of it there, or null. Optional. */
+    hoveredDrawing?(): { id: string; part: string | null } | null;
+    /** A drawing's price at a time, read from the instance the renderer paints (it holds the
+     *  results computed from the chart's bars). Optional — the core answers from the model
+     *  without it. */
+    drawingValueAt?(id: string, time: number): number | null;
+    /** The values a drawing reports, from the instance the renderer paints. Optional. */
+    drawingReadout?(id: string): DrawingReadoutRow[];
     /** The one channel up — create/edit/select/delete/settings/tool-finished. */
     onDrawingIntent(cb: (intent: DrawingIntent) => void): Unsubscribe;
 }

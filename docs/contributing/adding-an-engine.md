@@ -283,4 +283,4 @@ Whichever path you choose, if the resolved language has no registered engine, yo
 
 - [Adding a Renderer](./adding-a-renderer.md) — the layer that paints the neutral model.
 - [Adding a Data Provider](./adding-a-data-provider.md) — the feed that owns bars and backs `fetchSeries`.
-- [Plugin SDK](./plugin-sdk.md) — the rest of the `@luxalgo/vela/plugin` surface (chart types, renderer layers, widget contributions).
+- [Plugin SDK](./plugin-sdk.md) — the rest of the `@luxalgo/vela/plugin` surface (chart types, renderer layers, drawing tools, widget contributions).

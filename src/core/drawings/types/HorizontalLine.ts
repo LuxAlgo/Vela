@@ -18,6 +18,10 @@ export class HorizontalLine extends Drawing {
         return a ? proj.yOf(a.price, this.paneId) : null;
     }
 
+    override valueAt(): number | null {
+        return this.anchors[0]?.price ?? null; // the same level at every time
+    }
+
     hitTest(_px: number, py: number, proj: Projector, tol: number): boolean {
         const y = this.y(proj);
         return y != null && Math.abs(py - y) <= tol; // ignores x → spans full width
