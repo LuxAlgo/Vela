@@ -84,6 +84,11 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **A chart no longer reports the start of its history too early.** When a data source
+  that streams its answer returned slightly fewer candles than the chart asked for, Vela
+  reported that the market's history began there, even when older candles existed. It
+  now asks for the older candles, as a deep load does, and reports the start of history
+  only when there are none.
 - **A closed symbol search no longer loads symbol icons.** With a custom symbol ranking
   registered, closing the search before its results finished ranking still rebuilt the
   hidden list and loaded about a hundred icons nobody could see. The list now rebuilds

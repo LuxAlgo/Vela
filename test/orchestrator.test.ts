@@ -1181,6 +1181,53 @@ describe('EngineOrchestrator', () => {
         expect(renderer.setBarsCalls).toEqual([{ n: 15, preserveView: false }]);
     });
 
+    it('a progressive first load that comes back short is not the start of history when older candles exist', async () => {
+        // The source answers a few candles short of the depth asked for while older history
+        // exists (a server can do this on some markets): the chart asks for the older
+        // candles, reaches the requested depth, and reports depth, not genesis.
+        const all = makeBars(300);
+        const ranges: BarRange[] = [];
+        const feed: MarketDataFeed = {
+            load: () => Promise.resolve([]),
+            subscribe: () => () => {},
+            loadProgressive: () => Promise.resolve(all.slice(-95)),
+            loadRange: (_cfg, range) => {
+                ranges.push(range);
+                const older = all.filter((b) => b.time <= (range.to ?? Infinity));
+                return Promise.resolve(range.limit != null ? older.slice(-range.limit) : older);
+            },
+        };
+        const renderer = new FakeRenderer();
+        const chart = new Vela({} as unknown as HTMLElement, { bars: 100 }, { renderer, engines: [new MockEngine()], dataFeed: feed });
+        const completes: { reason: string; barsLoaded: number }[] = [];
+        chart.on('history:complete', (e) => completes.push(e));
+        await chart.ready();
+        await chart.historyComplete();
+
+        expect(ranges).toHaveLength(1);
+        expect(renderer.bars.length).toBe(100);
+        expect(completes).toEqual([{ reason: 'depth', oldestTime: renderer.bars[0]!.time, barsLoaded: 100 }]);
+    });
+
+    it('a progressive first load that comes back short is the start of history when nothing older exists', async () => {
+        const all = makeBars(95);
+        const feed: MarketDataFeed = {
+            load: () => Promise.resolve([]),
+            subscribe: () => () => {},
+            loadProgressive: () => Promise.resolve(all),
+            loadRange: (_cfg, range) => Promise.resolve(all.filter((b) => b.time <= (range.to ?? Infinity)).slice(-(range.limit ?? 500))),
+        };
+        const renderer = new FakeRenderer();
+        const chart = new Vela({} as unknown as HTMLElement, { bars: 100 }, { renderer, engines: [new MockEngine()], dataFeed: feed });
+        const completes: { reason: string; barsLoaded: number }[] = [];
+        chart.on('history:complete', (e) => completes.push(e));
+        await chart.ready();
+        await chart.historyComplete();
+
+        expect(renderer.bars.length).toBe(95);
+        expect(completes).toEqual([{ reason: 'genesis', oldestTime: renderer.bars[0]!.time, barsLoaded: 95 }]);
+    });
+
     it('switching markets ABORTS the in-flight progressive stream — the source stops polling', async () => {
         // An abandoned stream left polling its budget out starves the browser's per-host
         // connection pool — and the NEXT symbol's very first fetch with it (measured on a

@@ -581,7 +581,16 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
                         if (full == null) return signal(false); // incapable — classic paths take over
                         if (this.generation !== gen) return signal(true);
                         paint(full, true);
-                        this.completeHistory(full.length >= requested ? 'depth' : 'genesis');
+                        if (full.length > 0 && full.length < requested && this.feed.loadRange && !this.replayQueue) {
+                            // A short answer is no proof that nothing older exists: a source can
+                            // answer a few candles short of the depth asked for. Ask for the older
+                            // candles, as a deep load does; genesis is reported only when a
+                            // chunk brings nothing older.
+                            this.historyState = 'backfill';
+                            void this.backfillHistory(gen, requested);
+                        } else {
+                            this.completeHistory(full.length >= requested ? 'depth' : 'genesis');
+                        }
                         signal(true);
                     })
                     .catch((e: unknown) => {
