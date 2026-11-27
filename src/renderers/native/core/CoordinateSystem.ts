@@ -150,6 +150,15 @@ export class CoordinateSystem {
         return this.logicalToX(this.timeToLogical(ms));
     }
 
+    /** True after a bar's expected end and before the next loaded bar. */
+    isInCompressedGap(ms: number): boolean {
+        if (this.intervalMs <= 0) return false;
+        const i = Math.floor(this.timeToLogical(ms));
+        const left = this.times[i];
+        const right = this.times[i + 1];
+        return left !== undefined && right !== undefined && ms >= left + this.intervalMs && ms < right;
+    }
+
     // ── Y axis: price ↔ pixel (per pane scale + bounds; linear or logarithmic) ──
     //   `t` is the fraction from min (0) to max (1); a normal axis puts max at the top
     //   (`1 - t`), an inverted axis puts it at the bottom (`t`).

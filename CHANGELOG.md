@@ -154,6 +154,10 @@ All notable changes to Vela, newest first.
 
 ### Fixed
 
+- **Time ticks stay readable across compressed trading breaks.** The time axis and
+  grid skip clock ticks inside a break. On intraday charts, repeated dates in the
+  same break share one marker, with calendar landmarks and the reopening bar's date
+  given priority. Candle spacing is preserved.
 - **A closed symbol search no longer loads symbol icons.** With a custom symbol ranking
   registered, closing the search before its results finished ranking still rebuilt the
   hidden list and loaded about a hundred icons nobody could see. The list now rebuilds
